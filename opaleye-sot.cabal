@@ -20,12 +20,15 @@ library
   default-language: Haskell2010
   exposed-modules:
       Opaleye.SOT
+      Opaleye.SOT.Internal
+      Opaleye.SOT.Internal.Test
   build-depends:
       base >=4.7 && <4.9
     , exceptions >=0.8 && <0.9
     , HList >=0.4 && <0.5
     , lens >=4.12 && <4.13
     , opaleye >=0.4 && <0.5
+    , postgresql-simple >=0.4.10 && <0.5
     , product-profunctors >=0.6.2 && <0.7
     , profunctors >=5.1 && <5.2
     , singletons >=1.1 && <1.2
