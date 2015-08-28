@@ -50,6 +50,25 @@ instance Tisch Test where
      (HL.Label :: HL.Label "c3") HL..=. c3 HL..*.
      HL.emptyRecord
 
+
+
+types :: ()
+types = seq x () where
+  x :: ( TRecord Test '[]
+           ~ HL.Tagged (T Test) (HL.Record '[])
+       , Cols_Hs Test
+           ~ '[HL.Tagged "c1" Bool,
+               HL.Tagged "c2" (Maybe Bool),
+               HL.Tagged "c3" Bool,
+               HL.Tagged "c4" (Maybe Int64)]
+       , Cols_HsMay Test
+           ~ '[HL.Tagged "c1" (Maybe Bool),
+               HL.Tagged "c2" (Maybe Bool),
+               HL.Tagged "c3" (Maybe Bool),
+               HL.Tagged "c4" (Maybe Int64)]
+       ) => ()
+  x = ()
+
 -- | Internal. See "Opaleye.SOT.Internal.Test".
 instance Comparable Test "c1" Test "c3" O.PGBool 
 
@@ -79,3 +98,10 @@ update1 conn = O.runUpdate conn tisch upd fil
             . over (cola (C::C "c4")) Just
         fil :: TRecord Test (Cols_PgRead Test) -> O.Column O.PGBool
         fil = \v -> eqc True (view (col (C::C "c1")) v)
+
+
+outQuery1 :: Pg.Connection -> IO [(TRecord Test (Cols_Hs Test),
+                                   TRecord Test (Cols_Hs Test),
+                                   TRecord Test (Cols_Hs Test),
+                                   TRecord Test (Cols_HsMay Test))]
+outQuery1 conn = O.runQuery conn query1 

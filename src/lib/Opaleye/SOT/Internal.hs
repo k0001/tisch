@@ -102,6 +102,11 @@ type family Col_HsType (col :: Col GHC.Symbol WN RN * *) :: * where
 data Col_HsTypeSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply Col_HsTypeSym0 col = Col_HsType col
 
+type family Col_HsTypeMay (col :: Col GHC.Symbol WN RN * *) :: * where
+  Col_HsTypeMay ('Col n w r p h) = Maybe h
+data Col_HsTypeMaySym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+type instance Apply Col_HsTypeMaySym0 col = Col_HsTypeMay col
+
 ---
 
 -- | Lookup column info by name
@@ -123,6 +128,14 @@ type Col_HsRecordField (col :: Col GHC.Symbol WN RN * *)
   = Tagged (Col_Name col) (Col_HsType col)
 data Col_HsRecordFieldSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply Col_HsRecordFieldSym0 col = Col_HsRecordField col
+
+-- | Type of the 'HL.Record' columns in Haskell when all the columns
+-- are @NULL@ (e.g., a missing rhs on a left join).
+type Cols_HsMay (a :: *) = List.Map Col_HsMayRecordFieldSym0 (Cols a)
+type Col_HsMayRecordField (col :: Col GHC.Symbol WN RN * *)
+  = Tagged (Col_Name col) (Col_HsTypeMay col)
+data Col_HsMayRecordFieldSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+type instance Apply Col_HsMayRecordFieldSym0 col = Col_HsMayRecordField col
 
 ---
 
@@ -403,6 +416,11 @@ instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged t a)
   def = ppa (Tagged PP.def)
   {-# INLINE def #-}
 
+-- | 'Opaleye.SOT.Internal'.
+instance (PP.Default O.QueryRunner (O.Column pg) hs) => PP.Default O.QueryRunner (Tagged (TC t c) (O.Column pg)) (Tagged c hs) where
+  def = P.dimap unTagged Tagged PP.def
+  {-# INLINE def #-}
+
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance PP.ProductProfunctor p => PP.Default p (HList '[]) (HList '[]) where
   def = ppa HNil
@@ -443,7 +461,4 @@ instance DistributeProxy ('[] :: [k]) where
 instance forall (x :: k) (xs :: [k]). DistributeProxy xs => DistributeProxy (x ': xs) where
   distributeProxy _ = HCons (Proxy :: Proxy x) (distributeProxy (Proxy :: Proxy xs))
   {-# INLINE distributeProxy #-}
-
-retag' :: (HL.RecordValues r, HL.HMapTaggedFn (HL.RecordValuesR r) b) => HL.Record r -> HL.Record b
-retag' = HL.hMapTaggedFn . HL.recordValues
 
