@@ -5,7 +5,6 @@ module Opaleye.SOT
 
    -- * Accessing columns
  , col
- , ToPgColumn(..)
 
    -- * Querying
  , Comparable
@@ -13,6 +12,7 @@ module Opaleye.SOT
  , eqc
 
    -- * Types
+ , ToPgColumn(..)
  , Col(..)
  , WN(..)
  , RN(..)
