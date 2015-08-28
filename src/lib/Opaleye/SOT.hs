@@ -7,11 +7,11 @@ module Opaleye.SOT
  , col
 
    -- * Querying
- , Comparable
  , eq
  , eqc
 
    -- * Types
+ , Comparable
  , ToPgColumn(..)
  , Col(..)
  , WN(..)
