@@ -12,7 +12,10 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | This module contains test and example code.
+-- | This module contains test and example code. The funny thing is that,
+-- as most of this library happens at the type level, these tests run
+-- while compiling the library.
+--
 -- You might learn a thing or two reading the source code.
 module Opaleye.SOT.Internal.Test where
 

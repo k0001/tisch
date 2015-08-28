@@ -172,8 +172,20 @@ type TRecord (a :: *) xs = Tagged (T a) (HL.Record xs)
 
 --------------------------------------------------------------------------------
 
+-- | All these constraints need to be satisfied by tools that work with 'Tisch'.
+-- It's easier to just write all the constraints once here and made 'TischCtx' a
+-- superclass of 'Tisch'.
+type TischCtx a
+  = ( GHC.KnownSymbol (TableName a)
+    , GHC.KnownSymbol (SchemaName a)
+    , DistributeProxy (Cols a)
+    , HL.SameLength (Cols_Props a) (List.Map ProxySym0 (Cols a))
+    , HL.HMapAux HList (HCol_Props a) (List.Map ProxySym0 (Cols a)) (Cols_Props a)
+    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props a)) (HL.Record (Cols_PgWrite a)) (HL.Record (Cols_PgRead a))
+    )
+
 -- | Tisch means table in german.
-class Tisch (a :: *) where
+class TischCtx a => Tisch (a :: *) where
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
   type Cols a :: [Col GHC.Symbol WN RN * *]
@@ -230,25 +242,14 @@ instance forall a (col :: Col GHC.Symbol WN RN * *) pcol out n w r p h
 
 --------------------------------------------------------------------------------
 
--- | All this constraints are readily satisfied by instances of 'Tisch'.
-type TischTable a
-  = ( Tisch a
-    , GHC.KnownSymbol (TableName a)
-    , GHC.KnownSymbol (SchemaName a)
-    , DistributeProxy (Cols a)
-    , HL.SameLength (Cols_Props a) (List.Map ProxySym0 (Cols a))
-    , HL.HMapAux HList (HCol_Props a) (List.Map ProxySym0 (Cols a)) (Cols_Props a)
-    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props a)) (HL.Record (Cols_PgWrite a)) (HL.Record (Cols_PgRead a))
-    )
-
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-tisch ::  TischTable a => O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
+tisch ::  Tisch a => O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
 tisch = tisch' T 
 {-# INLINE tisch #-}
 
 -- | Like 'tisch', but takes @a@ explicitly to help the compiler when it
 -- can't infer @a@.
-tisch' :: TischTable a
+tisch' :: Tisch a
        => T a
        -> O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
 tisch' (_ :: T a) = O.Table tableName (ppa (Tagged (ppa recProps)))
