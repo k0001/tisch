@@ -50,6 +50,7 @@ instance Tisch Test where
      (HL.Label :: HL.Label "c3") HL..=. c3 HL..*.
      HL.emptyRecord
 
+-- | Internal. See "Opaleye.SOT.Internal.Test".
 instance Comparable Test "c1" Test "c3" O.PGBool 
 
 query1

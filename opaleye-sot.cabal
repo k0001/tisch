@@ -23,14 +23,21 @@ library
       Opaleye.SOT.Internal
       Opaleye.SOT.Internal.Test
   build-depends:
-      base >=4.7 && <4.9
+      -- NOTE: The dependencies without specific version ranges are transitional
+      aeson
+    , base >=4.7 && <4.9
+    , bytestring
+    , case-insensitive
     , exceptions >=0.8 && <0.9
     , HList >=0.4 && <0.5
     , lens >=4.12 && <4.13
     , opaleye >=0.4 && <0.5
-    , postgresql-simple >=0.4.10 && <0.5
-    , product-profunctors >=0.6.2 && <0.7
-    , profunctors >=5.1 && <5.2
+    , postgresql-simple 
+    , product-profunctors 
+    , profunctors 
     , singletons >=1.1 && <1.2
+    , text
+    , time
+    , uuid
   ghcjs-options: -Wall -O3
   ghc-options: -Wall -O2

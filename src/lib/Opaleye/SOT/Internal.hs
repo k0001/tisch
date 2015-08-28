@@ -1,6 +1,7 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -19,6 +20,15 @@ module Opaleye.SOT.Internal where
 
 import           Control.Lens
 import           Control.Monad.Catch (MonadThrow)
+import qualified Data.Aeson
+import qualified Data.ByteString
+import qualified Data.ByteString.Lazy
+import qualified Data.CaseInsensitive
+import qualified Data.Text
+import qualified Data.Text.Lazy
+import qualified Data.Time
+import qualified Data.UUID
+import           Data.Int
 import           Data.Proxy (Proxy(..))
 import           Data.HList (Tagged(Tagged, unTagged), HList(HCons, HNil))
 import qualified Data.HList as HL
@@ -275,17 +285,51 @@ instance Tisch t => Comparable t c t c a
 
 -- | Convert a Haskell value to a PostgreSQL 'O.Column' value.
 -- Think of 'O.pgString', 'O.pgInt4', 'O.pgStrictText', etc.
-class ToPgColumn (pg :: *) (hs :: *) where toPgColumn :: hs -> O.Column pg
+--
+-- You probably won't ever need to call 'toPgColumn' explicity, yet you need to
+-- provide an instance for every Haskell type you plan to convert to its
+-- PostgreSQL representation.
+--
+-- A a default implementation of 'toPgColumn' is available for 'Wrapped' types
+class ToPgColumn (pg :: *) (hs :: *) where
+  toPgColumn :: hs -> O.Column pg
+  default toPgColumn :: (Wrapped hs, ToPgColumn pg (Unwrapped hs)) => hs -> O.Column pg
+  toPgColumn = toPgColumn . view _Wrapped'
+  {-# INLINE toPgColumn #-}
 
 -- | Trivial.
 instance ToPgColumn pg (O.Column pg) where toPgColumn = id
-  
-wrappedToPgColumn :: (Wrapped w, ToPgColumn a (Unwrapped w)) => w -> O.Column a 
-wrappedToPgColumn = toPgColumn . view _Wrapped'
+-- | OVERLAPPABLE. Any @pg@ can be made 'O.Nullable'.
+instance {-# OVERLAPPABLE #-} ToPgColumn pg hs => ToPgColumn (O.Nullable pg) hs where
+  toPgColumn = O.toNullable . toPgColumn
+  {-# INLINE toPgColumn #-}
+-- | OVERLAPPS @'ToPgColumn' ('O.Nullable' pg) hs@. 'Nothing' is @NULL@.
+instance ToPgColumn pg hs => ToPgColumn (O.Nullable pg) (Maybe hs) where
+  toPgColumn = maybe O.null (O.toNullable . toPgColumn)
+  {-# INLINE toPgColumn #-}
 
--- TODO instance ToPgColumn a b => ToPgColumn (O.Nullable a) (Maybe b) where toPgColumn = undefined
 instance ToPgColumn O.PGText [Char] where toPgColumn = O.pgString
 instance ToPgColumn O.PGBool Bool where toPgColumn = O.pgBool
+-- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
+-- Use 'Int32', 'Int64', etc. explicitely.
+instance ToPgColumn O.PGInt4 Int32 where toPgColumn = O.pgInt4 . fromIntegral
+-- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
+-- Use 'Int32', 'Int64', etc. explicitely.
+instance ToPgColumn O.PGInt8 Int64 where toPgColumn = O.pgInt8 
+instance ToPgColumn O.PGFloat8 Double where toPgColumn = O.pgDouble
+instance ToPgColumn O.PGText Data.Text.Text where toPgColumn = O.pgStrictText
+instance ToPgColumn O.PGText Data.Text.Lazy.Text where toPgColumn = O.pgLazyText
+instance ToPgColumn O.PGBytea Data.ByteString.ByteString where toPgColumn = O.pgStrictByteString
+instance ToPgColumn O.PGBytea Data.ByteString.Lazy.ByteString where toPgColumn = O.pgLazyByteString
+instance ToPgColumn O.PGTimestamptz Data.Time.UTCTime where toPgColumn = O.pgUTCTime
+instance ToPgColumn O.PGTimestamp Data.Time.LocalTime where toPgColumn = O.pgLocalTime
+instance ToPgColumn O.PGTime Data.Time.TimeOfDay where toPgColumn = O.pgTimeOfDay
+instance ToPgColumn O.PGDate Data.Time.Day where toPgColumn = O.pgDay
+instance ToPgColumn O.PGUuid Data.UUID.UUID where toPgColumn = O.pgUUID
+instance ToPgColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Text) where toPgColumn = O.pgCiStrictText
+instance ToPgColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Lazy.Text) where toPgColumn = O.pgCiLazyText
+instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJson hs where toPgColumn = O.pgLazyJSON . Data.Aeson.encode
+instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pgLazyJSONB . Data.Aeson.encode
 
 --------------------------------------------------------------------------------
 
