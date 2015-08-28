@@ -1,4 +1,4 @@
-Copyright (c) 2013-2014, Renzo Carbonara
+Copyright (c) 2015, Renzo Carbonara
 
 All rights reserved.
 
