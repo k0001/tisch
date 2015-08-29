@@ -448,6 +448,7 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[]       = ()
   All c (x ': xs) = (c x, All c xs)
 
+---
 
 -- | Defunctionalized 'Proxy'. To be used with 'Apply'.
 data ProxySym0 (a :: TyFun k *)
@@ -462,3 +463,24 @@ instance forall (x :: k) (xs :: [k]). DistributeProxy xs => DistributeProxy (x '
   distributeProxy _ = HCons (Proxy :: Proxy x) (distributeProxy (Proxy :: Proxy xs))
   {-# INLINE distributeProxy #-}
 
+
+---
+
+type family AllMaybes (xs :: [*]) :: Constraint where
+  AllMaybes '[] = ()
+  AllMaybes (Maybe x ': xs) = AllMaybes xs
+
+type family DropMaybes (xs :: [*]) :: [*] where
+  DropMaybes '[] = '[]
+  DropMaybes (Maybe x ': xs) = (x ': DropMaybes xs)
+
+class AllMaybes xs => UndistributeMaybe (xs :: [*]) where
+  undistributeMaybe :: HList xs -> Maybe (HList (DropMaybes xs))
+
+-- | @'undistributeMaybe' _ = 'Just' 'HNil'@
+instance UndistributeMaybe '[] where
+  undistributeMaybe _ = Just HNil
+  {-# INLINE undistributeMaybe #-}
+instance UndistributeMaybe xs => UndistributeMaybe (Maybe x ': xs) where
+  undistributeMaybe (HCons mx xs) = HCons <$> mx <*> undistributeMaybe xs
+  {-# INLINE undistributeMaybe #-}
