@@ -1,7 +1,7 @@
 module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
- , fromReqHs'
+ , fromRecHs'
  , recHs
  , viewC
  , setC
