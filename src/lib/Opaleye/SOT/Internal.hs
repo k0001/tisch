@@ -269,12 +269,12 @@ class TischCtx a => Tisch (a :: k) where
   -- For your convenience, you are encouraged to use 'viewC':
   --
   -- @
-  -- 'fromTisch' = Person \<$> 'viewC' ('C' :: 'C' "name")
+  -- 'fromReqHs' = Person \<$> 'viewC' ('C' :: 'C' "name")
   --                    \<*> 'viewC' ('C' :: 'C' "age")
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
-  fromTisch :: (MonadThrow m, MonadReader (RecHs a) m) => m (UnTisch a)
+  fromReqHs :: (MonadThrow m, MonadReader (RecHs a) m) => m (UnTisch a)
 
   -- | Convert an @'UnTisch' a@ to an Opaleye-compatible Haskell representation.
   --
@@ -282,15 +282,21 @@ class TischCtx a => Tisch (a :: k) where
   -- 'HL.hBuild':
   --
   -- @
-  -- 'toTisch' = \(Person name age) -> 'recHs' $ 'HL.hBuild'
+  -- 'toReqHs' = \(Person name age) -> 'recHs' $ 'HL.hBuild'
   --     ('setC' ('C' :: 'C' "name") name)
   --     ('setC' ('C' :: 'C' "age") age)
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
-  toTisch :: UnTisch a -> RecHs a
+  toReqHs :: UnTisch a -> RecHs a
 
--- | Convenience intended to be used within 'toTisch', together with 'HL.hBuild'.
+-- | Like 'fromReqHs', except it takes @a@ explicitely for the times when
+-- the it can't be inferred.
+fromReqHs' :: (MonadThrow m, MonadReader (RecHs a) m, Tisch a) => T a -> m (UnTisch a)
+fromReqHs' _ = fromReqHs
+{-# INLINE fromReqHs' #-}
+
+-- | Convenience intended to be used within 'toReqHs', together with 'HL.hBuild'.
 recHs
   :: forall a xs
   . (Tisch a, HL.HRearrange (HL.LabelsOf (Cols_Hs a)) xs (Cols_Hs a))
@@ -299,12 +305,12 @@ recHs
 recHs = Tagged . HL.Record . HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_Hs a)))
 {-# INLINE recHs #-}
 
--- | Convenience intended to be used within 'toTisch'. This is similar to 'HL..=.'.
+-- | Convenience intended to be used within 'toReqHs'. This is similar to 'HL..=.'.
 setC :: C c -> a -> Tagged c a
 setC _ = Tagged
 {-# INLINE setC #-}
 
--- | Convenience intended to be used within 'fromTisch'.
+-- | Convenience intended to be used within 'fromReqHs'.
 viewC :: (HL.HasField c (HL.Record (Cols_Hs t)) a, MonadReader (RecHs t) m) => C c -> m a
 viewC (_ :: C c) = asks (HL.hLookupByLabel (HL.Label :: HL.Label c) . unTagged)
 {-# INLINE viewC #-}
