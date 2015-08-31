@@ -311,8 +311,10 @@ tisch = tisch' T
 -- | Like 'tisch', but takes @a@ explicitly to help the compiler when it
 -- can't infer @a@.
 tisch' :: Tisch a => T a -> O.Table (TRec_PgWrite a) (TRec_PgRead a)
-tisch' (_ :: T a) = O.Table tableName (ppaUnTagged (ppa recProps))
+tisch' (_ :: T a) =
+    O.TableWithSchema schemaName tableName (ppaUnTagged (ppa recProps))
   where
+    schemaName = GHC.symbolVal (Proxy :: Proxy (SchemaName a))
     tableName = GHC.symbolVal (Proxy :: Proxy (TableName a))
     recProps = HL.Record (HL.hMapL (HCol_Props :: HCol_Props a)
                                    (hDistributeProxy (Proxy :: Proxy (Cols a))))
