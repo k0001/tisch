@@ -56,11 +56,15 @@ types :: ()
 types = seq x () where
   x :: ( TRecord Test '[]
            ~ HL.Tagged (T Test) (HL.Record '[])
+       , TRec_Hs Test
+           ~ TRecord Test (Cols_Hs Test)
        , Cols_Hs Test
            ~ '[HL.Tagged "c1" Bool,
                HL.Tagged "c2" (Maybe Bool),
                HL.Tagged "c3" Bool,
                HL.Tagged "c4" (Maybe Int64)]
+       , TRec_HsMay Test
+           ~ TRecord Test (Cols_HsMay Test)
        , Cols_HsMay Test
            ~ '[HL.Tagged "c1" (Maybe Bool),
                HL.Tagged "c2" (Maybe (Maybe Bool)),
@@ -72,11 +76,7 @@ types = seq x () where
 -- | Internal. See "Opaleye.SOT.Internal.Test".
 instance Comparable Test "c1" Test "c3" O.PGBool 
 
-query1
-  :: O.Query (TRecord Test (Cols_PgRead Test),
-              TRecord Test (Cols_PgRead Test),
-              TRecord Test (Cols_PgRead Test),
-              TRecord Test (Cols_PgReadNull Test))
+query1 :: O.Query (TRec_PgRead Test, TRec_PgRead Test, TRec_PgRead Test, TRec_PgReadNull Test)
 query1 = proc () -> do
    t1 <- O.queryTable tisch -< ()
    t2 <- O.queryTable tisch -< ()
@@ -91,37 +91,33 @@ query1 = proc () -> do
          (view (col (C::C "c3")) t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
 
-query2 :: O.Query (TRecord Test (Cols_PgRead Test))
+query2 :: O.Query (TRec_PgRead Test)
 query2 = proc () -> do
   (t,_,_,_) <- query1 -< ()
   returnA -< t
 
-outQuery2 :: Pg.Connection -> IO [TRecord Test (Cols_Hs Test)]
+outQuery2 :: Pg.Connection -> IO [TRec_Hs Test]
 outQuery2 conn = O.runQuery conn query2
 
-query3 :: O.Query (TRecord Test (Cols_PgReadNull Test))
+query3 :: O.Query (TRec_PgReadNull Test)
 query3 = proc () -> do
   (_,_,_,t) <- query1 -< ()
   returnA -< t
 
-outQuery3 :: Pg.Connection -> IO [Maybe (TRecord Test (Cols_Hs Test))]
-outQuery3 conn = fmap mayTisch <$> O.runQuery conn query3
+outQuery3 :: Pg.Connection -> IO [Maybe (TRec_Hs Test)]
+outQuery3 conn = fmap mayTRecHs <$> O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
 update1 conn = O.runUpdate conn tisch upd fil
-  where upd :: TRecord Test (Cols_PgRead Test) -> TRecord Test (Cols_PgWrite Test)
+  where upd :: TRec_PgRead Test -> TRec_PgWrite Test
         upd = over (cola (C::C "c3")) Just
             . over (cola (C::C "c4")) Just
         fil :: TRecord Test (Cols_PgRead Test) -> O.Column O.PGBool
         fil = \v -> eqc True (view (col (C::C "c1")) v)
 
-outQuery1 :: Pg.Connection -> IO [(TRecord Test (Cols_Hs Test),
-                                   TRecord Test (Cols_Hs Test),
-                                   TRecord Test (Cols_Hs Test),
-                                   Maybe (TRecord Test (Cols_Hs Test)))]
+outQuery1 :: Pg.Connection
+          -> IO [(TRec_Hs Test, TRec_Hs Test, TRec_Hs Test, Maybe (TRec_Hs Test))]
 outQuery1 conn = do
-  xs :: [(TRecord Test (Cols_Hs Test),
-          TRecord Test (Cols_Hs Test),
-          TRecord Test (Cols_Hs Test),
-          TRecord Test (Cols_HsMay Test))] <- O.runQuery conn query1
-  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayTisch d)
+  xs :: [(TRec_Hs Test, TRec_Hs Test, TRec_Hs Test, TRec_HsMay Test)]
+     <- O.runQuery conn query1
+  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayTRecHs d)

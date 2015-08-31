@@ -84,6 +84,7 @@ type family Col_WN (col :: Col GHC.Symbol WN RN * *) :: WN where
 data Col_WNSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) WN)
 type instance Apply Col_WNSym0 col = Col_WN col
 
+
 type family Col_RN (col :: Col GHC.Symbol WN RN * *) :: RN where
   Col_RN ('Col n w r p h) = r
 data Col_RNSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) RN)
@@ -192,10 +193,35 @@ type instance Apply Col_PgReadNullSym0 a = Col_PgReadNullSym1 a
 
 type TRecord (a :: *) xs = Tagged (T a) (HL.Record xs)
 
+-- | Haskell representation for @a@ having a column-per-column mapping to
+-- @'TRec_PgRead' a@. Use this type as the output type of 'O.runQuery'.
+type TRec_Hs (a :: *) = TRecord a (Cols_Hs a)
+
+-- | Haskell representation for @a@ having a column-per-column mapping to
+-- @'TRec_PgReadNull' a@. Use this type as the output type of 'O.runQuery'.
+--
+-- Convert a 'TRec_HsMay' to a more useful @'Maybe' ('TRec_Hs' a)@ using
+-- 'mayTRecHs'.
+type TRec_HsMay (a :: *) = TRecord a (Cols_HsMay a)
+
+mayTRecHs :: Tisch a => TRec_HsMay a -> Maybe (TRec_Hs a)
+mayTRecHs = fmap Tagged . recordUndistributeMaybe . unTagged
+{-# INLINE mayTRecHs #-}
+
+-- | Output type of @'O.queryTable' ('tisch'' ('T' :: 'T' a))@
+type TRec_PgRead (a :: *) = TRecord a (Cols_PgRead a)
+
+-- | Output type of the right hand side of a 'O.leftJoin'
+-- with @'tisch'' ('T' :: 'T' a)@.
+type TRec_PgReadNull (a :: *) = TRecord a (Cols_PgReadNull a)
+
+-- | Type used when writting @a@'s PostgreSQL representation to the database.
+type TRec_PgWrite (a :: *) = TRecord a (Cols_PgWrite a)
+
 --------------------------------------------------------------------------------
 
 -- | All these constraints need to be satisfied by tools that work with 'Tisch'.
--- It's easier to just write all the constraints once here and made 'TischCtx' a
+-- It's easier to just write all the constraints once here and make 'TischCtx' a
 -- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
 -- 'Tisch' so that we can get early compile time errors.
 type TischCtx a
@@ -223,12 +249,8 @@ class TischCtx a => Tisch (a :: *) where
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
   type Cols a :: [Col GHC.Symbol WN RN * *]
-  fromTisch :: MonadThrow m => TRecord a (Cols_Hs a) -> m a
-  toTisch :: a -> TRecord a (Cols_Hs a)
-
-mayTisch :: Tisch a => TRecord a (Cols_HsMay a) -> Maybe (TRecord a (Cols_Hs a))
-mayTisch = fmap Tagged . recordUndistributeMaybe . unTagged
-{-# INLINE mayTisch #-}
+  fromTisch :: MonadThrow m => TRec_Hs a -> m a
+  toTisch :: a -> TRec_Hs a
 
 --------------------------------------------------------------------------------
 
@@ -281,15 +303,13 @@ instance forall a (col :: Col GHC.Symbol WN RN * *) pcol out n w r p h
 --------------------------------------------------------------------------------
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-tisch ::  Tisch a => O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
+tisch ::  Tisch a => O.Table (TRec_PgWrite a) (TRec_PgRead a)
 tisch = tisch' T
 {-# INLINE tisch #-}
 
 -- | Like 'tisch', but takes @a@ explicitly to help the compiler when it
 -- can't infer @a@.
-tisch' :: Tisch a
-       => T a
-       -> O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
+tisch' :: Tisch a => T a -> O.Table (TRec_PgWrite a) (TRec_PgRead a)
 tisch' (_ :: T a) = O.Table tableName (ppaUnTagged (ppa recProps))
   where
     tableName = GHC.symbolVal (Proxy :: Proxy (TableName a))
@@ -370,7 +390,8 @@ col prx = cola prx . _Unwrapped
 
 -- | Lens to the value of a column without the 'TC' tag.
 --
--- Most of the time you'll want to use 'tc' instead.
+-- Most of the time you'll want to use 'col' instead, but this might be more useful
+-- when trying to change the type of @a@ during an update.
 cola :: forall t c xs xs' a a'
      .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
@@ -399,7 +420,7 @@ eqc la r = (O..==) (toPgColumn la) (unTagged r)
 --------------------------------------------------------------------------------
 
 -- | The functional dependencies make type inference easier, but also forbid some
--- otherwise sane instances. See the instance for 'Tagged' for example.
+-- otherwise acceptable instances. See the instance for 'Tagged' for example.
 class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
   ppa :: l -> p ra rb
 
@@ -443,22 +464,16 @@ instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged ta a
   def = ppaUnTagged PP.def
   {-# INLINE def #-}
 
--- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
-instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
-  def = P.rmap Just PP.def
-  {-# INLINE def #-}
-
--- instance {-# OVERLAPPABLE #-}
---    ( PP.ProductProfunctor p, PP.Default p a (Maybe b)
---    ) => PP.Default p (Tagged ta a) (Maybe (Tagged tb b)) where
---  def = P.dimap unTagged (fmap Tagged) PP.def
---  {-# INLINE def #-}
-
-instance 
-    ( PP.ProductProfunctor p, PP.Default p (O.Column (O.Nullable a)) (Maybe b)
-    ) => PP.Default p (Tagged ta (O.Column (O.Nullable a))) (Maybe (Tagged tb b)) where
-  def = P.dimap unTagged (fmap Tagged) PP.def
-  {-# INLINE def #-}
+-- -- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
+-- instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
+--   def = P.rmap Just PP.def
+--   {-# INLINE def #-}
+-- 
+-- instance 
+--     ( PP.ProductProfunctor p, PP.Default p (O.Column (O.Nullable a)) (Maybe b)
+--     ) => PP.Default p (Tagged ta (O.Column (O.Nullable a))) (Maybe (Tagged tb b)) where
+--   def = P.dimap unTagged (fmap Tagged) PP.def
+--   {-# INLINE def #-}
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance PP.ProductProfunctor p => PP.Default p (HList '[]) (HList '[]) where
@@ -470,7 +485,7 @@ instance
     ( PP.ProductProfunctor p, PP.Default p a1 b1, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HList (a1 ': as)) (HList (b1 ': bs)) where
   def = P.dimap (\(HCons x xs) -> (x,xs)) (uncurry HCons) (PP.def PP.***! PP.def)
-  {-# INLINE def #-}
+  {-# INLINABLE def #-}
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance
