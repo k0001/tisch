@@ -76,7 +76,7 @@ data Col name wn rn pgType hsType
 
 --
 
-type Cols_Names (a :: *) = List.Map Col_NameSym0 (Cols a)
+type Cols_Names (a :: k) = List.Map Col_NameSym0 (Cols a)
 type family Col_Name (col :: Col GHC.Symbol WN RN * *) :: GHC.Symbol where
   Col_Name ('Col n w r p h) = n
 data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) GHC.Symbol)
@@ -111,12 +111,12 @@ type instance Apply Col_HsTypeMaySym0 col = Col_HsTypeMay col
 ---
 
 -- | Lookup column info by name
-type Col_ByName (a :: *) (name :: GHC.Symbol) = Col_ByName' name (Cols a)
+type Col_ByName (a :: k) (name :: GHC.Symbol) = Col_ByName' name (Cols a)
 type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WN RN * *])
        :: Col GHC.Symbol WN RN * * where
   Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
   Col_ByName' n ('Col n' w r p h ': xs) = Col_ByName' n xs
-data Col_ByNameSym1 (a :: *) (name :: TyFun GHC.Symbol (Col GHC.Symbol WN RN * *))
+data Col_ByNameSym1 (a :: k) (name :: TyFun GHC.Symbol (Col GHC.Symbol WN RN * *))
 type instance Apply (Col_ByNameSym1 a) name = Col_ByName a name
 data Col_ByNameSym0 (name :: TyFun a (TyFun GHC.Symbol (Col GHC.Symbol WN RN * *) -> *))
 type instance Apply Col_ByNameSym0 a = Col_ByNameSym1 a
@@ -124,7 +124,7 @@ type instance Apply Col_ByNameSym0 a = Col_ByNameSym1 a
 ---
 
 -- | Type of the 'HL.Record' columns in Haskell.
-type Cols_Hs (a :: *) = List.Map Col_HsRecordFieldSym0 (Cols a)
+type Cols_Hs (a :: k) = List.Map Col_HsRecordFieldSym0 (Cols a)
 type Col_HsRecordField (col :: Col GHC.Symbol WN RN * *)
   = Tagged (Col_Name col) (Col_HsType col)
 data Col_HsRecordFieldSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
@@ -132,7 +132,7 @@ type instance Apply Col_HsRecordFieldSym0 col = Col_HsRecordField col
 
 -- | Type of the 'HL.Record' columns in Haskell when all the columns
 -- are @NULL@ (e.g., a missing rhs on a left join).
-type Cols_HsMay (a :: *) = List.Map Col_HsMayRecordFieldSym0 (Cols a)
+type Cols_HsMay (a :: k) = List.Map Col_HsMayRecordFieldSym0 (Cols a)
 type Col_HsMayRecordField (col :: Col GHC.Symbol WN RN * *)
   = Tagged (Col_Name col) (Col_HsTypeMay col)
 data Col_HsMayRecordFieldSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
@@ -155,13 +155,13 @@ data C (c :: GHC.Symbol) = C
 ---
 
 -- | Type of the 'HL.Record' columns when inserting or updating a row.
-type Cols_PgWrite (a :: *) = List.Map (Col_PgWriteSym0 @@ a) (Cols a)
-type family Col_PgWrite (a :: *) (col :: Col GHC.Symbol WN RN * *) :: * where
+type Cols_PgWrite (a :: k) = List.Map (Col_PgWriteSym0 @@ a) (Cols a)
+type family Col_PgWrite (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgWrite a ('Col n 'W 'R p h) = Tagged (TC a n) (O.Column p)
   Col_PgWrite a ('Col n 'W 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable p))
   Col_PgWrite a ('Col n 'WN 'R p h) = Tagged (TC a n) (Maybe (O.Column p))
   Col_PgWrite a ('Col n 'WN 'RN p h) = Tagged (TC a n) (Maybe (O.Column (O.Nullable p)))
-data Col_PgWriteSym1 (a :: *) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+data Col_PgWriteSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgWriteSym1 a) col = Col_PgWrite a col
 data Col_PgWriteSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
 type instance Apply Col_PgWriteSym0 a = Col_PgWriteSym1 a
@@ -169,11 +169,11 @@ type instance Apply Col_PgWriteSym0 a = Col_PgWriteSym1 a
 ---
 
 -- | Type of the 'HL.Record' columns (e.g., result of 'O.query')
-type Cols_PgRead (a :: *) = List.Map (Col_PgReadSym0 @@ a) (Cols a)
-type family Col_PgRead (a :: *) (col :: Col GHC.Symbol WN RN * *) :: * where
+type Cols_PgRead (a :: k) = List.Map (Col_PgReadSym0 @@ a) (Cols a)
+type family Col_PgRead (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgRead a ('Col n w 'R  p h) = Tagged (TC a n) (O.Column p)
   Col_PgRead a ('Col n w 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable p))
-data Col_PgReadSym1 (a :: *) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+data Col_PgReadSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgReadSym1 a) col = Col_PgRead a col
 data Col_PgReadSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
 type instance Apply Col_PgReadSym0 a = Col_PgReadSym1 a
@@ -182,43 +182,43 @@ type instance Apply Col_PgReadSym0 a = Col_PgReadSym1 a
 
 -- | Type of the 'HL.Record' columns when they can all be nullable
 -- (e.g., rhs on a 'O.leftJoin').
-type Cols_PgReadNull (a :: *) = List.Map (Col_PgReadNullSym0 @@ a) (Cols a)
-type family Col_PgReadNull (a :: *) (col :: Col GHC.Symbol WN RN * *) :: * where
+type Cols_PgReadNull (a :: k) = List.Map (Col_PgReadNullSym0 @@ a) (Cols a)
+type family Col_PgReadNull (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgReadNull a ('Col n w 'R  p h) = Tagged (TC a n) (O.Column (O.Nullable p))
   Col_PgReadNull a ('Col n w 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable (O.Nullable p)))
-data Col_PgReadNullSym1 (a :: *) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+data Col_PgReadNullSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgReadNullSym1 a) col = Col_PgReadNull a col
 data Col_PgReadNullSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
 type instance Apply Col_PgReadNullSym0 a = Col_PgReadNullSym1 a
 
 --------------------------------------------------------------------------------
 
-type Rec (a :: *) xs = Tagged (T a) (HL.Record xs)
+type Rec (a :: k) xs = Tagged (T a) (HL.Record xs)
 
 -- | Haskell representation for @a@ having a column-per-column mapping to
 -- @'RecPgRead' a@. Use this type as the output type of 'O.runQuery'.
-type RecHs (a :: *) = Rec a (Cols_Hs a)
+type RecHs (a :: k) = Rec a (Cols_Hs a)
 
 -- | Haskell representation for @a@ having a column-per-column mapping to
 -- @'RecPgReadNull' a@. Use this type as the output type of 'O.runQuery'.
 --
 -- Convert a 'RecHsMay' to a more useful @'Maybe' ('RecHs' a)@ using
 -- 'mayTRecHs'.
-type RecHsMay (a :: *) = Rec a (Cols_HsMay a)
+type RecHsMay (a :: k) = Rec a (Cols_HsMay a)
 
 mayTRecHs :: Tisch a => RecHsMay a -> Maybe (RecHs a)
 mayTRecHs = fmap Tagged . recordUndistributeMaybe . unTagged
 {-# INLINE mayTRecHs #-}
 
 -- | Output type of @'O.queryTable' ('tisch'' ('T' :: 'T' a))@
-type RecPgRead (a :: *) = Rec a (Cols_PgRead a)
+type RecPgRead (a :: k) = Rec a (Cols_PgRead a)
 
 -- | Output type of the right hand side of a 'O.leftJoin'
 -- with @'tisch'' ('T' :: 'T' a)@.
-type RecPgReadNull (a :: *) = Rec a (Cols_PgReadNull a)
+type RecPgReadNull (a :: k) = Rec a (Cols_PgReadNull a)
 
 -- | Type used when writting @a@'s PostgreSQL representation to the database.
-type RecPgWrite (a :: *) = Rec a (Cols_PgWrite a)
+type RecPgWrite (a :: k) = Rec a (Cols_PgWrite a)
 
 --------------------------------------------------------------------------------
 
@@ -247,8 +247,8 @@ type TischCtx a
     )
 
 -- | Tisch means table in german.
-class TischCtx a => Tisch (a :: *) where
-  type UnTisch a :: *
+class TischCtx a => Tisch (a :: k) where
+  type UnTisch a :: k
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
   type Cols a :: [Col GHC.Symbol WN RN * *]
@@ -302,12 +302,12 @@ viewC (_ :: C c) = asks (HL.hLookupByLabel (HL.Label :: HL.Label c) . unTagged)
 --------------------------------------------------------------------------------
 
 -- | 'O.TableProperties' for all the columns in 'Tisch' @a@.
-type Cols_Props (a :: *) = List.Map (Col_PropsSym1 a) (Cols a)
+type Cols_Props (a :: k) = List.Map (Col_PropsSym1 a) (Cols a)
 
 -- | 'O.TableProperties' for a single column in 'Tisch' @a@.
-type Col_Props (a :: *) (col :: Col GHC.Symbol WN RN * *)
+type Col_Props (a :: k) (col :: Col GHC.Symbol WN RN * *)
   = O.TableProperties (Col_PgWrite a col) (Col_PgRead a col)
-data Col_PropsSym1 (a :: *) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+data Col_PropsSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PropsSym1 a) col = Col_Props a col
 data Col_PropsSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
 type instance Apply Col_PropsSym0 a = Col_PropsSym1 a
@@ -333,7 +333,7 @@ instance forall n p h. GHC.KnownSymbol n => ICol_Props ('Col n 'WN 'RN p h) wher
   {-# INLINE colProps #-}
 
 -- | Use with 'HL.ApplyAB' to apply 'colProps' to each element of an 'HList'.
-data HCol_Props (a :: *) = HCol_Props
+data HCol_Props (a :: k) = HCol_Props
 
 instance forall a (col :: Col GHC.Symbol WN RN * *) pcol out n w r p h
   . ( Tisch a
@@ -369,7 +369,7 @@ tisch' (_ :: T a) =
 
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
-class (Tisch t1, Tisch t2) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: *) where
+class (Tisch t1, Tisch t2) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: k) where
   _ComparableL :: Iso (Tagged (TC t1 c1) (O.Column a)) (Tagged (TC t2 c2) (O.Column a)) (O.Column a) (O.Column a)
   _ComparableL = _Wrapped
   _ComparableR :: Iso (Tagged (TC t2 c2) (O.Column a)) (Tagged (TC t1 c1) (O.Column a)) (O.Column a) (O.Column a)
