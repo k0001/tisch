@@ -142,11 +142,11 @@ type instance Apply Col_HsMayRecordFieldSym0 col = Col_HsMayRecordField col
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- table in a specific schema.
-data Tisch t => T (t :: *) = T
+data Tisch t => T (t :: k) = T
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in a specific table in a specific schema.
-data Tisch t => TC (t :: *) (c :: GHC.Symbol) = TC
+data Tisch t => TC (t :: k) (c :: GHC.Symbol) = TC
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
@@ -247,10 +247,20 @@ type TischCtx a
     )
 
 -- | Tisch means table in german.
+--
+-- An instance of this class can uniquely describe a PostgreSQL table and
+-- how to convert back and forth between it and its Haskell representation.
+--
+-- The @a@ type is only used as a tag for the purposes of uniquely identifying
+-- this 'Tisch'. It can be whatever you want.
 class TischCtx a => Tisch (a :: k) where
-  type UnTisch a :: k
+  -- | The Haskell type that this 'Tisch' represents.
+  type UnTisch a :: *
+
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
+
+  -- | Columns in this table. See the documentation for 'Col'.
   type Cols a :: [Col GHC.Symbol WN RN * *]
 
   -- | Convert an Opaleye-compatible Haskell representation of @'UnTisch' a@ to
@@ -369,7 +379,7 @@ tisch' (_ :: T a) =
 
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
-class (Tisch t1, Tisch t2) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: k) where
+class (Tisch t1, Tisch t2) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: *) where
   _ComparableL :: Iso (Tagged (TC t1 c1) (O.Column a)) (Tagged (TC t2 c2) (O.Column a)) (O.Column a) (O.Column a)
   _ComparableL = _Wrapped
   _ComparableR :: Iso (Tagged (TC t2 c2) (O.Column a)) (Tagged (TC t1 c1) (O.Column a)) (O.Column a) (O.Column a)
