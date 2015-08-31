@@ -36,13 +36,13 @@ instance Tisch Test where
                    , 'Col "c2" 'W 'RN O.PGBool Bool
                    , 'Col "c3" 'WN 'R O.PGBool Bool
                    , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
-  fromTisch :: MonadThrow m => TRecord Test '[HL.Tagged "c1" Bool, HL.Tagged "c2" (Maybe Bool), HL.Tagged "c3" Bool, HL.Tagged "c4" (Maybe Int64)] -> m Test
+  fromTisch :: MonadThrow m => Rec Test '[HL.Tagged "c1" Bool, HL.Tagged "c2" (Maybe Bool), HL.Tagged "c3" Bool, HL.Tagged "c4" (Maybe Int64)] -> m Test
   fromTisch (HL.Tagged r) = return $ Test
      (HL.hLookupByLabel (HL.Label :: HL.Label "c1") r)
      (HL.hLookupByLabel (HL.Label :: HL.Label "c2") r)
      (HL.hLookupByLabel (HL.Label :: HL.Label "c3") r)
      (HL.hLookupByLabel (HL.Label :: HL.Label "c4") r)
-  toTisch :: Test -> TRecord Test '[HL.Tagged "c1" Bool, HL.Tagged "c2" (Maybe Bool), HL.Tagged "c3" Bool, HL.Tagged "c4" (Maybe Int64)]
+  toTisch :: Test -> Rec Test '[HL.Tagged "c1" Bool, HL.Tagged "c2" (Maybe Bool), HL.Tagged "c3" Bool, HL.Tagged "c4" (Maybe Int64)]
   toTisch (Test c1 c2 c3 c4) = HL.Tagged $ HL.hRearrange' $
      (HL.Label :: HL.Label "c2") HL..=. c2 HL..*.
      (HL.Label :: HL.Label "c1") HL..=. c1 HL..*.
@@ -54,17 +54,17 @@ instance Tisch Test where
 
 types :: ()
 types = seq x () where
-  x :: ( TRecord Test '[]
+  x :: ( Rec Test '[]
            ~ HL.Tagged (T Test) (HL.Record '[])
-       , TRec_Hs Test
-           ~ TRecord Test (Cols_Hs Test)
+       , RecHs Test
+           ~ Rec Test (Cols_Hs Test)
        , Cols_Hs Test
            ~ '[HL.Tagged "c1" Bool,
                HL.Tagged "c2" (Maybe Bool),
                HL.Tagged "c3" Bool,
                HL.Tagged "c4" (Maybe Int64)]
-       , TRec_HsMay Test
-           ~ TRecord Test (Cols_HsMay Test)
+       , RecHsMay Test
+           ~ Rec Test (Cols_HsMay Test)
        , Cols_HsMay Test
            ~ '[HL.Tagged "c1" (Maybe Bool),
                HL.Tagged "c2" (Maybe (Maybe Bool)),
@@ -76,7 +76,7 @@ types = seq x () where
 -- | Internal. See "Opaleye.SOT.Internal.Test".
 instance Comparable Test "c1" Test "c3" O.PGBool 
 
-query1 :: O.Query (TRec_PgRead Test, TRec_PgRead Test, TRec_PgRead Test, TRec_PgReadNull Test)
+query1 :: O.Query (RecPgRead Test, RecPgRead Test, RecPgRead Test, RecPgReadNull Test)
 query1 = proc () -> do
    t1 <- O.queryTable tisch -< ()
    t2 <- O.queryTable tisch -< ()
@@ -91,33 +91,33 @@ query1 = proc () -> do
          (view (col (C::C "c3")) t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
 
-query2 :: O.Query (TRec_PgRead Test)
+query2 :: O.Query (RecPgRead Test)
 query2 = proc () -> do
   (t,_,_,_) <- query1 -< ()
   returnA -< t
 
-outQuery2 :: Pg.Connection -> IO [TRec_Hs Test]
+outQuery2 :: Pg.Connection -> IO [RecHs Test]
 outQuery2 conn = O.runQuery conn query2
 
-query3 :: O.Query (TRec_PgReadNull Test)
+query3 :: O.Query (RecPgReadNull Test)
 query3 = proc () -> do
   (_,_,_,t) <- query1 -< ()
   returnA -< t
 
-outQuery3 :: Pg.Connection -> IO [Maybe (TRec_Hs Test)]
+outQuery3 :: Pg.Connection -> IO [Maybe (RecHs Test)]
 outQuery3 conn = fmap mayTRecHs <$> O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
 update1 conn = O.runUpdate conn tisch upd fil
-  where upd :: TRec_PgRead Test -> TRec_PgWrite Test
+  where upd :: RecPgRead Test -> RecPgWrite Test
         upd = over (cola (C::C "c3")) Just
             . over (cola (C::C "c4")) Just
-        fil :: TRecord Test (Cols_PgRead Test) -> O.Column O.PGBool
+        fil :: Rec Test (Cols_PgRead Test) -> O.Column O.PGBool
         fil = \v -> eqc True (view (col (C::C "c1")) v)
 
 outQuery1 :: Pg.Connection
-          -> IO [(TRec_Hs Test, TRec_Hs Test, TRec_Hs Test, Maybe (TRec_Hs Test))]
+          -> IO [(RecHs Test, RecHs Test, RecHs Test, Maybe (RecHs Test))]
 outQuery1 conn = do
-  xs :: [(TRec_Hs Test, TRec_Hs Test, TRec_Hs Test, TRec_HsMay Test)]
+  xs :: [(RecHs Test, RecHs Test, RecHs Test, RecHsMay Test)]
      <- O.runQuery conn query1
   return $ xs <&> \(a,b,c,d) -> (a,b,c, mayTRecHs d)

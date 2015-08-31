@@ -2,12 +2,12 @@ module Opaleye.SOT
  ( Tisch(..)
  , tisch
  , tisch'
- , TRec_Hs
- , TRec_HsMay
+ , RecHs
+ , RecHsMay
  , mayTRecHs
- , TRec_PgRead
- , TRec_PgReadNull
- , TRec_PgWrite
+ , RecPgRead
+ , RecPgReadNull
+ , RecPgWrite
 
    -- * Accessing columns
  , col

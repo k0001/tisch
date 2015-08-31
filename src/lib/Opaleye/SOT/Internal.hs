@@ -192,32 +192,32 @@ type instance Apply Col_PgReadNullSym0 a = Col_PgReadNullSym1 a
 
 --------------------------------------------------------------------------------
 
-type TRecord (a :: *) xs = Tagged (T a) (HL.Record xs)
+type Rec (a :: *) xs = Tagged (T a) (HL.Record xs)
 
 -- | Haskell representation for @a@ having a column-per-column mapping to
--- @'TRec_PgRead' a@. Use this type as the output type of 'O.runQuery'.
-type TRec_Hs (a :: *) = TRecord a (Cols_Hs a)
+-- @'RecPgRead' a@. Use this type as the output type of 'O.runQuery'.
+type RecHs (a :: *) = Rec a (Cols_Hs a)
 
 -- | Haskell representation for @a@ having a column-per-column mapping to
--- @'TRec_PgReadNull' a@. Use this type as the output type of 'O.runQuery'.
+-- @'RecPgReadNull' a@. Use this type as the output type of 'O.runQuery'.
 --
--- Convert a 'TRec_HsMay' to a more useful @'Maybe' ('TRec_Hs' a)@ using
+-- Convert a 'RecHsMay' to a more useful @'Maybe' ('RecHs' a)@ using
 -- 'mayTRecHs'.
-type TRec_HsMay (a :: *) = TRecord a (Cols_HsMay a)
+type RecHsMay (a :: *) = Rec a (Cols_HsMay a)
 
-mayTRecHs :: Tisch a => TRec_HsMay a -> Maybe (TRec_Hs a)
+mayTRecHs :: Tisch a => RecHsMay a -> Maybe (RecHs a)
 mayTRecHs = fmap Tagged . recordUndistributeMaybe . unTagged
 {-# INLINE mayTRecHs #-}
 
 -- | Output type of @'O.queryTable' ('tisch'' ('T' :: 'T' a))@
-type TRec_PgRead (a :: *) = TRecord a (Cols_PgRead a)
+type RecPgRead (a :: *) = Rec a (Cols_PgRead a)
 
 -- | Output type of the right hand side of a 'O.leftJoin'
 -- with @'tisch'' ('T' :: 'T' a)@.
-type TRec_PgReadNull (a :: *) = TRecord a (Cols_PgReadNull a)
+type RecPgReadNull (a :: *) = Rec a (Cols_PgReadNull a)
 
 -- | Type used when writting @a@'s PostgreSQL representation to the database.
-type TRec_PgWrite (a :: *) = TRecord a (Cols_PgWrite a)
+type RecPgWrite (a :: *) = Rec a (Cols_PgWrite a)
 
 --------------------------------------------------------------------------------
 
@@ -250,8 +250,8 @@ class TischCtx a => Tisch (a :: *) where
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
   type Cols a :: [Col GHC.Symbol WN RN * *]
-  fromTisch :: MonadThrow m => TRec_Hs a -> m a
-  toTisch :: a -> TRec_Hs a
+  fromTisch :: MonadThrow m => RecHs a -> m a
+  toTisch :: a -> RecHs a
 
 --------------------------------------------------------------------------------
 
@@ -304,13 +304,13 @@ instance forall a (col :: Col GHC.Symbol WN RN * *) pcol out n w r p h
 --------------------------------------------------------------------------------
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-tisch ::  Tisch a => O.Table (TRec_PgWrite a) (TRec_PgRead a)
+tisch ::  Tisch a => O.Table (RecPgWrite a) (RecPgRead a)
 tisch = tisch' T
 {-# INLINE tisch #-}
 
 -- | Like 'tisch', but takes @a@ explicitly to help the compiler when it
 -- can't infer @a@.
-tisch' :: Tisch a => T a -> O.Table (TRec_PgWrite a) (TRec_PgRead a)
+tisch' :: Tisch a => T a -> O.Table (RecPgWrite a) (RecPgRead a)
 tisch' (_ :: T a) =
     O.TableWithSchema schemaName tableName (ppaUnTagged (ppa recProps))
   where
@@ -387,7 +387,7 @@ instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pg
 -- | Lens to the value of a column.
 col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
     => C c
-    -> Lens (TRecord t xs) (TRecord t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
+    -> Lens (Rec t xs) (Rec t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
 col prx = cola prx . _Unwrapped
 {-# INLINE col #-}
 
@@ -398,7 +398,7 @@ col prx = cola prx . _Unwrapped
 cola :: forall t c xs xs' a a'
      .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
-     -> Lens (TRecord t xs) (TRecord t xs') a a'
+     -> Lens (Rec t xs) (Rec t xs') a a'
 cola (_ :: C c) = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 {-# INLINE cola #-}
 
