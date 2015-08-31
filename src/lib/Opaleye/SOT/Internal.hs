@@ -18,6 +18,7 @@ module Opaleye.SOT.Internal where
 
 import           Control.Lens
 import           Control.Monad.Catch (MonadThrow)
+import           Control.Monad.Reader (MonadReader, asks)
 import qualified Data.Aeson
 import qualified Data.ByteString
 import qualified Data.ByteString.Lazy
@@ -75,6 +76,7 @@ data Col name wn rn pgType hsType
 
 --
 
+type Cols_Names (a :: *) = List.Map Col_NameSym0 (Cols a)
 type family Col_Name (col :: Col GHC.Symbol WN RN * *) :: GHC.Symbol where
   Col_Name ('Col n w r p h) = n
 data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) GHC.Symbol)
@@ -84,7 +86,6 @@ type family Col_WN (col :: Col GHC.Symbol WN RN * *) :: WN where
   Col_WN ('Col n w r p h) = w
 data Col_WNSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) WN)
 type instance Apply Col_WNSym0 col = Col_WN col
-
 
 type family Col_RN (col :: Col GHC.Symbol WN RN * *) :: RN where
   Col_RN ('Col n w r p h) = r
@@ -238,11 +239,11 @@ type TischCtx a
     , HUndistributeMaybe (DropMaybes (HL.RecordValuesR (Cols_HsMay a))) (HL.RecordValuesR (Cols_HsMay a))
     , HL.RecordValues (Cols_HsMay a)
     , HL.RecordValues (Cols_Hs a)
-    , HL.HAllTaggedLV (Cols_HsMay a)
-    , HL.HAllTaggedLV (Cols_Hs a)
-    , HL.HAllTaggedLV (Cols_PgRead a)
-    , HL.HAllTaggedLV (Cols_PgReadNull a)
-    , HL.HAllTaggedLV (Cols_PgWrite a)
+    , HL.HRLabelSet (Cols_HsMay a)
+    , HL.HRLabelSet (Cols_Hs a)
+    , HL.HRLabelSet (Cols_PgRead a)
+    , HL.HRLabelSet (Cols_PgReadNull a)
+    , HL.HRLabelSet (Cols_PgWrite a)
     )
 
 -- | Tisch means table in german.
@@ -251,8 +252,52 @@ class TischCtx a => Tisch (a :: *) where
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
   type Cols a :: [Col GHC.Symbol WN RN * *]
-  fromTisch :: MonadThrow m => RecHs a -> m (UnTisch a)
+
+  -- | Convert an Opaleye-compatible Haskell representation of @'UnTisch' a@ to
+  -- @'UnTisch' a@.
+  --
+  -- For your convenience, you are encouraged to use 'viewC':
+  --
+  -- @
+  -- 'fromTisch' = Person \<$> 'viewC' ('C' :: 'C' "name")
+  --                    \<*> 'viewC' ('C' :: 'C' "age")
+  -- @
+  --
+  -- You may also use other tools from "Data.HList.Record" as you see fit.
+  fromTisch :: (MonadThrow m, MonadReader (RecHs a) m) => m (UnTisch a)
+
+  -- | Convert an @'UnTisch' a@ to an Opaleye-compatible Haskell representation.
+  --
+  -- For your convenience, you are encouraged to use 'setC' and 'recHs' together with
+  -- 'HL.hBuild':
+  --
+  -- @
+  -- 'toTisch' = \(Person name age) -> 'recHs' $ 'HL.hBuild'
+  --     ('setC' ('C' :: 'C' "name") name)
+  --     ('setC' ('C' :: 'C' "age") age)
+  -- @
+  --
+  -- You may also use other tools from "Data.HList.Record" as you see fit.
   toTisch :: UnTisch a -> RecHs a
+
+-- | Convenience intended to be used within 'toTisch', together with 'HL.hBuild'.
+recHs
+  :: forall a xs
+  . (Tisch a, HL.HRearrange (HL.LabelsOf (Cols_Hs a)) xs (Cols_Hs a))
+  => HList xs
+  -> RecHs a -- ^
+recHs = Tagged . HL.Record . HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_Hs a)))
+{-# INLINE recHs #-}
+
+-- | Convenience intended to be used within 'toTisch'. This is similar to 'HL..=.'.
+setC :: C c -> a -> Tagged c a
+setC _ = Tagged
+{-# INLINE setC #-}
+
+-- | Convenience intended to be used within 'fromTisch'.
+viewC :: (HL.HasField c (HL.Record (Cols_Hs t)) a, MonadReader (RecHs t) m) => C c -> m a
+viewC (_ :: C c) = asks (HL.hLookupByLabel (HL.Label :: HL.Label c) . unTagged)
+{-# INLINE viewC #-}
 
 --------------------------------------------------------------------------------
 

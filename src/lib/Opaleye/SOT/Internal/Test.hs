@@ -15,7 +15,6 @@ module Opaleye.SOT.Internal.Test where
 
 import           Control.Arrow
 import           Control.Lens
-import           Control.Monad.Catch as Cx
 import qualified Data.HList as HL
 import           Data.Int
 import qualified Database.PostgreSQL.Simple as Pg
@@ -28,7 +27,7 @@ import           Opaleye.SOT.Internal
 
 data Test = Test Bool (Maybe Bool) Bool (Maybe Int64)
 
-
+-- | Internal. See "Opaleye.SOT.Internal.Test".
 instance Tisch Test where
   type UnTisch Test = Test
   type SchemaName Test = "s"
@@ -37,21 +36,16 @@ instance Tisch Test where
                    , 'Col "c2" 'W 'RN O.PGBool Bool
                    , 'Col "c3" 'WN 'R O.PGBool Bool
                    , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
-  fromTisch :: MonadThrow m => Rec Test '[HL.Tagged "c1" Bool, HL.Tagged "c2" (Maybe Bool), HL.Tagged "c3" Bool, HL.Tagged "c4" (Maybe Int64)] -> m Test
-  fromTisch (HL.Tagged r) = return $ Test
-     (HL.hLookupByLabel (HL.Label :: HL.Label "c1") r)
-     (HL.hLookupByLabel (HL.Label :: HL.Label "c2") r)
-     (HL.hLookupByLabel (HL.Label :: HL.Label "c3") r)
-     (HL.hLookupByLabel (HL.Label :: HL.Label "c4") r)
-  toTisch :: Test -> Rec Test '[HL.Tagged "c1" Bool, HL.Tagged "c2" (Maybe Bool), HL.Tagged "c3" Bool, HL.Tagged "c4" (Maybe Int64)]
-  toTisch (Test c1 c2 c3 c4) = HL.Tagged $ HL.hRearrange' $
-     (HL.Label :: HL.Label "c2") HL..=. c2 HL..*.
-     (HL.Label :: HL.Label "c1") HL..=. c1 HL..*.
-     (HL.Label :: HL.Label "c4") HL..=. c4 HL..*.
-     (HL.Label :: HL.Label "c3") HL..=. c3 HL..*.
-     HL.emptyRecord
-
-
+  fromTisch = Test <$> viewC (C::C "c1")
+                   <*> viewC (C::C "c2")
+                   <*> viewC (C::C "c3")
+                   <*> viewC (C::C "c4")
+  toTisch (Test c1 c2 c3 c4) = recHs $ HL.hBuild 
+     -- The other of the fields can change here.
+     (setC (C::C "c2") c2)
+     (setC (C::C "c4") c4)
+     (setC (C::C "c1") c1) 
+     (setC (C::C "c3") c3)
 
 types :: ()
 types = seq x () where
