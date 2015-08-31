@@ -365,14 +365,17 @@ instance forall a (col :: Col GHC.Symbol WN RN * *) pcol out n w r p h
 
 --------------------------------------------------------------------------------
 
+-- | Opaleye 'O.Table' for a 'Tisch'.
+type TischTable (a :: k) = O.Table (RecPgWrite a) (RecPgRead a)
+
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-tisch ::  Tisch a => O.Table (RecPgWrite a) (RecPgRead a)
+tisch :: Tisch a => TischTable a
 tisch = tisch' T
 {-# INLINE tisch #-}
 
 -- | Like 'tisch', but takes @a@ explicitly to help the compiler when it
 -- can't infer @a@.
-tisch' :: Tisch a => T a -> O.Table (RecPgWrite a) (RecPgRead a)
+tisch' :: Tisch a => T a -> TischTable a
 tisch' (_ :: T a) =
     O.TableWithSchema schemaName tableName (ppaUnTagged (ppa recProps))
   where

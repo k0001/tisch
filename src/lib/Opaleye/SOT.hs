@@ -7,6 +7,7 @@ module Opaleye.SOT
  , setC
  
    -- * Working with 'Tisch'
+ , TischTable
  , tisch
  , tisch'
  , RecHs
