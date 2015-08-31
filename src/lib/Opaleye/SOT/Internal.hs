@@ -38,6 +38,7 @@ import qualified Data.Promotion.Prelude.List as List (Map)
 import           GHC.Exts (Constraint)
 import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
+import qualified Opaleye.Internal.Join as OI
 
 --------------------------------------------------------------------------------
 
@@ -327,7 +328,7 @@ class (Tisch t1, Tisch t2) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) 
   _ComparableR = _Wrapped
 
 -- | Trivial. Same table, same column, same value.
-instance Tisch t => Comparable t c t c a
+instance Tisch t => Comparable t c t c a 
 
 --------------------------------------------------------------------------------
 
@@ -401,8 +402,13 @@ cola (_ :: C c) = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 
 --------------------------------------------------------------------------------
 
--- | Like 'O..==', but restricted to 'Comparable' columns.
-eq :: Comparable lt lc rt rc a
+type family IsNotNullable (x :: *) :: Constraint where
+  IsNotNullable (O.Nullable x) = ('True ~ 'False)
+  IsNotNullable x = ()
+
+-- | Like 'O..==', but restricted to 'Comparable' columns and not 'O.Nullable'
+-- columns.
+eq :: (Comparable lt lc rt rc a, IsNotNullable a)
    => Tagged (TC lt lc) (O.Column a)
    -> Tagged (TC rt rc) (O.Column a)
    -> O.Column O.PGBool
@@ -410,12 +416,33 @@ eq l r = (O..==) (view _ComparableL l) (view _ComparableR r)
 {-# INLINE eq #-}
 
 -- | Like 'eq', but the first argument is a constant.
-eqc :: (ToPgColumn a h)
+eqc :: (ToPgColumn a h, IsNotNullable a)
     => h
     -> Tagged (TC rt rc) (O.Column a)
     -> O.Column O.PGBool
-eqc la r = (O..==) (toPgColumn la) (unTagged r)
+eqc lh r = (O..==) (toPgColumn lh) (unTagged r)
 {-# INLINE eqc #-}
+
+-- | Like 'O..==', but restricted to 'Comparable' columns and 'O.Nullable'
+-- columns. The first argument doesn't need to be 'O.Nullable' already.
+eqn :: ( Comparable lt lc rt rc (O.Nullable a)
+       , PP.Default OI.NullMaker (O.Column a') (O.Column (O.Nullable a)))
+    => Tagged (TC lt lc) (O.Column a')
+    -> Tagged (TC rt rc) (O.Column (O.Nullable a))
+    -> O.Column (O.Nullable O.PGBool)
+eqn l r = O.toNullable $ (O..==)
+   (OI.toNullable PP.def (view _ComparableL l))
+   (view _ComparableR r)
+{-# INLINE eqn #-}
+
+-- | Like 'eqn', but the first argument is a constant.
+eqnc :: ToPgColumn (O.Nullable a) (Maybe h)
+     => Maybe h
+     -> Tagged (TC rt rc) (O.Column (O.Nullable a))
+     -> O.Column (O.Nullable O.PGBool)
+eqnc lmh r = O.toNullable $ (O..==) (toPgColumn lmh) (unTagged r)
+{-# INLINE eqnc #-}
+
 
 --------------------------------------------------------------------------------
 

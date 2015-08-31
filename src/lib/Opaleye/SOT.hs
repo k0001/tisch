@@ -16,6 +16,8 @@ module Opaleye.SOT
    -- * Querying
  , eq
  , eqc
+ , eqn
+ , eqnc
 
    -- * Types
  , Comparable
