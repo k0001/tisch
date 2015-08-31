@@ -1,11 +1,9 @@
-{-# LANGUAGE Arrows #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -56,11 +54,11 @@ data WN = W  -- ^ Write plain value.
 -- | Column description.
 --
 -- This is only used as a promoted datatype expected to have kind
--- @'Col' 'GHC.Symbol' 'WN' 'RN' * *@. 
+-- @'Col' 'GHC.Symbol' 'WN' 'RN' * *@.
 --
 -- * @name@: Column name.
 --
--- * @wn@: Whether @NULL@ can be written to this column ('WN') or not ('W'). 
+-- * @wn@: Whether @NULL@ can be written to this column ('WN') or not ('W').
 --
 -- * @rn@: Whether @NULL@ might be read from this column ('RN') or not ('R').
 --
@@ -103,7 +101,7 @@ data Col_HsTypeSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply Col_HsTypeSym0 col = Col_HsType col
 
 type family Col_HsTypeMay (col :: Col GHC.Symbol WN RN * *) :: * where
-  Col_HsTypeMay ('Col n w r p h) = Maybe h
+  Col_HsTypeMay ('Col n w r p h) = Maybe (Col_HsType ('Col n w r p h))
 data Col_HsTypeMaySym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply Col_HsTypeMaySym0 col = Col_HsTypeMay col
 
@@ -170,7 +168,7 @@ type instance Apply Col_PgWriteSym0 a = Col_PgWriteSym1 a
 -- | Type of the 'HL.Record' columns (e.g., result of 'O.query')
 type Cols_PgRead (a :: *) = List.Map (Col_PgReadSym0 @@ a) (Cols a)
 type family Col_PgRead (a :: *) (col :: Col GHC.Symbol WN RN * *) :: * where
-  Col_PgRead a ('Col n w 'R p h) = Tagged (TC a n) (O.Column p)
+  Col_PgRead a ('Col n w 'R  p h) = Tagged (TC a n) (O.Column p)
   Col_PgRead a ('Col n w 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable p))
 data Col_PgReadSym1 (a :: *) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgReadSym1 a) col = Col_PgRead a col
@@ -183,7 +181,8 @@ type instance Apply Col_PgReadSym0 a = Col_PgReadSym1 a
 -- (e.g., rhs on a 'O.leftJoin').
 type Cols_PgReadNull (a :: *) = List.Map (Col_PgReadNullSym0 @@ a) (Cols a)
 type family Col_PgReadNull (a :: *) (col :: Col GHC.Symbol WN RN * *) :: * where
-  Col_PgReadNull a ('Col n w r p h) = Tagged (TC a n) (O.Column (O.Nullable p))
+  Col_PgReadNull a ('Col n w 'R  p h) = Tagged (TC a n) (O.Column (O.Nullable p))
+  Col_PgReadNull a ('Col n w 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable (O.Nullable p)))
 data Col_PgReadNullSym1 (a :: *) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgReadNullSym1 a) col = Col_PgReadNull a col
 data Col_PgReadNullSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
@@ -197,14 +196,26 @@ type TRecord (a :: *) xs = Tagged (T a) (HL.Record xs)
 
 -- | All these constraints need to be satisfied by tools that work with 'Tisch'.
 -- It's easier to just write all the constraints once here and made 'TischCtx' a
--- superclass of 'Tisch'.
+-- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
+-- 'Tisch' so that we can get early compile time errors.
 type TischCtx a
   = ( GHC.KnownSymbol (TableName a)
     , GHC.KnownSymbol (SchemaName a)
-    , DistributeProxy (Cols a)
+    , HDistributeProxy (Cols a)
     , HL.SameLength (Cols_Props a) (List.Map ProxySym0 (Cols a))
     , HL.HMapAux HList (HCol_Props a) (List.Map ProxySym0 (Cols a)) (Cols_Props a)
     , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props a)) (HL.Record (Cols_PgWrite a)) (HL.Record (Cols_PgRead a))
+    , HL.SameLabels (Cols_HsMay a) (Cols_Hs a)
+    , DropMaybes (HL.RecordValuesR (Cols_HsMay a)) ~ HL.RecordValuesR (Cols_Hs a)
+    , HL.HMapAux HList HL.TaggedFn (DropMaybes (HL.RecordValuesR (Cols_HsMay a))) (Cols_Hs a)
+    , HUndistributeMaybe (DropMaybes (HL.RecordValuesR (Cols_HsMay a))) (HL.RecordValuesR (Cols_HsMay a))
+    , HL.RecordValues (Cols_HsMay a)
+    , HL.RecordValues (Cols_Hs a)
+    , HL.HAllTaggedLV (Cols_HsMay a)
+    , HL.HAllTaggedLV (Cols_Hs a)
+    , HL.HAllTaggedLV (Cols_PgRead a)
+    , HL.HAllTaggedLV (Cols_PgReadNull a)
+    , HL.HAllTaggedLV (Cols_PgWrite a)
     )
 
 -- | Tisch means table in german.
@@ -214,6 +225,10 @@ class TischCtx a => Tisch (a :: *) where
   type Cols a :: [Col GHC.Symbol WN RN * *]
   fromTisch :: MonadThrow m => TRecord a (Cols_Hs a) -> m a
   toTisch :: a -> TRecord a (Cols_Hs a)
+
+mayTisch :: Tisch a => TRecord a (Cols_HsMay a) -> Maybe (TRecord a (Cols_Hs a))
+mayTisch = fmap Tagged . recordUndistributeMaybe . unTagged
+{-# INLINE mayTisch #-}
 
 --------------------------------------------------------------------------------
 
@@ -267,7 +282,7 @@ instance forall a (col :: Col GHC.Symbol WN RN * *) pcol out n w r p h
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
 tisch ::  Tisch a => O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
-tisch = tisch' T 
+tisch = tisch' T
 {-# INLINE tisch #-}
 
 -- | Like 'tisch', but takes @a@ explicitly to help the compiler when it
@@ -275,11 +290,11 @@ tisch = tisch' T
 tisch' :: Tisch a
        => T a
        -> O.Table (TRecord a (Cols_PgWrite a)) (TRecord a (Cols_PgRead a))
-tisch' (_ :: T a) = O.Table tableName (ppa (Tagged (ppa recProps)))
+tisch' (_ :: T a) = O.Table tableName (ppaUnTagged (ppa recProps))
   where
     tableName = GHC.symbolVal (Proxy :: Proxy (TableName a))
     recProps = HL.Record (HL.hMapL (HCol_Props :: HCol_Props a)
-                                   (distributeProxy (Proxy :: Proxy (Cols a))))
+                                   (hDistributeProxy (Proxy :: Proxy (Cols a))))
 
 --------------------------------------------------------------------------------
 
@@ -328,7 +343,7 @@ instance ToPgColumn O.PGBool Bool where toPgColumn = O.pgBool
 instance ToPgColumn O.PGInt4 Int32 where toPgColumn = O.pgInt4 . fromIntegral
 -- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
 -- Use 'Int32', 'Int64', etc. explicitely.
-instance ToPgColumn O.PGInt8 Int64 where toPgColumn = O.pgInt8 
+instance ToPgColumn O.PGInt8 Int64 where toPgColumn = O.pgInt8
 instance ToPgColumn O.PGFloat8 Double where toPgColumn = O.pgDouble
 instance ToPgColumn O.PGText Data.Text.Text where toPgColumn = O.pgStrictText
 instance ToPgColumn O.PGText Data.Text.Lazy.Text where toPgColumn = O.pgLazyText
@@ -354,13 +369,13 @@ col prx = cola prx . _Unwrapped
 {-# INLINE col #-}
 
 -- | Lens to the value of a column without the 'TC' tag.
--- 
+--
 -- Most of the time you'll want to use 'tc' instead.
 cola :: forall t c xs xs' a a'
      .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (TRecord t xs) (TRecord t xs') a a'
-cola (_ :: C c) = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c)) 
+cola (_ :: C c) = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 {-# INLINE cola #-}
 
 --------------------------------------------------------------------------------
@@ -383,11 +398,23 @@ eqc la r = (O..==) (toPgColumn la) (unTagged r)
 
 --------------------------------------------------------------------------------
 
-class PP.ProductProfunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
+-- | The functional dependencies make type inference easier, but also forbid some
+-- otherwise sane instances. See the instance for 'Tagged' for example.
+class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
   ppa :: l -> p ra rb
 
-instance PP.ProductProfunctor p => ProductProfunctorAdaptor p (Tagged t (p a b)) (Tagged t a) (Tagged t b) where
-  ppa = P.dimap unTagged Tagged . unTagged
+ppaUnTagged :: P.Profunctor p => p a b -> p (Tagged ta a) (Tagged tb b)
+ppaUnTagged = P.dimap unTagged Tagged
+{-# INLINE ppaUnTagged #-}
+
+ppaTagged :: P.Profunctor p => Tagged tpab (p a b) -> p (Tagged ta a) (Tagged tb b)
+ppaTagged = ppaUnTagged . unTagged
+{-# INLINE ppaTagged #-}
+
+-- | Due to the functional dependencies in 'ProductProfunctorAdaptor', this instance is not as
+-- polymorphic as it could be in @t@. Use 'ppaTagged' instead for a fully polymorphic version.
+instance P.Profunctor p => ProductProfunctorAdaptor p (Tagged t (p a b)) (Tagged t a) (Tagged t b) where
+  ppa = ppaTagged
   {-# INLINE ppa #-}
 
 -- | 'HList' of length 0.
@@ -412,13 +439,25 @@ instance
 --------------------------------------------------------------------------------
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
-instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged t a) (Tagged t b) where
-  def = ppa (Tagged PP.def)
+instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged ta a) (Tagged tb b) where
+  def = ppaUnTagged PP.def
   {-# INLINE def #-}
 
--- | 'Opaleye.SOT.Internal'.
-instance (PP.Default O.QueryRunner (O.Column pg) hs) => PP.Default O.QueryRunner (Tagged (TC t c) (O.Column pg)) (Tagged c hs) where
-  def = P.dimap unTagged Tagged PP.def
+-- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
+instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
+  def = P.rmap Just PP.def
+  {-# INLINE def #-}
+
+-- instance {-# OVERLAPPABLE #-}
+--    ( PP.ProductProfunctor p, PP.Default p a (Maybe b)
+--    ) => PP.Default p (Tagged ta a) (Maybe (Tagged tb b)) where
+--  def = P.dimap unTagged (fmap Tagged) PP.def
+--  {-# INLINE def #-}
+
+instance 
+    ( PP.ProductProfunctor p, PP.Default p (O.Column (O.Nullable a)) (Maybe b)
+    ) => PP.Default p (Tagged ta (O.Column (O.Nullable a))) (Maybe (Tagged tb b)) where
+  def = P.dimap unTagged (fmap Tagged) PP.def
   {-# INLINE def #-}
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
@@ -454,15 +493,14 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
 data ProxySym0 (a :: TyFun k *)
 type instance Apply ProxySym0 a = Proxy a
 
-class DistributeProxy (xs :: [k]) where
-  distributeProxy :: Proxy xs -> HList (List.Map ProxySym0 xs)
-instance DistributeProxy ('[] :: [k]) where
-  distributeProxy _ = HNil
-  {-# INLINE distributeProxy #-}
-instance forall (x :: k) (xs :: [k]). DistributeProxy xs => DistributeProxy (x ': xs) where
-  distributeProxy _ = HCons (Proxy :: Proxy x) (distributeProxy (Proxy :: Proxy xs))
-  {-# INLINE distributeProxy #-}
-
+class HDistributeProxy (xs :: [k]) where
+  hDistributeProxy :: Proxy xs -> HList (List.Map ProxySym0 xs)
+instance HDistributeProxy ('[] :: [k]) where
+  hDistributeProxy _ = HNil
+  {-# INLINE hDistributeProxy #-}
+instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x ': xs) where
+  hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
+  {-# INLINE hDistributeProxy #-}
 
 ---
 
@@ -474,13 +512,28 @@ type family DropMaybes (xs :: [*]) :: [*] where
   DropMaybes '[] = '[]
   DropMaybes (Maybe x ': xs) = (x ': DropMaybes xs)
 
-class AllMaybes xs => UndistributeMaybe (xs :: [*]) where
-  undistributeMaybe :: HList xs -> Maybe (HList (DropMaybes xs))
+class ( AllMaybes xms, DropMaybes xms ~ xs
+      ) => HUndistributeMaybe (xs :: [*]) (xms :: [*]) where
+  hUndistributeMaybe :: HList xms -> Maybe (HList xs)
+instance HUndistributeMaybe '[] '[] where
+  hUndistributeMaybe = \_ -> Just HNil
+  {-# INLINE hUndistributeMaybe #-}
+instance HUndistributeMaybe xs xms => HUndistributeMaybe (x ': xs) (Maybe x ': xms) where
+  hUndistributeMaybe = \(HCons mx xms) -> HCons <$> mx <*> hUndistributeMaybe xms
+  {-# INLINE hUndistributeMaybe #-}
 
--- | @'undistributeMaybe' _ = 'Just' 'HNil'@
-instance UndistributeMaybe '[] where
-  undistributeMaybe _ = Just HNil
-  {-# INLINE undistributeMaybe #-}
-instance UndistributeMaybe xs => UndistributeMaybe (Maybe x ': xs) where
-  undistributeMaybe (HCons mx xs) = HCons <$> mx <*> undistributeMaybe xs
-  {-# INLINE undistributeMaybe #-}
+-- | It's easier to have this function than to have 'HUndistributeMaybe' work
+-- for both 'HList' and 'HL.Record'.
+recordUndistributeMaybe
+  :: ( HL.SameLabels tmxs txs
+     , HL.HAllTaggedLV txs
+     , HL.RecordValues txs
+     , HL.HAllTaggedLV tmxs
+     , HL.RecordValues tmxs
+     , HL.RecordValuesR txs ~ DropMaybes (HL.RecordValuesR tmxs)
+     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR txs) txs
+     , HUndistributeMaybe (HL.RecordValuesR txs) (HL.RecordValuesR tmxs) )
+  => HL.Record tmxs
+  -> Maybe (HL.Record txs)
+recordUndistributeMaybe = fmap HL.hMapTaggedFn . hUndistributeMaybe . HL.recordValues
+{-# INLINE recordUndistributeMaybe #-}

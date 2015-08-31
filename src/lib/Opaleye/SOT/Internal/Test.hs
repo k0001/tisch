@@ -63,9 +63,9 @@ types = seq x () where
                HL.Tagged "c4" (Maybe Int64)]
        , Cols_HsMay Test
            ~ '[HL.Tagged "c1" (Maybe Bool),
-               HL.Tagged "c2" (Maybe Bool),
+               HL.Tagged "c2" (Maybe (Maybe Bool)),
                HL.Tagged "c3" (Maybe Bool),
-               HL.Tagged "c4" (Maybe Int64)]
+               HL.Tagged "c4" (Maybe (Maybe Int64))]
        ) => ()
   x = ()
 
@@ -91,6 +91,22 @@ query1 = proc () -> do
          (view (col (C::C "c3")) t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
 
+query2 :: O.Query (TRecord Test (Cols_PgRead Test))
+query2 = proc () -> do
+  (t,_,_,_) <- query1 -< ()
+  returnA -< t
+
+outQuery2 :: Pg.Connection -> IO [TRecord Test (Cols_Hs Test)]
+outQuery2 conn = O.runQuery conn query2
+
+query3 :: O.Query (TRecord Test (Cols_PgReadNull Test))
+query3 = proc () -> do
+  (_,_,_,t) <- query1 -< ()
+  returnA -< t
+
+outQuery3 :: Pg.Connection -> IO [Maybe (TRecord Test (Cols_Hs Test))]
+outQuery3 conn = fmap mayTisch <$> O.runQuery conn query3
+
 update1 :: Pg.Connection -> IO Int64
 update1 conn = O.runUpdate conn tisch upd fil
   where upd :: TRecord Test (Cols_PgRead Test) -> TRecord Test (Cols_PgWrite Test)
@@ -99,9 +115,13 @@ update1 conn = O.runUpdate conn tisch upd fil
         fil :: TRecord Test (Cols_PgRead Test) -> O.Column O.PGBool
         fil = \v -> eqc True (view (col (C::C "c1")) v)
 
-
 outQuery1 :: Pg.Connection -> IO [(TRecord Test (Cols_Hs Test),
                                    TRecord Test (Cols_Hs Test),
                                    TRecord Test (Cols_Hs Test),
-                                   TRecord Test (Cols_HsMay Test))]
-outQuery1 conn = O.runQuery conn query1 
+                                   Maybe (TRecord Test (Cols_Hs Test)))]
+outQuery1 conn = do
+  xs :: [(TRecord Test (Cols_Hs Test),
+          TRecord Test (Cols_Hs Test),
+          TRecord Test (Cols_Hs Test),
+          TRecord Test (Cols_HsMay Test))] <- O.runQuery conn query1
+  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayTisch d)
