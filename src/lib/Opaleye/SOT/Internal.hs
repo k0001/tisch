@@ -247,11 +247,12 @@ type TischCtx a
 
 -- | Tisch means table in german.
 class TischCtx a => Tisch (a :: *) where
+  type UnTisch a :: *
   type SchemaName a :: GHC.Symbol
   type TableName a :: GHC.Symbol
   type Cols a :: [Col GHC.Symbol WN RN * *]
-  fromTisch :: MonadThrow m => RecHs a -> m a
-  toTisch :: a -> RecHs a
+  fromTisch :: MonadThrow m => RecHs a -> m (UnTisch a)
+  toTisch :: UnTisch a -> RecHs a
 
 --------------------------------------------------------------------------------
 

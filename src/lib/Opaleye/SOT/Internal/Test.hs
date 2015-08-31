@@ -30,6 +30,7 @@ data Test = Test Bool (Maybe Bool) Bool (Maybe Int64)
 
 
 instance Tisch Test where
+  type UnTisch Test = Test
   type SchemaName Test = "s"
   type TableName Test = "t"
   type Cols Test = [ 'Col "c1" 'W 'R O.PGBool Bool
