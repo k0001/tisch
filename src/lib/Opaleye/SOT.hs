@@ -2,9 +2,7 @@ module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
  , fromRecHs'
- , recHs
- , fromC
- , toC
+ , mkRecHs
  
    -- * Working with 'Tisch'
  , TischTable

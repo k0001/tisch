@@ -36,17 +36,16 @@ instance Tisch Test where
                    , 'Col "c2" 'W 'RN O.PGBool Bool
                    , 'Col "c3" 'WN 'R O.PGBool Bool
                    , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
-  fromRecHs = Test
-     <$> fromC (C::C "c1")
-     <*> fromC (C::C "c2")
-     <*> fromC (C::C "c3")
-     <*> fromC (C::C "c4")
-  toRecHs (Test c1 c2 c3 c4) = recHs $ HL.hBuild 
-     -- The other of the fields can change here.
-     (toC (C::C "c2") c2)
-     (toC (C::C "c4") c4)
-     (toC (C::C "c1") c1) 
-     (toC (C::C "c3") c3)
+  fromRecHs = \r -> return $ Test
+     (r ^. cola (C::C "c1"))
+     (r ^. cola (C::C "c2"))
+     (r ^. cola (C::C "c3"))
+     (r ^. cola (C::C "c4"))
+  toRecHs (Test c1 c2 c3 c4) = mkRecHs $ \set_ -> HL.hBuild
+     (set_ (C::C "c1") c1)
+     (set_ (C::C "c3") c3)
+     (set_ (C::C "c2") c2)
+     (set_ (C::C "c4") c4)
 
 types :: ()
 types = seq x () where
@@ -55,17 +54,17 @@ types = seq x () where
        , RecHs Test
            ~ Rec Test (Cols_Hs Test)
        , Cols_Hs Test
-           ~ '[HL.Tagged "c1" Bool,
-               HL.Tagged "c2" (Maybe Bool),
-               HL.Tagged "c3" Bool,
-               HL.Tagged "c4" (Maybe Int64)]
+           ~ '[HL.Tagged (TC Test "c1") Bool,
+               HL.Tagged (TC Test "c2") (Maybe Bool),
+               HL.Tagged (TC Test "c3") Bool,
+               HL.Tagged (TC Test "c4") (Maybe Int64)]
        , RecHsMay Test
            ~ Rec Test (Cols_HsMay Test)
        , Cols_HsMay Test
-           ~ '[HL.Tagged "c1" (Maybe Bool),
-               HL.Tagged "c2" (Maybe (Maybe Bool)),
-               HL.Tagged "c3" (Maybe Bool),
-               HL.Tagged "c4" (Maybe (Maybe Int64))]
+           ~ '[HL.Tagged (TC Test "c1") (Maybe Bool),
+               HL.Tagged (TC Test "c2") (Maybe (Maybe Bool)),
+               HL.Tagged (TC Test "c3") (Maybe Bool),
+               HL.Tagged (TC Test "c4") (Maybe (Maybe Int64))]
        ) => ()
   x = ()
 

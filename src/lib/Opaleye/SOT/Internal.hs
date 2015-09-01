@@ -17,8 +17,7 @@
 module Opaleye.SOT.Internal where
 
 import           Control.Lens
-import qualified Control.Monad.Catch as Cx
-import           Control.Monad.Reader (MonadReader, asks)
+import qualified Control.Exception as Ex
 import qualified Data.Aeson
 import qualified Data.ByteString
 import qualified Data.ByteString.Lazy
@@ -41,7 +40,7 @@ import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Join as OI
 
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 
 -- | Whether to read a plain value or a possibly null value.
 data RN = R  -- ^ Read plain value.
@@ -84,29 +83,19 @@ type instance Apply Col_NameSym0 col = Col_Name col
 
 type family Col_WN (col :: Col GHC.Symbol WN RN * *) :: WN where
   Col_WN ('Col n w r p h) = w
-data Col_WNSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) WN)
-type instance Apply Col_WNSym0 col = Col_WN col
 
 type family Col_RN (col :: Col GHC.Symbol WN RN * *) :: RN where
   Col_RN ('Col n w r p h) = r
-data Col_RNSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) RN)
-type instance Apply Col_RNSym0 col = Col_RN col
 
 type family Col_PgType (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgType ('Col n w r p h) = p
-data Col_PgTypeSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
-type instance Apply Col_PgTypeSym0 col = Col_PgType col
 
 type family Col_HsType (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_HsType ('Col n w 'R  p h) = h
   Col_HsType ('Col n w 'RN p h) = Maybe h
-data Col_HsTypeSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
-type instance Apply Col_HsTypeSym0 col = Col_HsType col
 
 type family Col_HsTypeMay (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_HsTypeMay ('Col n w r p h) = Maybe (Col_HsType ('Col n w r p h))
-data Col_HsTypeMaySym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
-type instance Apply Col_HsTypeMaySym0 col = Col_HsTypeMay col
 
 ---
 
@@ -116,27 +105,23 @@ type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WN RN * *]
        :: Col GHC.Symbol WN RN * * where
   Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
   Col_ByName' n ('Col n' w r p h ': xs) = Col_ByName' n xs
-data Col_ByNameSym1 (a :: k) (name :: TyFun GHC.Symbol (Col GHC.Symbol WN RN * *))
-type instance Apply (Col_ByNameSym1 a) name = Col_ByName a name
-data Col_ByNameSym0 (name :: TyFun a (TyFun GHC.Symbol (Col GHC.Symbol WN RN * *) -> *))
-type instance Apply Col_ByNameSym0 a = Col_ByNameSym1 a
 
 ---
 
 -- | Type of the 'HL.Record' columns in Haskell.
-type Cols_Hs (a :: k) = List.Map Col_HsRecordFieldSym0 (Cols a)
-type Col_HsRecordField (col :: Col GHC.Symbol WN RN * *)
-  = Tagged (Col_Name col) (Col_HsType col)
-data Col_HsRecordFieldSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
-type instance Apply Col_HsRecordFieldSym0 col = Col_HsRecordField col
+type Cols_Hs (a :: k) = List.Map (Col_HsRecordFieldSym1 a) (Cols a)
+type Col_HsRecordField (a ::k) (col :: Col GHC.Symbol WN RN * *)
+  = Tagged (TC a (Col_Name col)) (Col_HsType col)
+data Col_HsRecordFieldSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+type instance Apply (Col_HsRecordFieldSym1 a) col = Col_HsRecordField a col
 
 -- | Type of the 'HL.Record' columns in Haskell when all the columns
 -- are @NULL@ (e.g., a missing rhs on a left join).
-type Cols_HsMay (a :: k) = List.Map Col_HsMayRecordFieldSym0 (Cols a)
-type Col_HsMayRecordField (col :: Col GHC.Symbol WN RN * *)
-  = Tagged (Col_Name col) (Col_HsTypeMay col)
-data Col_HsMayRecordFieldSym0 (col :: TyFun (Col GHC.Symbol WN RN * *) *)
-type instance Apply Col_HsMayRecordFieldSym0 col = Col_HsMayRecordField col
+type Cols_HsMay (a :: k) = List.Map (Col_HsMayRecordFieldSym1 a) (Cols a)
+type Col_HsMayRecordField (a :: k) (col :: Col GHC.Symbol WN RN * *)
+  = Tagged (TC a (Col_Name col)) (Col_HsTypeMay col)
+data Col_HsMayRecordFieldSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
+type instance Apply (Col_HsMayRecordFieldSym1 a) col = Col_HsMayRecordField a col
 
 ---
 
@@ -155,7 +140,7 @@ data C (c :: GHC.Symbol) = C
 ---
 
 -- | Type of the 'HL.Record' columns when inserting or updating a row.
-type Cols_PgWrite (a :: k) = List.Map (Col_PgWriteSym0 @@ a) (Cols a)
+type Cols_PgWrite (a :: k) = List.Map (Col_PgWriteSym1 a) (Cols a)
 type family Col_PgWrite (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgWrite a ('Col n 'W 'R p h) = Tagged (TC a n) (O.Column p)
   Col_PgWrite a ('Col n 'W 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable p))
@@ -163,33 +148,27 @@ type family Col_PgWrite (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgWrite a ('Col n 'WN 'RN p h) = Tagged (TC a n) (Maybe (O.Column (O.Nullable p)))
 data Col_PgWriteSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgWriteSym1 a) col = Col_PgWrite a col
-data Col_PgWriteSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
-type instance Apply Col_PgWriteSym0 a = Col_PgWriteSym1 a
 
 ---
 
 -- | Type of the 'HL.Record' columns (e.g., result of 'O.query')
-type Cols_PgRead (a :: k) = List.Map (Col_PgReadSym0 @@ a) (Cols a)
+type Cols_PgRead (a :: k) = List.Map (Col_PgReadSym1 a) (Cols a)
 type family Col_PgRead (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgRead a ('Col n w 'R  p h) = Tagged (TC a n) (O.Column p)
   Col_PgRead a ('Col n w 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable p))
 data Col_PgReadSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgReadSym1 a) col = Col_PgRead a col
-data Col_PgReadSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
-type instance Apply Col_PgReadSym0 a = Col_PgReadSym1 a
 
 ---
 
 -- | Type of the 'HL.Record' columns when they can all be nullable
 -- (e.g., rhs on a 'O.leftJoin').
-type Cols_PgReadNull (a :: k) = List.Map (Col_PgReadNullSym0 @@ a) (Cols a)
+type Cols_PgReadNull (a :: k) = List.Map (Col_PgReadNullSym1 a) (Cols a)
 type family Col_PgReadNull (a :: k) (col :: Col GHC.Symbol WN RN * *) :: * where
   Col_PgReadNull a ('Col n w 'R  p h) = Tagged (TC a n) (O.Column (O.Nullable p))
   Col_PgReadNull a ('Col n w 'RN p h) = Tagged (TC a n) (O.Column (O.Nullable (O.Nullable p)))
 data Col_PgReadNullSym1 (a :: k) (col :: TyFun (Col GHC.Symbol WN RN * *) *)
 type instance Apply (Col_PgReadNullSym1 a) col = Col_PgReadNull a col
-data Col_PgReadNullSym0 (col :: TyFun a (TyFun (Col GHC.Symbol WN RN * *) * -> *))
-type instance Apply Col_PgReadNullSym0 a = Col_PgReadNullSym1 a
 
 --------------------------------------------------------------------------------
 
@@ -266,62 +245,51 @@ class TischCtx a => Tisch (a :: k) where
   -- | Convert an Opaleye-compatible Haskell representation of @'UnTisch' a@ to
   -- @'UnTisch' a@.
   --
-  -- For your convenience, you are encouraged to use 'fromC':
+  -- For your convenience, you are encouraged to use 'cola', but you may also use
+  -- other tools from "Data.HList.Record" as you see fit:
   --
   -- @
-  -- 'fromRecHs' = Person \<$> 'fromC' ('C' :: 'C' "name")
-  --                    \<*> 'fromC' ('C' :: 'C' "age")
+  -- 'fromRecHs' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
+  --                      (r '^.' 'cola' ('C' :: 'C' "age"))
   -- @
   --
-  -- You may also use other tools from "Data.HList.Record" as you see fit.
-  --
-  -- Note: If it makes it any easier, you can think of the type of 'fromRecHs'
-  -- as something like:
-  --
-  -- @
-  -- 'fromRecHs' :: 'RecHs' a -> 'Maybe' ('UnTisch' a).
-  -- 'fromRecHs' :: 'RecHs' a -> 'Either' 'Cx.SomeException' ('UnTisch' a).
-  -- @
-  fromRecHs :: (MonadReader (RecHs a) m, Cx.MonadThrow m) => m (UnTisch a)
+  -- Hint: If the type checker is having trouble inferring @('UnTisch' a)@,
+  -- consider using 'fromRecHs'' instead.
+  fromRecHs :: RecHs a -> Either Ex.SomeException (UnTisch a)
 
   -- | Convert an @'UnTisch' a@ to an Opaleye-compatible Haskell representation.
   --
-  -- For your convenience, you are encouraged to use 'toC' and 'recHs' together with
+  -- For your convenience, you are encouraged to use 'mkRecHs' together with
   -- 'HL.hBuild':
   --
   -- @
-  -- 'toRecHs' = \(Person name age) -> 'recHs' $ 'HL.hBuild'
-  --     ('toC' ('C' :: 'C' "name") name)
-  --     ('toC' ('C' :: 'C' "age") age)
+  -- 'toRecHs' (Person name age) = 'mkRecHs' $ \\set_ -> 'HL.hBuild'
+  --     (set_ ('C' :: 'C' "name") name)
+  --     (set_ ('C' :: 'C' "age") age)
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
+  -- A particular benefit of 'mkRecHs' is that you are able to define your
+  -- fields in any order and it will work.
   toRecHs :: UnTisch a -> RecHs a
 
 -- | Like 'fromRecHs', except it takes @a@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHs' :: (MonadReader (RecHs a) m, Cx.MonadThrow m, Tisch a) => T a -> m (UnTisch a)
+fromRecHs' :: Tisch a => T a -> RecHs a -> Either Ex.SomeException (UnTisch a)
 fromRecHs' _ = fromRecHs
 {-# INLINE fromRecHs' #-}
 
 -- | Convenience intended to be used within 'toRecHs', together with 'HL.hBuild'.
-recHs
-  :: forall a xs
-  . (Tisch a, HL.HRearrange (HL.LabelsOf (Cols_Hs a)) xs (Cols_Hs a))
-  => HList xs
-  -> RecHs a -- ^
-recHs = Tagged . HL.Record . HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_Hs a)))
-{-# INLINE recHs #-}
-
--- | Convenience intended to be used within 'toRecHs'. This is similar to 'HL..=.'.
-toC :: C c -> a -> Tagged c a
-toC _ = Tagged
-{-# INLINE toC #-}
-
--- | Convenience intended to be used within 'fromRecHs'.
-fromC :: (HL.HasField c (HL.Record (Cols_Hs t)) a, MonadReader (RecHs t) m) => C c -> m a
-fromC (_ :: C c) = asks (HL.hLookupByLabel (HL.Label :: HL.Label c) . unTagged)
-{-# INLINE fromC #-}
+mkRecHs
+  :: forall t xs
+  .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_Hs t)) xs (Cols_Hs t))
+  => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
+  -> RecHs t -- ^
+mkRecHs k = Tagged
+        $ HL.Record
+        $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_Hs t)))
+        $ k (const Tagged)
+{-# INLINE mkRecHs #-}
 
 --------------------------------------------------------------------------------
 
