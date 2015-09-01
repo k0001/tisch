@@ -258,13 +258,13 @@ class TischCtx t => Tisch (t :: *) where
   -- other tools from "Data.HList.Record" as you see fit:
   --
   -- @
-  -- 'fromRecHs' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
-  --                      (r '^.' 'cola' ('C' :: 'C' "age"))
+  -- 'fromRecHs'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
+  --                       (r '^.' 'cola' ('C' :: 'C' "age"))
   -- @
   --
   -- Hint: If the type checker is having trouble inferring @('UnTisch' t)@,
-  -- consider using 'fromRecHs'' instead.
-  fromRecHs :: RecHs t -> Either Ex.SomeException (UnTisch t)
+  -- consider using 'fromRecHs' instead.
+  fromRecHs' :: RecHs t -> Either Ex.SomeException (UnTisch t)
 
   -- | Convert an @'UnTisch' t@ to an Opaleye-compatible Haskell representation.
   --
@@ -282,11 +282,11 @@ class TischCtx t => Tisch (t :: *) where
   -- fields in any order and it will work.
   toRecHs :: UnTisch t -> RecHs t
 
--- | Like 'fromRecHs', except it takes @t@ explicitely for the times when
+-- | Like 'fromRecHs'', except it takes @t@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHs' :: Tisch t => T t -> RecHs t -> Either Ex.SomeException (UnTisch t)
-fromRecHs' _ = fromRecHs
-{-# INLINE fromRecHs' #-}
+fromRecHs :: Tisch t => T t -> RecHs t -> Either Ex.SomeException (UnTisch t)
+fromRecHs _ = fromRecHs'
+{-# INLINE fromRecHs #-}
 
 -- | Convenience intended to be used within 'toRecHs', together with 'HL.hBuild'.
 mkRecHs

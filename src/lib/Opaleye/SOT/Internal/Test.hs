@@ -36,7 +36,7 @@ instance Tisch Test where
                    , 'Col "c2" 'W 'RN O.PGBool Bool
                    , 'Col "c3" 'WN 'R O.PGBool Bool
                    , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
-  fromRecHs = \r -> return $ Test
+  fromRecHs' = \r -> return $ Test
      (r ^. cola (C::C "c1"))
      (r ^. cola (C::C "c2"))
      (r ^. cola (C::C "c3"))
