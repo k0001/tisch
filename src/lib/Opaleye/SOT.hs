@@ -33,8 +33,6 @@ module Opaleye.SOT
  , Col(..)
  , WN(..)
  , RN(..)
- , TC(..)
- , T(..)
  , C(..)
  ) where
 

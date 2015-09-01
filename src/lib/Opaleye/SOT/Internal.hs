@@ -192,11 +192,11 @@ mayRecHs :: Tisch t => RecHsMay t -> Maybe (RecHs t)
 mayRecHs = fmap Tagged . recordUndistributeMaybe . unTagged
 {-# INLINE mayRecHs #-}
 
--- | Output type of @'O.queryTable' ('tisch'' ('T' :: 'T' t))@
+-- | Output type of @'O.queryTable' ('tisch' t)@
 type RecPgRead (t :: *) = Rec t (Cols_PgRead t)
 
 -- | Output type of the right hand side of a 'O.leftJoin'
--- with @'tisch'' ('T' :: 'T' t)@.
+-- with @'(tisch' t)@.
 type RecPgReadNull (t :: *) = Rec t (Cols_PgReadNull t)
 
 -- | Type used when writting @t@'s PostgreSQL representation to the database.
@@ -240,7 +240,17 @@ type TischCtx t
 -- how to convert back and forth between it and its Haskell representation.
 --
 -- The @t@ type is only used as a tag for the purposes of uniquely identifying
--- this 'Tisch'. It can be whatever you want.
+-- this 'Tisch'. We recommend that for each 'Tisch' you define a tag with a
+-- single constructor like the following:
+--
+-- @
+-- -- | Tag for the users table (just an example).
+-- data TUser = TUser
+-- @
+--
+-- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
+-- and the @TUser@ term constructor can be used as a type proxy for tools such
+-- as 'tisch' or 'fromRecHs'. 
 class TischCtx t => Tisch (t :: *) where
   -- | The Haskell type that this 'Tisch' represents.
   type UnTisch t :: *
@@ -284,7 +294,7 @@ class TischCtx t => Tisch (t :: *) where
 
 -- | Like 'fromRecHs'', except it takes @t@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHs :: Tisch t => T t -> RecHs t -> Either Ex.SomeException (UnTisch t)
+fromRecHs :: Tisch t => t -> RecHs t -> Either Ex.SomeException (UnTisch t)
 fromRecHs _ = fromRecHs'
 {-# INLINE fromRecHs #-}
 
@@ -364,19 +374,22 @@ type TischTable (t :: *) = O.Table (RecPgWrite t) (RecPgRead t)
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
 tisch' :: Tisch t => TischTable t
-tisch' = tisch T
+tisch' = go where -- to hide the "forall" from the haddocks
+   go :: forall t. Tisch t => TischTable t
+   go = O.TableWithSchema
+     (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
+     (GHC.symbolVal (Proxy :: Proxy (TableName t)))
+     (ppaUnTagged $ ppa $ HL.Record
+        (HL.hMapL (HCol_Props :: HCol_Props t)
+        (hDistributeProxy (Proxy :: Proxy (Cols t)))))
+   {-# INLINE go #-}
 {-# INLINE tisch' #-}
 
 -- | Like 'tisch'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-tisch :: Tisch t => T t -> TischTable t
-tisch (_ :: T t) =
-    O.TableWithSchema schemaName tableName (ppaUnTagged (ppa recProps))
-  where
-    schemaName = GHC.symbolVal (Proxy :: Proxy (SchemaName t))
-    tableName = GHC.symbolVal (Proxy :: Proxy (TableName t))
-    recProps = HL.Record (HL.hMapL (HCol_Props :: HCol_Props t)
-                                   (hDistributeProxy (Proxy :: Proxy (Cols t))))
+tisch :: Tisch t => t -> TischTable t
+tisch _ = tisch'
+{-# INLINE tisch #-}
 
 --------------------------------------------------------------------------------
 
