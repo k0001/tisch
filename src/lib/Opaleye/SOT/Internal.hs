@@ -266,33 +266,33 @@ class TischCtx a => Tisch (a :: k) where
   -- | Convert an Opaleye-compatible Haskell representation of @'UnTisch' a@ to
   -- @'UnTisch' a@.
   --
-  -- For your convenience, you are encouraged to use 'viewC':
+  -- For your convenience, you are encouraged to use 'fromC':
   --
   -- @
-  -- 'fromRecHs' = Person \<$> 'viewC' ('C' :: 'C' "name")
-  --                    \<*> 'viewC' ('C' :: 'C' "age")
+  -- 'fromRecHs' = Person \<$> 'fromC' ('C' :: 'C' "name")
+  --                    \<*> 'fromC' ('C' :: 'C' "age")
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
   --
   -- Note: If it makes it any easier, you can think of the type of 'fromRecHs'
-  -- as one of:
+  -- as something like:
   --
   -- @
   -- 'fromRecHs' :: 'RecHs' a -> 'Maybe' ('UnTisch' a).
-  -- 'fromRecHs' :: 'Cx.Exception' e => 'RecHs' a -> 'Either' e ('UnTisch' a).
+  -- 'fromRecHs' :: 'RecHs' a -> 'Either' 'Cx.SomeException' ('UnTisch' a).
   -- @
-  fromRecHs :: (MonadReader (RecHs a) (m n), Cx.MonadThrow n) => m n (UnTisch a)
+  fromRecHs :: (MonadReader (RecHs a) m, Cx.MonadThrow m) => m (UnTisch a)
 
   -- | Convert an @'UnTisch' a@ to an Opaleye-compatible Haskell representation.
   --
-  -- For your convenience, you are encouraged to use 'setC' and 'recHs' together with
+  -- For your convenience, you are encouraged to use 'toC' and 'recHs' together with
   -- 'HL.hBuild':
   --
   -- @
   -- 'toRecHs' = \(Person name age) -> 'recHs' $ 'HL.hBuild'
-  --     ('setC' ('C' :: 'C' "name") name)
-  --     ('setC' ('C' :: 'C' "age") age)
+  --     ('toC' ('C' :: 'C' "name") name)
+  --     ('toC' ('C' :: 'C' "age") age)
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
@@ -300,7 +300,7 @@ class TischCtx a => Tisch (a :: k) where
 
 -- | Like 'fromRecHs', except it takes @a@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHs' :: (MonadReader (RecHs a) (m n), Cx.MonadThrow n, Tisch a) => T a -> m n (UnTisch a)
+fromRecHs' :: (MonadReader (RecHs a) m, Cx.MonadThrow m, Tisch a) => T a -> m (UnTisch a)
 fromRecHs' _ = fromRecHs
 {-# INLINE fromRecHs' #-}
 
@@ -314,14 +314,14 @@ recHs = Tagged . HL.Record . HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_H
 {-# INLINE recHs #-}
 
 -- | Convenience intended to be used within 'toRecHs'. This is similar to 'HL..=.'.
-setC :: C c -> a -> Tagged c a
-setC _ = Tagged
-{-# INLINE setC #-}
+toC :: C c -> a -> Tagged c a
+toC _ = Tagged
+{-# INLINE toC #-}
 
 -- | Convenience intended to be used within 'fromRecHs'.
-viewC :: (HL.HasField c (HL.Record (Cols_Hs t)) a, MonadReader (RecHs t) m) => C c -> m a
-viewC (_ :: C c) = asks (HL.hLookupByLabel (HL.Label :: HL.Label c) . unTagged)
-{-# INLINE viewC #-}
+fromC :: (HL.HasField c (HL.Record (Cols_Hs t)) a, MonadReader (RecHs t) m) => C c -> m a
+fromC (_ :: C c) = asks (HL.hLookupByLabel (HL.Label :: HL.Label c) . unTagged)
+{-# INLINE fromC #-}
 
 --------------------------------------------------------------------------------
 
@@ -468,12 +468,26 @@ col prx = cola prx . _Unwrapped
 --
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
 -- when trying to change the type of @a@ during an update.
-cola :: forall t c xs xs' a a'
-     .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
+cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
-cola (_ :: C c) = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
+cola = go where -- just to hide the "forall" from the haddocks
+  go
+    :: forall t c xs xs' a a'. HL.HLensCxt (TC t c) HL.Record xs xs' a a'
+    => C c -> Lens (Rec t xs) (Rec t xs') a a'
+  go = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
+  {-# INLINE go #-}
 {-# INLINE cola #-}
+
+-- | @'setc' ('C' :: 'C' "x") hs = 'set' ('cola' ('C' :: 'C' "x")) ('toPgColumn' hs)@
+--
+-- This function is particularly useful when writing functions of type
+-- @(RecPgRead t -> RecPgWrite t)@, such as those required by 'O.runUpdate'.
+setc :: ( ToPgColumn a' hs
+        , HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a') )
+     => C c -> hs -> Rec t xs -> Rec t xs'
+setc c hs = set (cola c) (toPgColumn hs)
+{-# INLINE setc #-}
 
 --------------------------------------------------------------------------------
 

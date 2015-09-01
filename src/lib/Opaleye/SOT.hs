@@ -3,8 +3,8 @@ module Opaleye.SOT
    Tisch(..)
  , fromRecHs'
  , recHs
- , viewC
- , setC
+ , fromC
+ , toC
  
    -- * Working with 'Tisch'
  , TischTable
@@ -17,7 +17,7 @@ module Opaleye.SOT
  , RecPgReadNull
  , RecPgWrite
 
-   -- * Querying
+   -- * Querying columns
  , eq
  , eqc
  , eqn
@@ -25,7 +25,8 @@ module Opaleye.SOT
    -- ** Selecting columns
  , col
  , cola
-
+   -- ** Modifying columns
+ , setc
 
    -- * Types
  , Comparable
