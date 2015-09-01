@@ -182,12 +182,15 @@ type RecHs (a :: k) = Rec a (Cols_Hs a)
 -- @'RecPgReadNull' a@. Use this type as the output type of 'O.runQuery'.
 --
 -- Convert a 'RecHsMay' to a more useful @'Maybe' ('RecHs' a)@ using
--- 'mayTRecHs'.
+-- 'mayRecHs'.
 type RecHsMay (a :: k) = Rec a (Cols_HsMay a)
 
-mayTRecHs :: Tisch a => RecHsMay a -> Maybe (RecHs a)
-mayTRecHs = fmap Tagged . recordUndistributeMaybe . unTagged
-{-# INLINE mayTRecHs #-}
+-- | You'll often end up with a @('RecHsMay' a)@, for example, when converting
+-- the right side of a 'O.leftJoin' to Haskell types. Use this function to
+-- get a much more useful @'Maybe' ('RecHs' a)@ to be used with 'fromRecHs'.
+mayRecHs :: Tisch a => RecHsMay a -> Maybe (RecHs a)
+mayRecHs = fmap Tagged . recordUndistributeMaybe . unTagged
+{-# INLINE mayRecHs #-}
 
 -- | Output type of @'O.queryTable' ('tisch'' ('T' :: 'T' a))@
 type RecPgRead (a :: k) = Rec a (Cols_PgRead a)
@@ -206,23 +209,29 @@ type RecPgWrite (a :: k) = Rec a (Cols_PgWrite a)
 -- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
 -- 'Tisch' so that we can get early compile time errors.
 type TischCtx a
-  = ( GHC.KnownSymbol (TableName a)
+  = ( DropMaybes (HL.RecordValuesR (Cols_HsMay a)) ~ HL.RecordValuesR (Cols_Hs a)
     , GHC.KnownSymbol (SchemaName a)
+    , GHC.KnownSymbol (TableName a)
     , HDistributeProxy (Cols a)
-    , HL.SameLength (Cols_Props a) (List.Map ProxySym0 (Cols a))
     , HL.HMapAux HList (HCol_Props a) (List.Map ProxySym0 (Cols a)) (Cols_Props a)
-    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props a)) (HL.Record (Cols_PgWrite a)) (HL.Record (Cols_PgRead a))
-    , HL.SameLabels (Cols_HsMay a) (Cols_Hs a)
-    , DropMaybes (HL.RecordValuesR (Cols_HsMay a)) ~ HL.RecordValuesR (Cols_Hs a)
-    , HL.HMapAux HList HL.TaggedFn (DropMaybes (HL.RecordValuesR (Cols_HsMay a))) (Cols_Hs a)
-    , HUndistributeMaybe (DropMaybes (HL.RecordValuesR (Cols_HsMay a))) (HL.RecordValuesR (Cols_HsMay a))
-    , HL.RecordValues (Cols_HsMay a)
-    , HL.RecordValues (Cols_Hs a)
-    , HL.HRLabelSet (Cols_HsMay a)
+    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_Hs a)) (Cols_Hs a)
+    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgWrite a)) (Cols_PgWrite a)
+    , HL.HMapAux HList HToPgColumn (HL.RecordValuesR (Cols_Hs a)) (HL.RecordValuesR (Cols_PgWrite a))
     , HL.HRLabelSet (Cols_Hs a)
+    , HL.HRLabelSet (Cols_HsMay a)
     , HL.HRLabelSet (Cols_PgRead a)
     , HL.HRLabelSet (Cols_PgReadNull a)
     , HL.HRLabelSet (Cols_PgWrite a)
+    , HL.RecordValues (Cols_Hs a)
+    , HL.RecordValues (Cols_HsMay a)
+    , HL.RecordValues (Cols_PgWrite a)
+    , HL.SameLabels (Cols_HsMay a) (Cols_Hs a)
+    , HL.SameLength (Cols_Hs a) (Cols_PgWrite a)
+    , HL.SameLength (Cols_Props a) (List.Map ProxySym0 (Cols a))
+    , HL.SameLength (HL.RecordValuesR (Cols_Hs a)) (HL.RecordValuesR (Cols_PgWrite a))
+    , HL.SameLength (HL.RecordValuesR (Cols_PgWrite a)) (HL.RecordValuesR (Cols_Hs a))
+    , HUndistributeMaybe (HL.RecordValuesR (Cols_Hs a)) (HL.RecordValuesR (Cols_HsMay a))
+    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props a)) (HL.Record (Cols_PgWrite a)) (HL.Record (Cols_PgRead a))
     )
 
 -- | Tisch means table in german.
@@ -286,10 +295,19 @@ mkRecHs
   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
   -> RecHs t -- ^
 mkRecHs k = Tagged
-        $ HL.Record
-        $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_Hs t)))
-        $ k (const Tagged)
+          $ HL.Record
+          $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_Hs t)))
+          $ k (const Tagged)
 {-# INLINE mkRecHs #-}
+
+--------------------------------------------------------------------------------
+
+-- | You'll need to use this function to convert a 'RecHs' to a 'RecPgWrite'
+-- when using 'O.runInsert'.
+writeRecHs :: Tisch a => RecHs a -> RecPgWrite a
+writeRecHs = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgColumn
+           . HL.recordValues . unTagged
+{-# INLINE writeRecHs #-}
 
 --------------------------------------------------------------------------------
 
@@ -425,6 +443,18 @@ instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pg
 
 --------------------------------------------------------------------------------
 
+-- | Use with 'HL.ApplyAB' to apply 'toPgColumn' to each element of an 'HList'.
+data HToPgColumn = HToPgColumn
+
+instance (ToPgColumn pg hs) => HL.ApplyAB HToPgColumn hs (O.Column pg) where
+   applyAB _ = toPgColumn
+   {-# INLINE applyAB #-}
+instance (ToPgColumn pg hs) => HL.ApplyAB HToPgColumn hs (Maybe (O.Column pg)) where
+   applyAB _ hs = Just (toPgColumn hs)
+   {-# INLINE applyAB #-}
+
+--------------------------------------------------------------------------------
+
 -- | Lens to the value of a column.
 col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
     => C c
@@ -435,7 +465,8 @@ col prx = cola prx . _Unwrapped
 -- | Lens to the value of a column without the 'TC' tag.
 --
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
--- when trying to change the type of @a@ during an update.
+-- when trying to change the type of @a@ during an update, or when implementing
+-- 'fromRecHs'.
 cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
@@ -538,7 +569,7 @@ instance
 instance
     ( ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
     ) => ProductProfunctorAdaptor p (HL.Record pabs) (HL.Record as) (HL.Record bs) where
-  ppa = P.dimap (\(HL.Record x) -> x) HL.Record . ppa . (\(HL.Record x) -> x)
+  ppa = P.dimap unRecord HL.Record . ppa . unRecord
   {-# INLINE ppa #-}
 
 --------------------------------------------------------------------------------
@@ -575,7 +606,7 @@ instance
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HL.Record as) (HL.Record bs) where
-  def = P.dimap (\(HL.Record x) -> x) HL.Record PP.def
+  def = P.dimap unRecord HL.Record PP.def
   {-# INLINE def #-}
 
 --------------------------------------------------------------------------------
@@ -636,3 +667,9 @@ recordUndistributeMaybe
   -> Maybe (HL.Record txs)
 recordUndistributeMaybe = fmap HL.hMapTaggedFn . hUndistributeMaybe . HL.recordValues
 {-# INLINE recordUndistributeMaybe #-}
+
+--------------------------------------------------------------------------------
+
+unRecord :: HL.Record xs -> HList xs
+unRecord = \(HL.Record x) -> x
+{-# INLINE unRecord #-}

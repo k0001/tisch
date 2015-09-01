@@ -3,17 +3,18 @@ module Opaleye.SOT
    Tisch(..)
  , fromRecHs'
  , mkRecHs
- 
+
    -- * Working with 'Tisch'
  , TischTable
  , tisch
  , tisch'
  , RecHs
  , RecHsMay
- , mayTRecHs
+ , mayRecHs
  , RecPgRead
  , RecPgReadNull
  , RecPgWrite
+ , writeRecHs
 
    -- * Querying columns
  , eq

@@ -100,7 +100,7 @@ query3 = proc () -> do
   returnA -< t
 
 outQuery3 :: Pg.Connection -> IO [Maybe (RecHs Test)]
-outQuery3 conn = fmap mayTRecHs <$> O.runQuery conn query3
+outQuery3 conn = fmap mayRecHs <$> O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
 update1 conn = O.runUpdate conn tisch upd fil
@@ -115,4 +115,4 @@ outQuery1 :: Pg.Connection
 outQuery1 conn = do
   xs :: [(RecHs Test, RecHs Test, RecHs Test, RecHsMay Test)]
      <- O.runQuery conn query1
-  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayTRecHs d)
+  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayRecHs d)
