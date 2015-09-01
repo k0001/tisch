@@ -17,7 +17,7 @@
 module Opaleye.SOT.Internal where
 
 import           Control.Lens
-import           Control.Monad.Catch (MonadThrow)
+import qualified Control.Monad.Catch as Cx
 import           Control.Monad.Reader (MonadReader, asks)
 import qualified Data.Aeson
 import qualified Data.ByteString
@@ -274,7 +274,15 @@ class TischCtx a => Tisch (a :: k) where
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
-  fromRecHs :: (MonadThrow m, MonadReader (RecHs a) m) => m (UnTisch a)
+  --
+  -- Note: If it makes it any easier, you can think of the type of 'fromRecHs'
+  -- as one of:
+  --
+  -- @
+  -- 'fromRecHs' :: 'RecHs' a -> 'Maybe' ('UnTisch' a).
+  -- 'fromRecHs' :: 'Cx.Exception' e => 'RecHs' a -> 'Either' e ('UnTisch' a).
+  -- @
+  fromRecHs :: (MonadReader (RecHs a) (m n), Cx.MonadThrow n) => m n (UnTisch a)
 
   -- | Convert an @'UnTisch' a@ to an Opaleye-compatible Haskell representation.
   --
@@ -292,7 +300,7 @@ class TischCtx a => Tisch (a :: k) where
 
 -- | Like 'fromRecHs', except it takes @a@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHs' :: (MonadThrow m, MonadReader (RecHs a) m, Tisch a) => T a -> m (UnTisch a)
+fromRecHs' :: (MonadReader (RecHs a) (m n), Cx.MonadThrow n, Tisch a) => T a -> m n (UnTisch a)
 fromRecHs' _ = fromRecHs
 {-# INLINE fromRecHs' #-}
 

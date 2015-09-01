@@ -36,10 +36,11 @@ instance Tisch Test where
                    , 'Col "c2" 'W 'RN O.PGBool Bool
                    , 'Col "c3" 'WN 'R O.PGBool Bool
                    , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
-  fromRecHs = Test <$> viewC (C::C "c1")
-                   <*> viewC (C::C "c2")
-                   <*> viewC (C::C "c3")
-                   <*> viewC (C::C "c4")
+  fromRecHs = Test
+     <$> viewC (C::C "c1")
+     <*> viewC (C::C "c2")
+     <*> viewC (C::C "c3")
+     <*> viewC (C::C "c4")
   toRecHs (Test c1 c2 c3 c4) = recHs $ HL.hBuild 
      -- The other of the fields can change here.
      (setC (C::C "c2") c2)
