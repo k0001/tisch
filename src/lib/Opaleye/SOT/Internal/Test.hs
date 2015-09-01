@@ -73,14 +73,14 @@ instance Comparable Test "c1" Test "c3" O.PGBool
 
 query1 :: O.Query (RecPgRead Test, RecPgRead Test, RecPgRead Test, RecPgReadNull Test)
 query1 = proc () -> do
-   t1 <- O.queryTable tisch -< ()
-   t2 <- O.queryTable tisch -< ()
+   t1 <- O.queryTable tisch' -< ()
+   t2 <- O.queryTable tisch' -< ()
    O.restrict -< eq
       (view (col (C::C "c1")) t1)
       (view (col (C::C "c1")) t2)
    (t3, t4n) <- O.leftJoin 
-      (O.queryTable (tisch' (T::T Test)))
-      (O.queryTable (tisch' (T::T Test)))
+      (O.queryTable (tisch (T::T Test)))
+      (O.queryTable (tisch (T::T Test)))
       (\(t3, t4) -> eq -- requires instance Comparable Test "c1" Test "c3" O.PGBool 
          (view (col (C::C "c1")) t3)
          (view (col (C::C "c3")) t4)) -< ()
@@ -103,7 +103,7 @@ outQuery3 :: Pg.Connection -> IO [Maybe (RecHs Test)]
 outQuery3 conn = fmap mayRecHs <$> O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
-update1 conn = O.runUpdate conn tisch upd fil
+update1 conn = O.runUpdate conn tisch' upd fil
   where upd :: RecPgRead Test -> RecPgWrite Test
         upd = over (cola (C::C "c3")) Just
             . over (cola (C::C "c4")) Just
