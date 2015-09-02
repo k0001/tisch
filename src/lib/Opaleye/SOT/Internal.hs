@@ -431,7 +431,9 @@ instance ToPgColumn pg hs => ToPgColumn (O.Nullable pg) (Maybe hs) where
   toPgColumn = maybe O.null (O.toNullable . toPgColumn)
   {-# INLINE toPgColumn #-}
 
+instance ToPgColumn ph hs => ToPgColumn ph (Tagged t hs)
 instance ToPgColumn O.PGText [Char] where toPgColumn = O.pgString
+instance ToPgColumn O.PGText Char where toPgColumn = toPgColumn . (:[])
 instance ToPgColumn O.PGBool Bool where toPgColumn = O.pgBool
 -- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
 -- Use 'Int32', 'Int64', etc. explicitely.
