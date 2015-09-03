@@ -209,6 +209,9 @@ type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
 
 -- | Expected output type for 'O.runQuery' on a @('PgR' t)@.
 --
+-- Important: If you are expecting a @('PgR' t)@ on the right side
+-- of a 'O.leftJoin', you will need to use @('Maybe' ('PgR' t))@.
+--
 -- Mnemonic: Haskell Read.
 type HsR (t :: *) = Rec t (Cols_HsR t)
 
@@ -400,7 +403,7 @@ mkHsI k = Tagged
 
 --------------------------------------------------------------------------------
 
--- | You'll often end up with a @('HsRN' a)@, for example, when converting
+-- | We often end up with a @('HsRN' a)@, for example, when converting
 -- the right side of a 'O.leftJoin' to Haskell types. Use this function to
 -- get a much more useful @'Maybe' ('HsRN' a)@ to be used with 'unHsR'.
 mayHsR :: Tisch t => HsRN t -> Maybe (HsR t)
@@ -652,7 +655,6 @@ eqnv :: ToPgColumn (O.Nullable a) (Maybe h)
 eqnv lmh r = O.toNullable $ (O..==) (toPgColumn lmh) (unTagged r)
 {-# INLINE eqnv #-}
 
-
 --------------------------------------------------------------------------------
 
 -- | The functional dependencies make type inference easier, but also forbid some
@@ -700,17 +702,6 @@ instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged ta a
   def = ppaUnTagged PP.def
   {-# INLINE def #-}
 
--- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
-instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
-  def = P.rmap Just PP.def
-  {-# INLINE def #-}
-
-instance 
-    ( PP.ProductProfunctor p, PP.Default p (O.Column (O.Nullable a)) (Maybe b)
-    ) => PP.Default p (Tagged ta (O.Column (O.Nullable a))) (Maybe (Tagged tb b)) where
-  def = P.dimap unTagged (fmap Tagged) PP.def
-  {-# INLINE def #-}
-
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance PP.ProductProfunctor p => PP.Default p (HList '[]) (HList '[]) where
   def = ppa HNil
@@ -728,6 +719,38 @@ instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HL.Record as) (HL.Record bs) where
   def = P.dimap unRecord HL.Record PP.def
+  {-# INLINE def #-}
+
+-- Maybes on the rhs
+
+-- | Orphan. 'Opaleye.SOT.Internal'.
+instance 
+    ( PP.ProductProfunctor p, PP.Default p a (Maybe b)
+    ) => PP.Default p (Tagged ta a) (Maybe (Tagged tb b)) where
+  def = P.dimap unTagged (fmap Tagged) PP.def
+  {-# INLINE def #-}
+
+-- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
+instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
+  def = P.rmap Just PP.def
+  {-# INLINE def #-}
+
+-- | Orphan. 'Opaleye.SOT.Internal'.
+instance
+    ( PP.ProductProfunctor p
+    , PP.Default p a (Maybe b)
+    , PP.Default p (HList as) (Maybe (HList bs))
+    ) => PP.Default p (HList (a ': as)) (Maybe (HList (b ': bs))) where
+  def = P.dimap (\(HCons a as) -> (a, as))
+                (\(mb, mbs) -> HCons <$> mb <*> mbs)
+                (PP.def PP.***! PP.def)
+  {-# INLINABLE def #-}
+
+-- | Orphan. 'Opaleye.SOT.Internal'.
+instance
+    ( PP.ProductProfunctor p, PP.Default p (HList as) (Maybe (HList bs))
+    ) => PP.Default p (HL.Record as) (Maybe (HL.Record bs)) where
+  def = P.dimap unRecord (fmap HL.Record) PP.def
   {-# INLINE def #-}
 
 --------------------------------------------------------------------------------
