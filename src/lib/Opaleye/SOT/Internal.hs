@@ -116,16 +116,16 @@ type family Col_RN (col :: Col GHC.Symbol WD RN * *) :: RN where
 -- type family Col_PgType (col :: Col GHC.Symbol WD RN * *) :: * where
 --   Col_PgType ('Col n w r p h) = p
 
-type family Col_HsTypeRead (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsTypeRead ('Col n w 'R  p h) = h
-  Col_HsTypeRead ('Col n w 'RN p h) = Maybe h
+type family Col_HsTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_HsTypeR ('Col n w 'R  p h) = h
+  Col_HsTypeR ('Col n w 'RN p h) = Maybe h
 
-type family Col_HsTypeReadMay (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsTypeReadMay ('Col n w r p h) = Maybe (Col_HsTypeRead ('Col n w r p h))
+type family Col_HsTypeRN (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_HsTypeRN ('Col n w r p h) = Maybe (Col_HsTypeR ('Col n w r p h))
 
-type family Col_HsTypeWrite (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsTypeWrite ('Col n 'W  r p h) = Col_HsTypeRead ('Col n 'W r p h)
-  Col_HsTypeWrite ('Col n 'WD r p h) = WDef (Col_HsTypeRead ('Col n 'WD r p h))
+type family Col_HsTypeI (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_HsTypeI ('Col n 'W  r p h) = Col_HsTypeR ('Col n 'W r p h)
+  Col_HsTypeI ('Col n 'WD r p h) = WDef (Col_HsTypeR ('Col n 'WD r p h))
 
 ---
 
@@ -138,26 +138,26 @@ type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]
 
 ---
 
--- | Payload for @('RecHsRead' t)@
-type Cols_HsRead (t :: *) = List.Map (Col_HsReadFieldSym1 t) (Cols t)
-type Col_HsReadField (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsTypeRead col)
-data Col_HsReadFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_HsReadFieldSym1 t) col = Col_HsReadField t col
+-- | Payload for @('RecHsR' t)@
+type Cols_HsR (t :: *) = List.Map (Col_HsRFieldSym1 t) (Cols t)
+type Col_HsRField (t :: *) (col :: Col GHC.Symbol WD RN * *)
+  = Tagged (TC t (Col_Name col)) (Col_HsTypeR col)
+data Col_HsRFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
 
--- | Payload for @('RecHsReadMay' t)@
-type Cols_HsReadMay (t :: *) = List.Map (Col_HsReadMayFieldSym1 t) (Cols t)
-type Col_HsReadMayField (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsTypeReadMay col)
-data Col_HsReadMayFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_HsReadMayFieldSym1 t) col = Col_HsReadMayField t col
+-- | Payload for @('RecHsRN' t)@
+type Cols_HsRN (t :: *) = List.Map (Col_HsRNFieldSym1 t) (Cols t)
+type Col_HsRNField (t :: *) (col :: Col GHC.Symbol WD RN * *)
+  = Tagged (TC t (Col_Name col)) (Col_HsTypeRN col)
+data Col_HsRNFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_HsRNFieldSym1 t) col = Col_HsRNField t col
 
--- | Payload for @('RecHsWrite' t)@
-type Cols_HsWrite (t :: *) = List.Map (Col_HsWriteFieldSym1 t) (Cols t)
-type Col_HsWriteField (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsTypeWrite col)
-data Col_HsWriteFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_HsWriteFieldSym1 t) col = Col_HsWriteField t col
+-- | Payload for @('RecHsI' t)@
+type Cols_HsI (t :: *) = List.Map (Col_HsIFieldSym1 t) (Cols t)
+type Col_HsIField (t :: *) (col :: Col GHC.Symbol WD RN * *)
+  = Tagged (TC t (Col_Name col)) (Col_HsTypeI col)
+data Col_HsIFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_HsIFieldSym1 t) col = Col_HsIField t col
 
 ---
 
@@ -176,63 +176,62 @@ data C (c :: GHC.Symbol) = C
 ---
 
 -- | Type of the 'HL.Record' columns (e.g., result of 'O.query')
-type Cols_PgRead (t :: *) = List.Map (Col_PgReadSym1 t) (Cols t)
-type family Col_PgRead (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRead t ('Col n w 'R  p h) = Tagged (TC t n) (O.Column p)
-  Col_PgRead t ('Col n w 'RN p h) = Tagged (TC t n) (O.Column (O.Nullable p))
-data Col_PgReadSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgReadSym1 t) col = Col_PgRead t col
+type Cols_PgR (t :: *) = List.Map (Col_PgRSym1 t) (Cols t)
+type family Col_PgR (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgR t ('Col n w 'R  p h) = Tagged (TC t n) (O.Column p)
+  Col_PgR t ('Col n w 'RN p h) = Tagged (TC t n) (O.Column (O.Nullable p))
+data Col_PgRSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
 
 -- | Type of the 'HL.Record' columns when they can all be nullable
 -- (e.g., rhs on a 'O.leftJoin').
-type Cols_PgReadNull (t :: *) = List.Map (Col_PgReadNullSym1 t) (Cols t)
-type family Col_PgReadNull (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgReadNull t ('Col n w 'R  p h) = Tagged (TC t n) (O.Column (O.Nullable p))
-  Col_PgReadNull t ('Col n w 'RN p h) = Tagged (TC t n) (O.Column (O.Nullable (O.Nullable p)))
-data Col_PgReadNullSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgReadNullSym1 t) col = Col_PgReadNull t col
+type Cols_PgRN (t :: *) = List.Map (Col_PgRNSym1 t) (Cols t)
+type family Col_PgRN (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgRN t ('Col n w 'R  p h) = Tagged (TC t n) (O.Column (O.Nullable p))
+  Col_PgRN t ('Col n w 'RN p h) = Tagged (TC t n) (O.Column (O.Nullable (O.Nullable p)))
+data Col_PgRNSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 
 -- | Type of the 'HL.Record' columns when inserting or updating a row.
-type Cols_PgWrite (t :: *) = List.Map (Col_PgWriteSym1 t) (Cols t)
-type family Col_PgWrite (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgWrite t ('Col n 'W  'R  p h) = Tagged (TC t n) (O.Column p) -- non-nullable
-  Col_PgWrite t ('Col n 'W  'RN p h) = Tagged (TC t n) (O.Column (O.Nullable p)) -- nullable
-  Col_PgWrite t ('Col n 'WD 'R  p h) = Tagged (TC t n) (Maybe (O.Column p)) -- non-nullable or default
-  Col_PgWrite t ('Col n 'WD 'RN p h) = Tagged (TC t n) (Maybe (O.Column (O.Nullable p))) -- nullable or default
-data Col_PgWriteSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgWriteSym1 t) col = Col_PgWrite t col
+type Cols_PgW (t :: *) = List.Map (Col_PgWSym1 t) (Cols t)
+type family Col_PgW (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgW t ('Col n 'W  'R  p h) = Tagged (TC t n) (O.Column p) -- non-nullable
+  Col_PgW t ('Col n 'W  'RN p h) = Tagged (TC t n) (O.Column (O.Nullable p)) -- nullable
+  Col_PgW t ('Col n 'WD 'R  p h) = Tagged (TC t n) (Maybe (O.Column p)) -- non-nullable or default
+  Col_PgW t ('Col n 'WD 'RN p h) = Tagged (TC t n) (Maybe (O.Column (O.Nullable p))) -- nullable or default
+data Col_PgWSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
 --------------------------------------------------------------------------------
 
 -- | All the representation of @t@ used within @opaleye-sot@ are @('Rec' t)@.
 type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
 
--- | Expected output type for 'O.runQuery' on a @('RecPgRead' t)@.
-type RecHsRead (t :: *) = Rec t (Cols_HsRead t)
+-- | Expected output type for 'O.runQuery' on a @('RecPgR' t)@.
+type RecHsR (t :: *) = Rec t (Cols_HsR t)
 
--- | Expected output type for 'O.runQuery' on a @('RecPgReadNull' t)@.
+-- | Expected output type for 'O.runQuery' on a @('RecPgRN' t)@.
 --
--- Use 'mayRecHsRead' to convert @('RechHsReadMay' t)@ to
--- @('Maybe' ('RecHsRead' t))@.
-type RecHsReadMay (t :: *) = Rec t (Cols_HsReadMay t)
+-- Use 'mayRecHsR' to convert @('RechHsRN' t)@ to
+-- @('Maybe' ('RecHsR' t))@.
+type RecHsRN (t :: *) = Rec t (Cols_HsRN t)
 
--- | Output type of 'toRecHsWrite'.
+-- | Output type of 'toRecHsI', used when inserting a new row to the table.
 --
 -- This type is used internally as an intermediate representation between
--- @('UnRecHsWrite' t)@ and @('RecPgWrite' t)@ where each 'O.Nullable'
--- column in the latter is a 'Maybe' in @('RecHsWrite' t)@.
-type RecHsWrite (t :: *) = Rec t (Cols_HsWrite t)
+-- @('UnRecHsI' t)@ and @('RecPgW' t)@.
+type RecHsI (t :: *) = Rec t (Cols_HsI t)
 
 -- | Output type of @'O.queryTable' ('tisch' t)@.
-type RecPgRead (t :: *) = Rec t (Cols_PgRead t)
+type RecPgR (t :: *) = Rec t (Cols_PgR t)
 
--- | Like @('RecPgReadNull' t)@ but every field is 'O.Nullable', as in the
+-- | Like @('RecPgRN' t)@ but every field is 'O.Nullable', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
-type RecPgReadNull (t :: *) = Rec t (Cols_PgReadNull t)
+type RecPgRN (t :: *) = Rec t (Cols_PgRN t)
 
--- | Representation of @('UnRecHsWrite' t)@ as 'O.Columns'. To be used when
+-- | Representation of @('UnRecHsI' t)@ as 'O.Columns'. To be used when
 -- writing to the database.
-type RecPgWrite (t :: *) = Rec t (Cols_PgWrite t)
+type RecPgW (t :: *) = Rec t (Cols_PgW t)
 
 --------------------------------------------------------------------------------
 
@@ -241,29 +240,29 @@ type RecPgWrite (t :: *) = Rec t (Cols_PgWrite t)
 -- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
 -- 'Tisch' so that we can get early compile time errors.
 type TischCtx t
-  = ( DropMaybes (HL.RecordValuesR (Cols_HsReadMay t)) ~ HL.RecordValuesR (Cols_HsRead t)
+  = ( DropMaybes (HL.RecordValuesR (Cols_HsRN t)) ~ HL.RecordValuesR (Cols_HsR t)
     , GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
     , HDistributeProxy (Cols t)
     , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
-    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsRead t)) (Cols_HsRead t)
-    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgWrite t)) (Cols_PgWrite t)
-    , HL.HMapAux HList HToRecPgWriteField (HL.RecordValuesR (Cols_HsWrite t)) (HL.RecordValuesR (Cols_PgWrite t))
-    , HL.HRLabelSet (Cols_HsRead t)
-    , HL.HRLabelSet (Cols_HsReadMay t)
-    , HL.HRLabelSet (Cols_HsWrite t)
-    , HL.HRLabelSet (Cols_PgRead t)
-    , HL.HRLabelSet (Cols_PgReadNull t)
-    , HL.HRLabelSet (Cols_PgWrite t)
-    , HL.RecordValues (Cols_HsRead t)
-    , HL.RecordValues (Cols_HsReadMay t)
-    , HL.RecordValues (Cols_HsWrite t)
-    , HL.RecordValues (Cols_PgWrite t)
-    , HL.SameLabels (Cols_HsReadMay t) (Cols_HsRead t)
-    , HL.SameLength (HL.RecordValuesR (Cols_HsWrite t)) (HL.RecordValuesR (Cols_PgWrite t))
+    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
+    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
+    , HL.HMapAux HList HToRecPgWField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.HRLabelSet (Cols_HsR t)
+    , HL.HRLabelSet (Cols_HsRN t)
+    , HL.HRLabelSet (Cols_HsI t)
+    , HL.HRLabelSet (Cols_PgR t)
+    , HL.HRLabelSet (Cols_PgRN t)
+    , HL.HRLabelSet (Cols_PgW t)
+    , HL.RecordValues (Cols_HsR t)
+    , HL.RecordValues (Cols_HsRN t)
+    , HL.RecordValues (Cols_HsI t)
+    , HL.RecordValues (Cols_PgW t)
+    , HL.SameLabels (Cols_HsRN t) (Cols_HsR t)
+    , HL.SameLength (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
-    , HUndistributeMaybe (HL.RecordValuesR (Cols_HsRead t)) (HL.RecordValuesR (Cols_HsReadMay t))
-    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgWrite t)) (HL.Record (Cols_PgRead t))
+    , HUndistributeMaybe (HL.RecordValuesR (Cols_HsR t)) (HL.RecordValuesR (Cols_HsRN t))
+    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
     )
 
 -- | Tisch means table in german.
@@ -282,7 +281,7 @@ type TischCtx t
 --
 -- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
 -- and the @TUser@ term constructor can be used as a type proxy for tools such
--- as 'tisch' or 'fromRecHsRead'. 
+-- as 'tisch' or 'fromRecHsR'. 
 class TischCtx t => Tisch (t :: *) where
   -- | PostgreSQL schema name where to find the table (@"public"@ is PostgreSQL's
   -- default schema name).
@@ -295,12 +294,12 @@ class TischCtx t => Tisch (t :: *) where
   type Cols t :: [Col GHC.Symbol WD RN * *]
 
   -- | Haskell representation for this 'Tisch' when /reading/ from the database.
-  -- See 'UnRecHsWrite'.
-  type UnRecHsRead t :: *
+  -- See 'UnRecHsI'.
+  type UnRecHsR t :: *
 
   -- | Haskell representation for this 'Tisch' when /inserting/ a row to the database.
   --
-  -- Most frequently @('UnRecHsRead' t ~ 'UnRecHsWrite' t)@. However, if for example,
+  -- Most frequently @('UnRecHsR' t ~ 'UnRecHsI' t)@. However, if for example,
   -- you have not-nullable columns that are filled with some default value during
   -- insert, then they will be different.
   --
@@ -314,91 +313,91 @@ class TischCtx t => Tisch (t :: *) where
   --
   --   * description /(text, nullable, with default value)/ 
   --
-  -- In that case, you may set 'UnRecHsRead' and 'UnRecHsWrite' to this:
+  -- In that case, you may set 'UnRecHsR' and 'UnRecHsI' to this:
   --
   -- @
-  -- type 'UnRecHsRead'  t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
-  -- type 'UnRecHsWrite' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
+  -- type 'UnRecHsR'  t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
+  -- type 'UnRecHsI' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
   -- @
   --
   -- /Note: tuples are used in the above example for simplicity, but you may use any type you want./
   --
   -- If you know, however, that those fields wrapped in 'WDef' will always be set to
   -- the @DEFAULT@ value in the table, then you don't really need to expose those 'WDef'
-  -- fields in 'UnRecHsWrite', you can just deal with them internally in 'toRecHsWrite''.
-  type UnRecHsWrite t :: *
+  -- fields in 'UnRecHsI', you can just deal with them internally in 'toRecHsI''.
+  type UnRecHsI t :: *
 
-  -- | Convert an Opaleye-compatible Haskell representation of @'UnRecHsRead' t@ to
-  -- @'UnRecHsRead' t@.
+  -- | Convert an Opaleye-compatible Haskell representation of @'UnRecHsR' t@ to
+  -- @'UnRecHsR' t@.
   --
   -- For your convenience, you are encouraged to use 'cola', but you may also use
   -- other tools from "Data.HList.Record" as you see fit:
   --
   -- @
-  -- 'fromRecHsRead'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
+  -- 'fromRecHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
   --                           (r '^.' 'cola' ('C' :: 'C' "age"))
   -- @
   --
-  -- Hint: If the type checker is having trouble inferring @('UnRecHsRead' t)@,
-  -- consider using 'fromRecHsRead' instead.
-  fromRecHsRead' :: RecHsRead t -> Either Ex.SomeException (UnRecHsRead t)
+  -- Hint: If the type checker is having trouble inferring @('UnRecHsR' t)@,
+  -- consider using 'fromRecHsR' instead.
+  fromRecHsR' :: RecHsR t -> Either Ex.SomeException (UnRecHsR t)
 
-  -- | Convert an @'UnRecHsRead' t@ to an Opaleye-compatible Haskell representation.
+  -- | Convert an @'UnRecHsR' t@ to an Opaleye-compatible Haskell representation.
   --
-  -- For your convenience, you may use 'rhwBuild' together with 'HL.hBuild' to build
-  -- 'toRecHsWrite':
+  -- For your convenience, you may use 'rhiBuild' together with 'HL.hBuild' to build
+  -- 'toRecHsI':
   --
   -- @
-  -- 'toRecHsWrite' (Person name age) = 'rhwBuild' $ \\set_ -> 'HL.hBuild'
+  -- 'toRecHsI' (Person name age) = 'rhiBuild' $ \\set_ -> 'HL.hBuild'
   --     (set_ ('C' :: 'C' "name") name)
   --     (set_ ('C' :: 'C' "age") age)
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
   --
-  -- Hint: If the type checker is having trouble inferring @('UnRecHsRead' t)@
-  -- and @('RecHsWrite' t)@, consider using 'toRecHsWrite' instead.
-  toRecHsWrite' :: UnRecHsWrite t -> RecHsWrite t
+  -- Hint: If the type checker is having trouble inferring @('UnRecHsR' t)@
+  -- and @('RecHsI' t)@, consider using 'toRecHsI' instead.
+  toRecHsI' :: UnRecHsI t -> RecHsI t
 
--- | Like 'fromRecHsRead'', except it takes @t@ explicitely for the times when
+-- | Like 'fromRecHsR'', except it takes @t@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHsRead :: Tisch t => t -> RecHsRead t -> Either Ex.SomeException (UnRecHsRead t)
-fromRecHsRead _ = fromRecHsRead'
-{-# INLINE fromRecHsRead #-}
+fromRecHsR :: Tisch t => t -> RecHsR t -> Either Ex.SomeException (UnRecHsR t)
+fromRecHsR _ = fromRecHsR'
+{-# INLINE fromRecHsR #-}
 
 
--- | Convenience intended to be used within 'toRecHsWrite'',
--- together with 'HL.hBuild'. @rhw@ stands for 'RecHsWrite'.
+-- | Convenience intended to be used within 'toRecHsI'',
+-- together with 'HL.hBuild'. @rhi@ stands for 'RecHsI'.
 
--- TODO: see if it is posisble to pack 'rhwBuild' and 'HL.hBuild' into
+-- TODO: see if it is posisble to pack 'rhiBuild' and 'HL.hBuild' into
 -- a single thing.
-rhwBuild
+rhiBuild
   :: forall t xs
-  .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsWrite t)) xs (Cols_HsWrite t))
+  .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
-  -> RecHsWrite t -- ^
-rhwBuild k = Tagged
+  -> RecHsI t -- ^
+rhiBuild k = Tagged
            $ HL.Record
-           $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsWrite t)))
+           $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
            $ k (const Tagged)
-{-# INLINE rhwBuild #-}
+{-# INLINE rhiBuild #-}
 
 --------------------------------------------------------------------------------
 
--- | You'll often end up with a @('RecHsReadMay' a)@, for example, when converting
+-- | You'll often end up with a @('RecHsRN' a)@, for example, when converting
 -- the right side of a 'O.leftJoin' to Haskell types. Use this function to
--- get a much more useful @'Maybe' ('RecHsReadMay' a)@ to be used with 'fromRecHsRead'.
-mayRecHsRead :: Tisch t => RecHsReadMay t -> Maybe (RecHsRead t)
-mayRecHsRead = fmap Tagged . recordUndistributeMaybe . unTagged
-{-# INLINE mayRecHsRead #-}
+-- get a much more useful @'Maybe' ('RecHsRN' a)@ to be used with 'fromRecHsR'.
+mayRecHsR :: Tisch t => RecHsRN t -> Maybe (RecHsR t)
+mayRecHsR = fmap Tagged . recordUndistributeMaybe . unTagged
+{-# INLINE mayRecHsR #-}
 
 
--- | You'll need to use this function to convert a 'RecHs' to a 'RecPgWrite'
+-- | You'll need to use this function to convert a 'RecHs' to a 'RecPgW'
 -- when using 'O.runInsert'.
-toRecPgWrite :: Tisch t => RecHsWrite t -> RecPgWrite t
-toRecPgWrite = Tagged . HL.hMapTaggedFn . HL.hMapL HToRecPgWriteField
+toRecPgW :: Tisch t => RecHsI t -> RecPgW t
+toRecPgW = Tagged . HL.hMapTaggedFn . HL.hMapL HToRecPgWField
              . HL.recordValues . unTagged
-{-# INLINE toRecPgWrite #-}
+{-# INLINE toRecPgW #-}
 
 -- W  R  -> h -- not nullable
 -- W  RN -> Maybe h -- nullable
@@ -418,7 +417,7 @@ type Cols_Props (t :: *) = List.Map (Col_PropsSym1 t) (Cols t)
 
 -- | 'O.TableProperties' for a single column in 'Tisch' @t@.
 type Col_Props (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = O.TableProperties (Col_PgWrite t col) (Col_PgRead t col)
+  = O.TableProperties (Col_PgW t col) (Col_PgR t col)
 data Col_PropsSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PropsSym1 t) col = Col_Props t col
 data Col_PropsSym0 (col :: TyFun t (TyFun (Col GHC.Symbol WD RN * *) * -> *))
@@ -462,7 +461,7 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 --------------------------------------------------------------------------------
 
 -- | Opaleye 'O.Table' for a 'Tisch'.
-type TischTable (t :: *) = O.Table (RecPgWrite t) (RecPgRead t)
+type TischTable (t :: *) = O.Table (RecPgW t) (RecPgR t)
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
 tisch' :: Tisch t => TischTable t
@@ -551,13 +550,13 @@ instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pg
 --------------------------------------------------------------------------------
 
 -- | Use with 'HL.ApplyAB' to apply convert a field in a
--- @('HList' ('Cols_HsWrite' t)@) to a field in a @('HList' ('Cols_PgWrite' t))@.
-data HToRecPgWriteField = HToRecPgWriteField
+-- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
+data HToRecPgWField = HToRecPgWField
 
-instance (ToPgColumn pg hs) => HL.ApplyAB HToRecPgWriteField hs (O.Column pg) where
+instance (ToPgColumn pg hs) => HL.ApplyAB HToRecPgWField hs (O.Column pg) where
   applyAB _ = toPgColumn
   {-# INLINE applyAB #-}
-instance (ToPgColumn pg hs) => HL.ApplyAB HToRecPgWriteField (WDef hs) (Maybe (O.Column pg)) where
+instance (ToPgColumn pg hs) => HL.ApplyAB HToRecPgWField (WDef hs) (Maybe (O.Column pg)) where
   applyAB _ = fmap toPgColumn . wdef Nothing Just 
   {-# INLINE applyAB #-}
 
@@ -574,7 +573,7 @@ col prx = cola prx . _Unwrapped
 --
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
 -- when trying to change the type of @a@ during an update, or when implementing
--- 'fromRecHsRead'.
+-- 'fromRecHsR'.
 cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
@@ -589,7 +588,7 @@ cola = go where -- just to hide the "forall" from the haddocks
 -- | @'setc' ('C' :: 'C' "x") hs = 'set' ('cola' ('C' :: 'C' "x")) ('toPgColumn' hs)@
 --
 -- This function is particularly useful when writing functions of type
--- @(RecPgRead t -> RecPgWrite t)@, such as those required by 'O.runUpdate'.
+-- @(RecPgR t -> RecPgW t)@, such as those required by 'O.runUpdate'.
 setc :: ( ToPgColumn a' hs
         , HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a') )
      => C c -> hs -> Rec t xs -> Rec t xs'
