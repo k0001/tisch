@@ -138,21 +138,21 @@ type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]
 
 ---
 
--- | Payload for @('RecHsR' t)@
+-- | Payload for @('HsR' t)@
 type Cols_HsR (t :: *) = List.Map (Col_HsRFieldSym1 t) (Cols t)
 type Col_HsRField (t :: *) (col :: Col GHC.Symbol WD RN * *)
   = Tagged (TC t (Col_Name col)) (Col_HsTypeR col)
 data Col_HsRFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
 
--- | Payload for @('RecHsRN' t)@
+-- | Payload for @('HsRN' t)@
 type Cols_HsRN (t :: *) = List.Map (Col_HsRNFieldSym1 t) (Cols t)
 type Col_HsRNField (t :: *) (col :: Col GHC.Symbol WD RN * *)
   = Tagged (TC t (Col_Name col)) (Col_HsTypeRN col)
 data Col_HsRNFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsRNFieldSym1 t) col = Col_HsRNField t col
 
--- | Payload for @('RecHsI' t)@
+-- | Payload for @('HsI' t)@
 type Cols_HsI (t :: *) = List.Map (Col_HsIFieldSym1 t) (Cols t)
 type Col_HsIField (t :: *) (col :: Col GHC.Symbol WD RN * *)
   = Tagged (TC t (Col_Name col)) (Col_HsTypeI col)
@@ -207,31 +207,31 @@ type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 -- | All the representation of @t@ used within @opaleye-sot@ are @('Rec' t)@.
 type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
 
--- | Expected output type for 'O.runQuery' on a @('RecPgR' t)@.
-type RecHsR (t :: *) = Rec t (Cols_HsR t)
+-- | Expected output type for 'O.runQuery' on a @('PgR' t)@.
+type HsR (t :: *) = Rec t (Cols_HsR t)
 
--- | Expected output type for 'O.runQuery' on a @('RecPgRN' t)@.
+-- | Expected output type for 'O.runQuery' on a @('PgRN' t)@.
 --
--- Use 'mayRecHsR' to convert @('RechHsRN' t)@ to
--- @('Maybe' ('RecHsR' t))@.
-type RecHsRN (t :: *) = Rec t (Cols_HsRN t)
+-- Use 'mayHsR' to convert @('RechHsRN' t)@ to
+-- @('Maybe' ('HsR' t))@.
+type HsRN (t :: *) = Rec t (Cols_HsRN t)
 
--- | Output type of 'toRecHsI', used when inserting a new row to the table.
+-- | Output type of 'toHsI', used when inserting a new row to the table.
 --
 -- This type is used internally as an intermediate representation between
--- @('UnRecHsI' t)@ and @('RecPgW' t)@.
-type RecHsI (t :: *) = Rec t (Cols_HsI t)
+-- @('UnHsI' t)@ and @('PgW' t)@.
+type HsI (t :: *) = Rec t (Cols_HsI t)
 
 -- | Output type of @'O.queryTable' ('tisch' t)@.
-type RecPgR (t :: *) = Rec t (Cols_PgR t)
+type PgR (t :: *) = Rec t (Cols_PgR t)
 
--- | Like @('RecPgRN' t)@ but every field is 'O.Nullable', as in the
+-- | Like @('PgRN' t)@ but every field is 'O.Nullable', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
-type RecPgRN (t :: *) = Rec t (Cols_PgRN t)
+type PgRN (t :: *) = Rec t (Cols_PgRN t)
 
--- | Representation of @('UnRecHsI' t)@ as 'O.Columns'. To be used when
+-- | Representation of @('UnHsI' t)@ as 'O.Columns'. To be used when
 -- writing to the database.
-type RecPgW (t :: *) = Rec t (Cols_PgW t)
+type PgW (t :: *) = Rec t (Cols_PgW t)
 
 --------------------------------------------------------------------------------
 
@@ -247,7 +247,7 @@ type TischCtx t
     , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
-    , HL.HMapAux HList HToRecPgWField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.HMapAux HList HToPgWField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.HRLabelSet (Cols_HsR t)
     , HL.HRLabelSet (Cols_HsRN t)
     , HL.HRLabelSet (Cols_HsI t)
@@ -281,7 +281,7 @@ type TischCtx t
 --
 -- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
 -- and the @TUser@ term constructor can be used as a type proxy for tools such
--- as 'tisch' or 'fromRecHsR'. 
+-- as 'tisch' or 'fromHsR'. 
 class TischCtx t => Tisch (t :: *) where
   -- | PostgreSQL schema name where to find the table (@"public"@ is PostgreSQL's
   -- default schema name).
@@ -294,12 +294,12 @@ class TischCtx t => Tisch (t :: *) where
   type Cols t :: [Col GHC.Symbol WD RN * *]
 
   -- | Haskell representation for this 'Tisch' when /reading/ from the database.
-  -- See 'UnRecHsI'.
-  type UnRecHsR t :: *
+  -- See 'UnHsI'.
+  type UnHsR t :: *
 
   -- | Haskell representation for this 'Tisch' when /inserting/ a row to the database.
   --
-  -- Most frequently @('UnRecHsR' t ~ 'UnRecHsI' t)@. However, if for example,
+  -- Most frequently @('UnHsR' t ~ 'UnHsI' t)@. However, if for example,
   -- you have not-nullable columns that are filled with some default value during
   -- insert, then they will be different.
   --
@@ -313,61 +313,61 @@ class TischCtx t => Tisch (t :: *) where
   --
   --   * description /(text, nullable, with default value)/ 
   --
-  -- In that case, you may set 'UnRecHsR' and 'UnRecHsI' to this:
+  -- In that case, you may set 'UnHsR' and 'UnHsI' to this:
   --
   -- @
-  -- type 'UnRecHsR'  t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
-  -- type 'UnRecHsI' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
+  -- type 'UnHsR'  t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
+  -- type 'UnHsI' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
   -- @
   --
   -- /Note: tuples are used in the above example for simplicity, but you may use any type you want./
   --
   -- If you know, however, that those fields wrapped in 'WDef' will always be set to
   -- the @DEFAULT@ value in the table, then you don't really need to expose those 'WDef'
-  -- fields in 'UnRecHsI', you can just deal with them internally in 'toRecHsI''.
-  type UnRecHsI t :: *
+  -- fields in 'UnHsI', you can just deal with them internally in 'toHsI''.
+  type UnHsI t :: *
 
-  -- | Convert an Opaleye-compatible Haskell representation of @'UnRecHsR' t@ to
-  -- @'UnRecHsR' t@.
+  -- | Convert an Opaleye-compatible Haskell representation of @'UnHsR' t@ to
+  -- @'UnHsR' t@.
   --
   -- For your convenience, you are encouraged to use 'cola', but you may also use
   -- other tools from "Data.HList.Record" as you see fit:
   --
   -- @
-  -- 'fromRecHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
+  -- 'fromHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
   --                           (r '^.' 'cola' ('C' :: 'C' "age"))
   -- @
   --
-  -- Hint: If the type checker is having trouble inferring @('UnRecHsR' t)@,
-  -- consider using 'fromRecHsR' instead.
-  fromRecHsR' :: RecHsR t -> Either Ex.SomeException (UnRecHsR t)
+  -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@,
+  -- consider using 'fromHsR' instead.
+  fromHsR' :: HsR t -> Either Ex.SomeException (UnHsR t)
 
-  -- | Convert an @'UnRecHsR' t@ to an Opaleye-compatible Haskell representation.
+  -- | Convert an @'UnHsR' t@ to an Opaleye-compatible Haskell representation.
   --
   -- For your convenience, you may use 'rhiBuild' together with 'HL.hBuild' to build
-  -- 'toRecHsI':
+  -- 'toHsI':
   --
   -- @
-  -- 'toRecHsI' (Person name age) = 'rhiBuild' $ \\set_ -> 'HL.hBuild'
+  -- 'toHsI' (Person name age) = 'rhiBuild' $ \\set_ -> 'HL.hBuild'
   --     (set_ ('C' :: 'C' "name") name)
   --     (set_ ('C' :: 'C' "age") age)
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
   --
-  -- Hint: If the type checker is having trouble inferring @('UnRecHsR' t)@
-  -- and @('RecHsI' t)@, consider using 'toRecHsI' instead.
-  toRecHsI' :: UnRecHsI t -> RecHsI t
+  -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@
+  -- and @('HsI' t)@, consider using 'toHsI' instead.
+  toHsI' :: UnHsI t -> HsI t
 
--- | Like 'fromRecHsR'', except it takes @t@ explicitely for the times when
+-- | Like 'fromHsR'', except it takes @t@ explicitely for the times when
 -- the it can't be inferred.
-fromRecHsR :: Tisch t => t -> RecHsR t -> Either Ex.SomeException (UnRecHsR t)
-fromRecHsR _ = fromRecHsR'
-{-# INLINE fromRecHsR #-}
+fromHsR :: Tisch t => t -> HsR t -> Either Ex.SomeException (UnHsR t)
+fromHsR _ = fromHsR'
+{-# INLINE fromHsR #-}
 
 
--- | Convenience intended to be used within 'toRecHsI'',
--- together with 'HL.hBuild'. @rhi@ stands for 'RecHsI'.
+-- | Convenience intended to be used within 'toHsI'',
+-- together with 'HL.hBuild'. @rhi@ stands for 'HsI'.
 
 -- TODO: see if it is posisble to pack 'rhiBuild' and 'HL.hBuild' into
 -- a single thing.
@@ -375,7 +375,7 @@ rhiBuild
   :: forall t xs
   .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
-  -> RecHsI t -- ^
+  -> HsI t -- ^
 rhiBuild k = Tagged
            $ HL.Record
            $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
@@ -384,20 +384,20 @@ rhiBuild k = Tagged
 
 --------------------------------------------------------------------------------
 
--- | You'll often end up with a @('RecHsRN' a)@, for example, when converting
+-- | You'll often end up with a @('HsRN' a)@, for example, when converting
 -- the right side of a 'O.leftJoin' to Haskell types. Use this function to
--- get a much more useful @'Maybe' ('RecHsRN' a)@ to be used with 'fromRecHsR'.
-mayRecHsR :: Tisch t => RecHsRN t -> Maybe (RecHsR t)
-mayRecHsR = fmap Tagged . recordUndistributeMaybe . unTagged
-{-# INLINE mayRecHsR #-}
+-- get a much more useful @'Maybe' ('HsRN' a)@ to be used with 'fromHsR'.
+mayHsR :: Tisch t => HsRN t -> Maybe (HsR t)
+mayHsR = fmap Tagged . recordUndistributeMaybe . unTagged
+{-# INLINE mayHsR #-}
 
 
--- | You'll need to use this function to convert a 'RecHs' to a 'RecPgW'
+-- | You'll need to use this function to convert a 'Hs' to a 'PgW'
 -- when using 'O.runInsert'.
-toRecPgW :: Tisch t => RecHsI t -> RecPgW t
-toRecPgW = Tagged . HL.hMapTaggedFn . HL.hMapL HToRecPgWField
+toPgW :: Tisch t => HsI t -> PgW t
+toPgW = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField
              . HL.recordValues . unTagged
-{-# INLINE toRecPgW #-}
+{-# INLINE toPgW #-}
 
 -- W  R  -> h -- not nullable
 -- W  RN -> Maybe h -- nullable
@@ -461,7 +461,7 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 --------------------------------------------------------------------------------
 
 -- | Opaleye 'O.Table' for a 'Tisch'.
-type TischTable (t :: *) = O.Table (RecPgW t) (RecPgR t)
+type TischTable (t :: *) = O.Table (PgW t) (PgR t)
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
 tisch' :: Tisch t => TischTable t
@@ -551,12 +551,12 @@ instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pg
 
 -- | Use with 'HL.ApplyAB' to apply convert a field in a
 -- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
-data HToRecPgWField = HToRecPgWField
+data HToPgWField = HToPgWField
 
-instance (ToPgColumn pg hs) => HL.ApplyAB HToRecPgWField hs (O.Column pg) where
+instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField hs (O.Column pg) where
   applyAB _ = toPgColumn
   {-# INLINE applyAB #-}
-instance (ToPgColumn pg hs) => HL.ApplyAB HToRecPgWField (WDef hs) (Maybe (O.Column pg)) where
+instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField (WDef hs) (Maybe (O.Column pg)) where
   applyAB _ = fmap toPgColumn . wdef Nothing Just 
   {-# INLINE applyAB #-}
 
@@ -573,7 +573,7 @@ col prx = cola prx . _Unwrapped
 --
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
 -- when trying to change the type of @a@ during an update, or when implementing
--- 'fromRecHsR'.
+-- 'fromHsR'.
 cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
@@ -588,7 +588,7 @@ cola = go where -- just to hide the "forall" from the haddocks
 -- | @'setc' ('C' :: 'C' "x") hs = 'set' ('cola' ('C' :: 'C' "x")) ('toPgColumn' hs)@
 --
 -- This function is particularly useful when writing functions of type
--- @(RecPgR t -> RecPgW t)@, such as those required by 'O.runUpdate'.
+-- @(PgR t -> PgW t)@, such as those required by 'O.runUpdate'.
 setc :: ( ToPgColumn a' hs
         , HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a') )
      => C c -> hs -> Rec t xs -> Rec t xs'
