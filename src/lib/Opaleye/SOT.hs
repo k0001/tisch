@@ -1,20 +1,20 @@
 module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
- , fromRecHs
- , mkRecHs
+ , fromRecHsRead
+ , rhwBuild
 
    -- * Working with 'Tisch'
  , TischTable
  , tisch
  , tisch'
- , RecHs
- , RecHsMay
- , mayRecHs
+ , RecHsRead
+ , RecHsReadMay
+ , mayRecHsRead
  , RecPgRead
  , RecPgReadNull
  , RecPgWrite
- , writeRecHs
+ , toRecPgWrite
 
    -- * Querying columns
  , eq

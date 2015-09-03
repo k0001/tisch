@@ -27,42 +27,44 @@ import           Opaleye.SOT.Internal
 
 data TTest = TTest
 
-data Test = Test Bool (Maybe Bool) Bool (Maybe Int64)
+data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
+data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
 
 -- | Internal. See "Opaleye.SOT.Internal.TTest".
 instance Tisch TTest where
-  type UnTisch TTest = Test
+  type UnRecHsRead TTest = TestR
+  type UnRecHsWrite TTest = TestW
   type SchemaName TTest = "s"
   type TableName TTest = "t"
   type Cols TTest = [ 'Col "c1" 'W 'R O.PGBool Bool
                     , 'Col "c2" 'W 'RN O.PGBool Bool
                     , 'Col "c3" 'WN 'R O.PGBool Bool
                     , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
-  fromRecHs' = \r -> return $ Test
+  fromRecHsRead' = \r -> return $ TestR
      (r ^. cola (C::C "c1"))
      (r ^. cola (C::C "c2"))
      (r ^. cola (C::C "c3"))
      (r ^. cola (C::C "c4"))
-  toRecHs (Test c1 c2 c3 c4) = mkRecHs $ \set_ -> HL.hBuild
+  toRecHsWrite' (TestW c1 c2 c3 c4) = rhwBuild $ \set_ -> HL.hBuild
      (set_ (C::C "c1") c1)
-     (set_ (C::C "c3") c3)
      (set_ (C::C "c2") c2)
+     (set_ (C::C "c3") c3)
      (set_ (C::C "c4") c4)
 
 types :: ()
 types = seq x () where
   x :: ( Rec TTest '[]
            ~ HL.Tagged (T TTest) (HL.Record '[])
-       , RecHs TTest
-           ~ Rec TTest (Cols_Hs TTest)
-       , Cols_Hs TTest
+       , RecHsRead TTest
+           ~ Rec TTest (Cols_HsRead TTest)
+       , Cols_HsRead TTest
            ~ '[HL.Tagged (TC TTest "c1") Bool,
                HL.Tagged (TC TTest "c2") (Maybe Bool),
                HL.Tagged (TC TTest "c3") Bool,
                HL.Tagged (TC TTest "c4") (Maybe Int64)]
-       , RecHsMay TTest
-           ~ Rec TTest (Cols_HsMay TTest)
-       , Cols_HsMay TTest
+       , RecHsReadMay TTest
+           ~ Rec TTest (Cols_HsReadMay TTest)
+       , Cols_HsReadMay TTest
            ~ '[HL.Tagged (TC TTest "c1") (Maybe Bool),
                HL.Tagged (TC TTest "c2") (Maybe (Maybe Bool)),
                HL.Tagged (TC TTest "c3") (Maybe Bool),
@@ -93,7 +95,7 @@ query2 = proc () -> do
   (t,_,_,_) <- query1 -< ()
   returnA -< t
 
-outQuery2 :: Pg.Connection -> IO [RecHs TTest]
+outQuery2 :: Pg.Connection -> IO [RecHsRead TTest]
 outQuery2 conn = O.runQuery conn query2
 
 query3 :: O.Query (RecPgReadNull TTest)
@@ -101,20 +103,20 @@ query3 = proc () -> do
   (_,_,_,t) <- query1 -< ()
   returnA -< t
 
-outQuery3 :: Pg.Connection -> IO [Maybe (RecHs TTest)]
-outQuery3 conn = fmap mayRecHs <$> O.runQuery conn query3
+outQuery3 :: Pg.Connection -> IO [Maybe (RecHsRead TTest)]
+outQuery3 conn = fmap mayRecHsRead <$> O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
 update1 conn = O.runUpdate conn tisch' upd fil
   where upd :: RecPgRead TTest -> RecPgWrite TTest
         upd = over (cola (C::C "c3")) Just
             . over (cola (C::C "c4")) Just
-        fil :: Rec TTest (Cols_PgRead TTest) -> O.Column O.PGBool
+        fil :: RecPgRead TTest -> O.Column O.PGBool
         fil = \v -> eqc True (view (col (C::C "c1")) v)
 
 outQuery1 :: Pg.Connection
-          -> IO [(RecHs TTest, RecHs TTest, RecHs TTest, Maybe (RecHs TTest))]
+          -> IO [(RecHsRead TTest, RecHsRead TTest, RecHsRead TTest, Maybe (RecHsRead TTest))]
 outQuery1 conn = do
-  xs :: [(RecHs TTest, RecHs TTest, RecHs TTest, RecHsMay TTest)]
+  xs :: [(RecHsRead TTest, RecHsRead TTest, RecHsRead TTest, RecHsReadMay TTest)]
      <- O.runQuery conn query1
-  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayRecHs d)
+  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayRecHsRead d)
