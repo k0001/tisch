@@ -145,13 +145,6 @@ type Col_HsRField (t :: *) (col :: Col GHC.Symbol WD RN * *)
 data Col_HsRFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
 
--- | Payload for @('HsRN' t)@
-type Cols_HsRN (t :: *) = List.Map (Col_HsRNFieldSym1 t) (Cols t)
-type Col_HsRNField (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsTypeRN col)
-data Col_HsRNFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_HsRNFieldSym1 t) col = Col_HsRNField t col
-
 -- | Payload for @('HsI' t)@
 type Cols_HsI (t :: *) = List.Map (Col_HsIFieldSym1 t) (Cols t)
 type Col_HsIField (t :: *) (col :: Col GHC.Symbol WD RN * *)
@@ -215,13 +208,6 @@ type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
 -- Mnemonic: Haskell Read.
 type HsR (t :: *) = Rec t (Cols_HsR t)
 
--- | Expected output type for 'O.runQuery' on a @('PgRN' t)@.
---
--- Use 'mayHsR' to convert @('RechHsRN' t)@ to @('Maybe' ('HsR' t))@.
---
--- Mnemonic: Haskell Read Nulls.
-type HsRN (t :: *) = Rec t (Cols_HsRN t)
-
 -- | Output type of 'toHsI', used when inserting a new row to the table.
 --
 -- This type is used internally as an intermediate representation between
@@ -254,8 +240,7 @@ type PgW (t :: *) = Rec t (Cols_PgW t)
 -- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
 -- 'Tisch' so that we can get early compile time errors.
 type TischCtx t
-  = ( DropMaybes (HL.RecordValuesR (Cols_HsRN t)) ~ HL.RecordValuesR (Cols_HsR t)
-    , GHC.KnownSymbol (SchemaName t)
+  = ( GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
     , HDistributeProxy (Cols t)
     , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
@@ -263,19 +248,15 @@ type TischCtx t
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
     , HL.HMapAux HList HToPgWField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.HRLabelSet (Cols_HsR t)
-    , HL.HRLabelSet (Cols_HsRN t)
     , HL.HRLabelSet (Cols_HsI t)
     , HL.HRLabelSet (Cols_PgR t)
     , HL.HRLabelSet (Cols_PgRN t)
     , HL.HRLabelSet (Cols_PgW t)
     , HL.RecordValues (Cols_HsR t)
-    , HL.RecordValues (Cols_HsRN t)
     , HL.RecordValues (Cols_HsI t)
     , HL.RecordValues (Cols_PgW t)
-    , HL.SameLabels (Cols_HsRN t) (Cols_HsR t)
     , HL.SameLength (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
-    , HUndistributeMaybe (HL.RecordValuesR (Cols_HsR t)) (HL.RecordValuesR (Cols_HsRN t))
     , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
     )
 
@@ -402,14 +383,6 @@ mkHsI k = Tagged
 {-# INLINE mkHsI #-}
 
 --------------------------------------------------------------------------------
-
--- | We often end up with a @('HsRN' a)@, for example, when converting
--- the right side of a 'O.leftJoin' to Haskell types. Use this function to
--- get a much more useful @'Maybe' ('HsRN' a)@ to be used with 'unHsR'.
-mayHsR :: Tisch t => HsRN t -> Maybe (HsR t)
-mayHsR = fmap Tagged . recordUndistributeMaybe . unTagged
-{-# INLINE mayHsR #-}
-
 
 -- | You'll need to use this function to convert a 'Hs' to a 'PgW'
 -- when using 'O.runInsert'.
@@ -775,42 +748,6 @@ instance HDistributeProxy ('[] :: [k]) where
 instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x ': xs) where
   hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
   {-# INLINE hDistributeProxy #-}
-
----
-
-type family AllMaybes (xs :: [*]) :: Constraint where
-  AllMaybes '[] = ()
-  AllMaybes (Maybe x ': xs) = AllMaybes xs
-
-type family DropMaybes (xs :: [*]) :: [*] where
-  DropMaybes '[] = '[]
-  DropMaybes (Maybe x ': xs) = (x ': DropMaybes xs)
-
-class ( AllMaybes xms, DropMaybes xms ~ xs
-      ) => HUndistributeMaybe (xs :: [*]) (xms :: [*]) where
-  hUndistributeMaybe :: HList xms -> Maybe (HList xs)
-instance HUndistributeMaybe '[] '[] where
-  hUndistributeMaybe = \_ -> Just HNil
-  {-# INLINE hUndistributeMaybe #-}
-instance HUndistributeMaybe xs xms => HUndistributeMaybe (x ': xs) (Maybe x ': xms) where
-  hUndistributeMaybe = \(HCons mx xms) -> HCons <$> mx <*> hUndistributeMaybe xms
-  {-# INLINE hUndistributeMaybe #-}
-
--- | It's easier to have this function than to have 'HUndistributeMaybe' work
--- for both 'HList' and 'HL.Record'.
-recordUndistributeMaybe
-  :: ( HL.SameLabels tmxs txs
-     , HL.HAllTaggedLV txs
-     , HL.RecordValues txs
-     , HL.HAllTaggedLV tmxs
-     , HL.RecordValues tmxs
-     , HL.RecordValuesR txs ~ DropMaybes (HL.RecordValuesR tmxs)
-     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR txs) txs
-     , HUndistributeMaybe (HL.RecordValuesR txs) (HL.RecordValuesR tmxs) )
-  => HL.Record tmxs
-  -> Maybe (HL.Record txs)
-recordUndistributeMaybe = fmap HL.hMapTaggedFn . hUndistributeMaybe . HL.recordValues
-{-# INLINE recordUndistributeMaybe #-}
 
 --------------------------------------------------------------------------------
 

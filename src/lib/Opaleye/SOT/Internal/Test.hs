@@ -62,13 +62,6 @@ types = seq x () where
                HL.Tagged (TC TTest "c2") (Maybe Bool),
                HL.Tagged (TC TTest "c3") Bool,
                HL.Tagged (TC TTest "c4") (Maybe Int64)]
-       , HsRN TTest
-           ~ Rec TTest (Cols_HsRN TTest)
-       , Cols_HsRN TTest
-           ~ '[HL.Tagged (TC TTest "c1") (Maybe Bool),
-               HL.Tagged (TC TTest "c2") (Maybe (Maybe Bool)),
-               HL.Tagged (TC TTest "c3") (Maybe Bool),
-               HL.Tagged (TC TTest "c4") (Maybe (Maybe Int64))]
        ) => ()
   x = ()
 
@@ -104,7 +97,7 @@ query3 = proc () -> do
   returnA -< t
 
 outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
-outQuery3 conn = fmap mayHsR <$> O.runQuery conn query3
+outQuery3 conn = O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
 update1 conn = O.runUpdate conn tisch' upd fil

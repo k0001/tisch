@@ -10,9 +10,7 @@ module Opaleye.SOT
  , tisch
  , tisch'
  , HsR
- , HsRN
  , HsI
- , mayHsR
  , PgR
  , PgRN
  , PgW
