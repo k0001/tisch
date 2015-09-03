@@ -235,10 +235,10 @@ type PgW (t :: *) = Rec t (Cols_PgW t)
 --------------------------------------------------------------------------------
 
 -- | All these constraints need to be satisfied by tools that work with 'Tisch'.
--- It's easier to just write all the constraints once here and make 'TischCtx' a
+-- It's easier to just write all the constraints once here and make 'ITisch' a
 -- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
 -- 'Tisch' so that we can get early compile time errors.
-type TischCtx t
+type ITisch t
   = ( GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
     , HDistributeProxy (Cols t)
@@ -276,7 +276,7 @@ type TischCtx t
 -- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
 -- and the @TUser@ term constructor can be used as a type proxy for tools such
 -- as 'tisch' or 'unHsR'. 
-class TischCtx t => Tisch (t :: *) where
+class ITisch t => Tisch (t :: *) where
   -- | PostgreSQL schema name where to find the table (@"public"@ is PostgreSQL's
   -- default schema name).
   type SchemaName t :: GHC.Symbol
