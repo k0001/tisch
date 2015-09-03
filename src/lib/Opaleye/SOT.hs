@@ -20,9 +20,9 @@ module Opaleye.SOT
 
    -- * Querying columns
  , eq
- , eqc
+ , eqv
  , eqn
- , eqnc
+ , eqnv
    -- ** Selecting columns
  , col
  , cola

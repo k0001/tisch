@@ -624,13 +624,13 @@ eq :: (Comparable lt lc rt rc a, IsNotNullable a)
 eq l r = (O..==) (view _ComparableL l) (view _ComparableR r)
 {-# INLINE eq #-}
 
--- | Like 'eq', but the first argument is a constant.
-eqc :: (ToPgColumn a h, IsNotNullable a)
+-- | Like 'eq', but the first argument is a constant 'ToPgColumn' value.
+eqv :: (ToPgColumn a h, IsNotNullable a)
     => h
     -> Tagged (TC rt rc) (O.Column a)
     -> O.Column O.PGBool
-eqc lh r = (O..==) (toPgColumn lh) (unTagged r)
-{-# INLINE eqc #-}
+eqv lh r = (O..==) (toPgColumn lh) (unTagged r)
+{-# INLINE eqv #-}
 
 -- | Like 'O..==', but restricted to 'Comparable' columns and 'O.Nullable'
 -- columns. The first argument doesn't need to be 'O.Nullable' already.
@@ -644,13 +644,13 @@ eqn l r = O.toNullable $ (O..==)
    (view _ComparableR r)
 {-# INLINE eqn #-}
 
--- | Like 'eqn', but the first argument is a constant.
-eqnc :: ToPgColumn (O.Nullable a) (Maybe h)
+-- | Like 'eqn', but the first argument is a constant 'ToPgColumn' value.
+eqnv :: ToPgColumn (O.Nullable a) (Maybe h)
      => Maybe h
      -> Tagged (TC rt rc) (O.Column (O.Nullable a))
      -> O.Column (O.Nullable O.PGBool)
-eqnc lmh r = O.toNullable $ (O..==) (toPgColumn lmh) (unTagged r)
-{-# INLINE eqnc #-}
+eqnv lmh r = O.toNullable $ (O..==) (toPgColumn lmh) (unTagged r)
+{-# INLINE eqnv #-}
 
 
 --------------------------------------------------------------------------------

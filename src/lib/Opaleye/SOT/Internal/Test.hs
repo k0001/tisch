@@ -112,7 +112,7 @@ update1 conn = O.runUpdate conn tisch' upd fil
         upd = over (cola (C::C "c3")) Just
             . over (cola (C::C "c4")) Just
         fil :: PgR TTest -> O.Column O.PGBool
-        fil = \v -> eqc True (view (col (C::C "c1")) v)
+        fil = \v -> eqv True (view (col (C::C "c1")) v)
 
 outQuery1 :: Pg.Connection
           -> IO [(HsR TTest, HsR TTest, HsR TTest, Maybe (HsR TTest))]
