@@ -383,8 +383,7 @@ toHsI :: Tisch t => t -> UnHsI t -> HsI t
 toHsI _ = toHsI'
 {-# INLINE toHsI #-}
 
--- | Convenience intended to be used within 'toHsI'',
--- together with 'HL.hBuild'. @rhi@ stands for 'HsI'.
+-- | Convenience intended to be used within 'toHsI'', together with 'HL.hBuild'.
 
 -- TODO: see if it is posisble to pack 'hsi' and 'HL.hBuild' into
 -- a single thing.
