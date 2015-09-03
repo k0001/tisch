@@ -4,13 +4,13 @@ module Opaleye.SOT
  , unHsR
  , mkHsI
  , toHsI
- , toPgW
  , toPgW'
+ , toPgW
 
    -- * Working with 'Tisch'
  , TischTable
- , tisch
  , tisch'
+ , tisch
  , HsR
  , HsI
  , PgR
