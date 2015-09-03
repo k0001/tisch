@@ -277,7 +277,7 @@ class ITisch t => Tisch (t :: *) where
 
   -- | Haskell representation for this 'Tisch' when /inserting/ a row to the database.
   --
-  -- Most frequently @('UnHsR' t ~ 'UnHsI' t)@. However, if for example,
+  -- By default @('UnHsR' t ~ 'UnHsI' t)@. However, if for example,
   -- you have not-nullable columns that are filled with some default value during
   -- insert, then they will be different.
   --
@@ -304,6 +304,7 @@ class ITisch t => Tisch (t :: *) where
   -- the @DEFAULT@ value in the table, then you don't really need to expose those 'WDef'
   -- fields in 'UnHsI', you can just deal with them internally in 'toHsI''.
   type UnHsI t :: *
+  type UnHsI t = UnHsR t
 
   -- | Convert an Opaleye-compatible Haskell representation of @('UnHsR' t)@ to
   -- @('UnHsR' t)@.
