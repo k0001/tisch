@@ -309,7 +309,7 @@ class ITisch t => Tisch (t :: *) where
   -- In that case, you may set 'UnHsR' and 'UnHsI' to this:
   --
   -- @
-  -- type 'UnHsR'  t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
+  -- type 'UnHsR' t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
   -- type 'UnHsI' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
   -- @
   --
@@ -555,7 +555,7 @@ col prx = cola prx . _Unwrapped
 -- when trying to change the type of @a@ during an update, or when implementing
 -- 'unHsR'.
 --
--- Mnemonic: the A in a COLumn.
+-- Mnemonic: The COLumn's A.
 cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
@@ -570,7 +570,7 @@ cola = go where -- just to hide the "forall" from the haddocks
 
 -- | Like 'cola', but just a 'Setter' that takes constant 'ToPgColumn' values.
 -- 
--- Mnemonic: the constant Value A the COLumn.
+-- Mnemonic: the COLumn's A constant Value.
 colav
   :: (HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a'), ToPgColumn a' hs)
   => C c -> Setter (Rec t xs) (Rec t xs') (O.Column a) hs
