@@ -117,6 +117,7 @@ update1 conn = O.runUpdate conn tisch' upd fil
 outQuery1 :: Pg.Connection
           -> IO [(HsR TTest, HsR TTest, HsR TTest, Maybe (HsR TTest))]
 outQuery1 conn = do
-  xs :: [(HsR TTest, HsR TTest, HsR TTest, HsRN TTest)]
-     <- O.runQuery conn query1
-  return $ xs <&> \(a,b,c,d) -> (a,b,c, mayHsR d)
+  O.runQuery conn query1
+  -- xs :: [(HsR TTest, HsR TTest, HsR TTest, HsRN TTest)]
+  --    <- O.runQuery conn query1
+  -- return $ xs <&> \(a,b,c,d) -> (a,b,c, mayHsR d)

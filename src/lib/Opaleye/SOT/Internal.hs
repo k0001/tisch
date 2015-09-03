@@ -85,7 +85,7 @@ wdef b f = \w -> case w of { WDef -> b; WVal a -> f a }
 --
 -- * @name@: Column name.
 --
--- * @wn@: Whether @NULL@ can be written to this column ('WD') or not ('W').
+-- * @wd@: Whether @DEFAULT@ can be written to this column ('WD') or not ('W').
 --
 -- * @rn@: Whether @NULL@ might be read from this column ('RN') or not ('R').
 --
@@ -95,9 +95,9 @@ wdef b f = \w -> case w of { WDef -> b; WVal a -> f a }
 -- * @hsType@: Type of the column value used in Haskell outside Opaleye
 --   queries. Hint: don't use something like @'Maybe' 'Bool'@ here if you
 --   want to indicate that this is an optional 'Bool' column. Instead, use
---   'Int' here and 'WD' and 'RN' in the @wn@ and @rn@ fields.
-data Col name wn rn pgType hsType
-   = Col name wn rn pgType hsType
+--   'Int' here and 'WD' and 'RN' in the @wd@ and @rn@ fields.
+data Col name wd rn pgType hsType
+   = Col name wd rn pgType hsType
 
 --
 
@@ -702,16 +702,16 @@ instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged ta a
   def = ppaUnTagged PP.def
   {-# INLINE def #-}
 
--- -- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
--- instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
---   def = P.rmap Just PP.def
---   {-# INLINE def #-}
--- 
--- instance 
---     ( PP.ProductProfunctor p, PP.Default p (O.Column (O.Nullable a)) (Maybe b)
---     ) => PP.Default p (Tagged ta (O.Column (O.Nullable a))) (Maybe (Tagged tb b)) where
---   def = P.dimap unTagged (fmap Tagged) PP.def
---   {-# INLINE def #-}
+-- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
+instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
+  def = P.rmap Just PP.def
+  {-# INLINE def #-}
+
+instance 
+    ( PP.ProductProfunctor p, PP.Default p (O.Column (O.Nullable a)) (Maybe b)
+    ) => PP.Default p (Tagged ta (O.Column (O.Nullable a))) (Maybe (Tagged tb b)) where
+  def = P.dimap unTagged (fmap Tagged) PP.def
+  {-# INLINE def #-}
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance PP.ProductProfunctor p => PP.Default p (HList '[]) (HList '[]) where
