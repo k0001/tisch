@@ -31,9 +31,10 @@ module Opaleye.SOT
  , Comparable
  , ToPgColumn(..)
  , Col(..)
- , WD(..)
- , RN(..)
  , C(..)
+ , RN(..)
+ , WD(..)
+ , WDef(..)
  ) where
 
 import           Opaleye.SOT.Internal

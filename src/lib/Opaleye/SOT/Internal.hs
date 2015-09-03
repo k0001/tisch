@@ -298,22 +298,34 @@ class TischCtx t => Tisch (t :: *) where
   -- See 'UnRecHsWrite'.
   type UnRecHsRead t :: *
 
-  -- | Haskell representation for this 'Tisch' when /writing/ to the database.
+  -- | Haskell representation for this 'Tisch' when /inserting/ a row to the database.
   --
   -- Most frequently @('UnRecHsRead' t ~ 'UnRecHsWrite' t)@. However, if for example,
   -- you have not-nullable columns that are filled with some default value during
   -- insert, then they will be different.
   --
-  -- Suppose your table has two columns: id (int4, not null, with default value) and
-  -- email (not null). In that case, you may set 'UnRecHsRead' and 'UnRecHsWrite' to this:
+  -- Suppose your table has three columns:
+  --
+  --   * id /(int4, not nullable, with default value)/
+  --
+  --   * email /(text, not null)/
+  --
+  --   * name /(text, nullable)/
+  --
+  --   * description /(text, nullable, with default value)/ 
+  --
+  -- In that case, you may set 'UnRecHsRead' and 'UnRecHsWrite' to this:
   --
   -- @
-  -- type 'UnRecHsRead'  t = ('Int32', 'Text')
-  -- type 'UnRecHsWrite' t = ('Maybe' 'Int32', 'Text')
+  -- type 'UnRecHsRead'  t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
+  -- type 'UnRecHsWrite' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
   -- @
   --
-  -- Note: tuples are used in the above example for simplicity, but you may use
-  -- any type you want.
+  -- /Note: tuples are used in the above example for simplicity, but you may use any type you want./
+  --
+  -- If you know, however, that those fields wrapped in 'WDef' will always be set to
+  -- the @DEFAULT@ value in the table, then you don't really need to expose those 'WDef'
+  -- fields in 'UnRecHsWrite', you can just deal with them internally in 'toRecHsWrite''.
   type UnRecHsWrite t :: *
 
   -- | Convert an Opaleye-compatible Haskell representation of @'UnRecHsRead' t@ to
@@ -343,9 +355,12 @@ class TischCtx t => Tisch (t :: *) where
   -- @
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
+  --
+  -- Hint: If the type checker is having trouble inferring @('UnRecHsRead' t)@
+  -- and @('RecHsWrite' t)@, consider using 'toRecHsWrite' instead.
   toRecHsWrite' :: UnRecHsWrite t -> RecHsWrite t
 
--- | Like 'fromRecHs'', except it takes @t@ explicitely for the times when
+-- | Like 'fromRecHsRead'', except it takes @t@ explicitely for the times when
 -- the it can't be inferred.
 fromRecHsRead :: Tisch t => t -> RecHsRead t -> Either Ex.SomeException (UnRecHsRead t)
 fromRecHsRead _ = fromRecHsRead'
