@@ -15,6 +15,7 @@ module Opaleye.SOT
  , PgRN
  , PgW
  , toPgW
+ , toPgW'
 
    -- * Querying columns
  , eq

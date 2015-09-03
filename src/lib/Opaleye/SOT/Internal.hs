@@ -336,7 +336,9 @@ class ITisch t => Tisch (t :: *) where
   -- You may also use other tools from "Data.HList.Record" as you see fit.
   --
   -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@
-  -- and @('HsI' t)@, consider using 'toHsI' instead.
+  -- and @('HsI' t)@, consider using 'toHsI' instead. Nevertheless, it is more
+  -- likely that you use 'toPgW' directly, which skips the 'HsI' intermediate
+  -- representation altogether.
   toHsI' :: UnHsI t -> HsI t
 
 -- | Like 'unHsR'', except it takes @t@ explicitely for the times when
@@ -379,9 +381,24 @@ instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField (WDef hs) (Maybe (O.Column
   applyAB _ = fmap toPgColumn . wdef Nothing Just 
   {-# INLINE applyAB #-}
 
--- | You'll need to use this function to convert a 'Hs' to a 'PgW' when using 'O.runInsert'.
-toPgW :: Tisch t => HsI t -> PgW t
-toPgW = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField . HL.recordValues . unTagged
+-- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
+toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
+toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField . HL.recordValues . unTagged
+{-# INLINE toPgW_fromHsI' #-}
+
+-- | Like 'toPgW_fromHsI'', but takes an explicit @t@.
+toPgW_fromHsI :: Tisch t => t -> HsI t -> PgW t
+toPgW_fromHsI _ = toPgW_fromHsI'
+{-# INLINE toPgW_fromHsI #-}
+
+-- | Convert an @('UnHsI' t)@ to a representation appropiate for inserting it as a new row.
+toPgW' :: Tisch t => UnHsI t -> PgW t
+toPgW' = toPgW_fromHsI' . toHsI'
+{-# INLINE toPgW' #-}
+
+-- | Like 'toPgW'', but takes an explicitl @t@.
+toPgW :: Tisch t => t -> UnHsI t -> PgW t
+toPgW _ = toPgW'
 {-# INLINE toPgW #-}
 
 --------------------------------------------------------------------------------
