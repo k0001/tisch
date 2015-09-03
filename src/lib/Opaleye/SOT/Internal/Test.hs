@@ -45,7 +45,7 @@ instance Tisch TTest where
      (r ^. cola (C::C "c2"))
      (r ^. cola (C::C "c3"))
      (r ^. cola (C::C "c4"))
-  toHsI' (TestW c1 c2 c3 c4) = rhiBuild $ \set_ -> HL.hBuild
+  toHsI' (TestW c1 c2 c3 c4) = mkHsI $ \set_ -> HL.hBuild
      (set_ (C::C "c1") c1)
      (set_ (C::C "c2") c2)
      (set_ (C::C "c3") c3)

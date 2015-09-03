@@ -356,11 +356,11 @@ class TischCtx t => Tisch (t :: *) where
   -- | Convert an @'UnHsI' t@ to an Opaleye-compatible Haskell representation 
   -- to be used when inserting a new row to this table.
   --
-  -- For your convenience, you may use 'rhiBuild' together with 'HL.hBuild' to build
+  -- For your convenience, you may use 'mkHsI' together with 'HL.hBuild' to build
   -- 'toHsI':
   --
   -- @
-  -- 'toHsI' (Person name age) = 'rhiBuild' $ \\set_ -> 'HL.hBuild'
+  -- 'toHsI' (Person name age) = 'mkHsI' $ \\set_ -> 'HL.hBuild'
   --     (set_ ('C' :: 'C' "name") name)
   --     (set_ ('C' :: 'C' "age") age)
   -- @
@@ -386,18 +386,18 @@ toHsI _ = toHsI'
 -- | Convenience intended to be used within 'toHsI'',
 -- together with 'HL.hBuild'. @rhi@ stands for 'HsI'.
 
--- TODO: see if it is posisble to pack 'rhiBuild' and 'HL.hBuild' into
+-- TODO: see if it is posisble to pack 'hsi' and 'HL.hBuild' into
 -- a single thing.
-rhiBuild
+mkHsI
   :: forall t xs
   .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
   -> HsI t -- ^
-rhiBuild k = Tagged
-           $ HL.Record
-           $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
-           $ k (const Tagged)
-{-# INLINE rhiBuild #-}
+mkHsI k = Tagged
+      $ HL.Record
+      $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
+      $ k (const Tagged)
+{-# INLINE mkHsI #-}
 
 --------------------------------------------------------------------------------
 

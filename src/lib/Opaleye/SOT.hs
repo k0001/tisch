@@ -3,7 +3,7 @@ module Opaleye.SOT
    Tisch(..)
  , unHsR
  , toHsI
- , rhiBuild
+ , mkHsI
 
    -- * Working with 'Tisch'
  , TischTable
