@@ -113,15 +113,21 @@ type family Col_WN (col :: Col GHC.Symbol WD RN * *) :: WD where
 type family Col_RN (col :: Col GHC.Symbol WD RN * *) :: RN where
   Col_RN ('Col n w r p h) = r
 
--- type family Col_PgType (col :: Col GHC.Symbol WD RN * *) :: * where
---   Col_PgType ('Col n w r p h) = p
+type family Col_PgTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgTypeR ('Col n w 'R  p h) = O.Column p
+  Col_PgTypeR ('Col n w 'RN p h) = O.Column (O.Nullable p)
+
+type family Col_PgTypeRN (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgTypeRN ('Col n w 'R  p h) = O.Column (O.Nullable p)
+  Col_PgTypeRN ('Col n w 'RN p h) = O.Column (O.Nullable (O.Nullable p))
+
+type family Col_PgTypeW (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgTypeW ('Col n 'W  r p h) = Col_PgTypeR ('Col n 'W r p h)
+  Col_PgTypeW ('Col n 'WD r p h) = Maybe (Col_PgTypeR ('Col n 'WD r p h))
 
 type family Col_HsTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_HsTypeR ('Col n w 'R  p h) = h
   Col_HsTypeR ('Col n w 'RN p h) = Maybe h
-
-type family Col_HsTypeRN (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsTypeRN ('Col n w r p h) = Maybe (Col_HsTypeR ('Col n w r p h))
 
 type family Col_HsTypeI (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_HsTypeI ('Col n 'W  r p h) = Col_HsTypeR ('Col n 'W r p h)
@@ -152,7 +158,29 @@ type Col_HsIField (t :: *) (col :: Col GHC.Symbol WD RN * *)
 data Col_HsIFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsIFieldSym1 t) col = Col_HsIField t col
 
----
+-- | Payload for @('PgR' t)@
+type Cols_PgR (t :: *) = List.Map (Col_PgRSym1 t) (Cols t)
+type family Col_PgR (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgR t ('Col n w r p h) = Tagged (TC t n) (Col_PgTypeR ('Col n w r p h))
+data Col_PgRSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
+
+-- | Payload for @('PgRN' t)@
+type Cols_PgRN (t :: *) = List.Map (Col_PgRNSym1 t) (Cols t)
+type family Col_PgRN (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgRN t ('Col n w r p h) = Tagged (TC t n) (Col_PgTypeRN ('Col n w r p h))
+data Col_PgRNSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
+
+-- | Type of the 'HL.Record' columns when inserting or updating a row. Also,
+-- payload for @('PgI' t)@.
+type Cols_PgW (t :: *) = List.Map (Col_PgWSym1 t) (Cols t)
+type family Col_PgW (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgW t ('Col n w r p h) = Tagged (TC t n) (Col_PgTypeW ('Col n w r p h))
+data Col_PgWSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
+
+--------------------------------------------------------------------------------
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- table in a specific schema.
@@ -165,35 +193,6 @@ data Tisch t => TC (t :: *) (c :: GHC.Symbol) = TC
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
 data C (c :: GHC.Symbol) = C
-
----
-
--- | Type of the 'HL.Record' columns (e.g., result of 'O.query')
-type Cols_PgR (t :: *) = List.Map (Col_PgRSym1 t) (Cols t)
-type family Col_PgR (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgR t ('Col n w 'R  p h) = Tagged (TC t n) (O.Column p)
-  Col_PgR t ('Col n w 'RN p h) = Tagged (TC t n) (O.Column (O.Nullable p))
-data Col_PgRSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
-
--- | Type of the 'HL.Record' columns when they can all be nullable
--- (e.g., rhs on a 'O.leftJoin').
-type Cols_PgRN (t :: *) = List.Map (Col_PgRNSym1 t) (Cols t)
-type family Col_PgRN (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRN t ('Col n w 'R  p h) = Tagged (TC t n) (O.Column (O.Nullable p))
-  Col_PgRN t ('Col n w 'RN p h) = Tagged (TC t n) (O.Column (O.Nullable (O.Nullable p)))
-data Col_PgRNSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
-
--- | Type of the 'HL.Record' columns when inserting or updating a row.
-type Cols_PgW (t :: *) = List.Map (Col_PgWSym1 t) (Cols t)
-type family Col_PgW (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgW t ('Col n 'W  'R  p h) = Tagged (TC t n) (O.Column p) -- non-nullable
-  Col_PgW t ('Col n 'W  'RN p h) = Tagged (TC t n) (O.Column (O.Nullable p)) -- nullable
-  Col_PgW t ('Col n 'WD 'R  p h) = Tagged (TC t n) (Maybe (O.Column p)) -- non-nullable or default
-  Col_PgW t ('Col n 'WD 'RN p h) = Tagged (TC t n) (Maybe (O.Column (O.Nullable p))) -- nullable or default
-data Col_PgWSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
 --------------------------------------------------------------------------------
 
@@ -384,23 +383,21 @@ mkHsI k = Tagged
 
 --------------------------------------------------------------------------------
 
--- | You'll need to use this function to convert a 'Hs' to a 'PgW'
--- when using 'O.runInsert'.
+-- | Use with 'HL.ApplyAB' to apply convert a field in a
+-- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
+data HToPgWField = HToPgWField
+
+instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField hs (O.Column pg) where
+  applyAB _ = toPgColumn
+  {-# INLINE applyAB #-}
+instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField (WDef hs) (Maybe (O.Column pg)) where
+  applyAB _ = fmap toPgColumn . wdef Nothing Just 
+  {-# INLINE applyAB #-}
+
+-- | You'll need to use this function to convert a 'Hs' to a 'PgW' when using 'O.runInsert'.
 toPgW :: Tisch t => HsI t -> PgW t
-toPgW = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField
-             . HL.recordValues . unTagged
+toPgW = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField . HL.recordValues . unTagged
 {-# INLINE toPgW #-}
-
--- W  R  -> h -- not nullable
--- W  RN -> Maybe h -- nullable
--- WD R  -> Maybe h -- not-nullable, with default
--- WD RN -> Maybe (Maybe h) -- nullable, with default
-
--- h h             -> O.Column p -- non-nullable
--- Maybe h         -> O.Column (O.Nullable p) -- nullable
--- WDef h         -> Maybe (O.Column p) -- non-nullable or default
--- WDef (Maybe h) -> Maybe (O.Column (O.Nullable p)) -- nullable or default
-
 
 --------------------------------------------------------------------------------
 
@@ -538,19 +535,6 @@ instance ToPgColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Text) where to
 instance ToPgColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Lazy.Text) where toPgColumn = O.pgCiLazyText
 instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJson hs where toPgColumn = O.pgLazyJSON . Data.Aeson.encode
 instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pgLazyJSONB . Data.Aeson.encode
-
---------------------------------------------------------------------------------
-
--- | Use with 'HL.ApplyAB' to apply convert a field in a
--- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
-data HToPgWField = HToPgWField
-
-instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField hs (O.Column pg) where
-  applyAB _ = toPgColumn
-  {-# INLINE applyAB #-}
-instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField (WDef hs) (Maybe (O.Column pg)) where
-  applyAB _ = fmap toPgColumn . wdef Nothing Just 
-  {-# INLINE applyAB #-}
 
 --------------------------------------------------------------------------------
 
