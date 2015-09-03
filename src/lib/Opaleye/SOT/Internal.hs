@@ -601,15 +601,13 @@ cola = go where -- just to hide the "forall" from the haddocks
   {-# INLINE go #-}
 {-# INLINE cola #-}
 
--- | @'setc' ('C' :: 'C' "x") hs = 'set' ('cola' ('C' :: 'C' "x")) ('toPgColumn' hs)@
---
--- This function is particularly useful when writing functions of type
--- @('PgR' t -> 'PgW' t)@, such as those required by 'O.runUpdate'.
-setc :: ( ToPgColumn a' hs
-        , HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a') )
-     => C c -> hs -> Rec t xs -> Rec t xs'
-setc c hs = set (cola c) (toPgColumn hs)
-{-# INLINE setc #-}
+
+-- | Like 'cola', but just a 'Setter' that takes constant 'ToPgColumn' values.
+colav
+  :: (HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a'), ToPgColumn a' hs)
+  => C c -> Setter (Rec t xs) (Rec t xs') (O.Column a) hs
+colav c = cola c . sets (\f ca -> toPgColumn (f ca))
+{-# INLINE colav #-}
 
 --------------------------------------------------------------------------------
 

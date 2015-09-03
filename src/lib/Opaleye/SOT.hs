@@ -27,7 +27,7 @@ module Opaleye.SOT
  , col
  , cola
    -- ** Modifying columns
- , setc
+ , colav
 
    -- * Types
  , Comparable
