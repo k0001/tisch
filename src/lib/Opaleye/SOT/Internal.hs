@@ -208,29 +208,40 @@ type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
 
 -- | Expected output type for 'O.runQuery' on a @('PgR' t)@.
+--
+-- Mnemonic: Haskell Read.
 type HsR (t :: *) = Rec t (Cols_HsR t)
 
 -- | Expected output type for 'O.runQuery' on a @('PgRN' t)@.
 --
--- Use 'mayHsR' to convert @('RechHsRN' t)@ to
--- @('Maybe' ('HsR' t))@.
+-- Use 'mayHsR' to convert @('RechHsRN' t)@ to @('Maybe' ('HsR' t))@.
+--
+-- Mnemonic: Haskell Read Nulls.
 type HsRN (t :: *) = Rec t (Cols_HsRN t)
 
 -- | Output type of 'toHsI', used when inserting a new row to the table.
 --
 -- This type is used internally as an intermediate representation between
 -- @('UnHsI' t)@ and @('PgW' t)@.
+--
+-- Mnemonic: Haskell Insert.
 type HsI (t :: *) = Rec t (Cols_HsI t)
 
 -- | Output type of @'O.queryTable' ('tisch' t)@.
+--
+-- Mnemonic: PostGresql Read.
 type PgR (t :: *) = Rec t (Cols_PgR t)
 
 -- | Like @('PgRN' t)@ but every field is 'O.Nullable', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
+--
+-- Mnemonic: PostGresql Read Nulls.
 type PgRN (t :: *) = Rec t (Cols_PgRN t)
 
 -- | Representation of @('UnHsI' t)@ as 'O.Columns'. To be used when
 -- writing to the database.
+--
+-- Mnemonic: PostGresql Write.
 type PgW (t :: *) = Rec t (Cols_PgW t)
 
 --------------------------------------------------------------------------------
@@ -281,7 +292,7 @@ type TischCtx t
 --
 -- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
 -- and the @TUser@ term constructor can be used as a type proxy for tools such
--- as 'tisch' or 'fromHsR'. 
+-- as 'tisch' or 'unHsR'. 
 class TischCtx t => Tisch (t :: *) where
   -- | PostgreSQL schema name where to find the table (@"public"@ is PostgreSQL's
   -- default schema name).
@@ -327,22 +338,23 @@ class TischCtx t => Tisch (t :: *) where
   -- fields in 'UnHsI', you can just deal with them internally in 'toHsI''.
   type UnHsI t :: *
 
-  -- | Convert an Opaleye-compatible Haskell representation of @'UnHsR' t@ to
-  -- @'UnHsR' t@.
+  -- | Convert an Opaleye-compatible Haskell representation of @('UnHsR' t)@ to
+  -- @('UnHsR' t)@.
   --
   -- For your convenience, you are encouraged to use 'cola', but you may also use
   -- other tools from "Data.HList.Record" as you see fit:
   --
   -- @
-  -- 'fromHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
-  --                           (r '^.' 'cola' ('C' :: 'C' "age"))
+  -- 'unHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
+  --                   (r '^.' 'cola' ('C' :: 'C' "age"))
   -- @
   --
   -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@,
-  -- consider using 'fromHsR' instead.
-  fromHsR' :: HsR t -> Either Ex.SomeException (UnHsR t)
+  -- consider using 'unHsR' instead.
+  unHsR' :: HsR t -> Either Ex.SomeException (UnHsR t)
 
-  -- | Convert an @'UnHsR' t@ to an Opaleye-compatible Haskell representation.
+  -- | Convert an @'UnHsI' t@ to an Opaleye-compatible Haskell representation 
+  -- to be used when inserting a new row to this table.
   --
   -- For your convenience, you may use 'rhiBuild' together with 'HL.hBuild' to build
   -- 'toHsI':
@@ -359,12 +371,17 @@ class TischCtx t => Tisch (t :: *) where
   -- and @('HsI' t)@, consider using 'toHsI' instead.
   toHsI' :: UnHsI t -> HsI t
 
--- | Like 'fromHsR'', except it takes @t@ explicitely for the times when
--- the it can't be inferred.
-fromHsR :: Tisch t => t -> HsR t -> Either Ex.SomeException (UnHsR t)
-fromHsR _ = fromHsR'
-{-# INLINE fromHsR #-}
+-- | Like 'unHsR'', except it takes @t@ explicitely for the times when
+-- it can't be inferred.
+unHsR :: Tisch t => t -> HsR t -> Either Ex.SomeException (UnHsR t)
+unHsR _ = unHsR'
+{-# INLINE unHsR #-}
 
+-- | Like 'toHsI'', except it takes @t@ explicitely for the times when
+-- it can't be inferred.
+toHsI :: Tisch t => t -> UnHsI t -> HsI t
+toHsI _ = toHsI'
+{-# INLINE toHsI #-}
 
 -- | Convenience intended to be used within 'toHsI'',
 -- together with 'HL.hBuild'. @rhi@ stands for 'HsI'.
@@ -386,7 +403,7 @@ rhiBuild k = Tagged
 
 -- | You'll often end up with a @('HsRN' a)@, for example, when converting
 -- the right side of a 'O.leftJoin' to Haskell types. Use this function to
--- get a much more useful @'Maybe' ('HsRN' a)@ to be used with 'fromHsR'.
+-- get a much more useful @'Maybe' ('HsRN' a)@ to be used with 'unHsR'.
 mayHsR :: Tisch t => HsRN t -> Maybe (HsR t)
 mayHsR = fmap Tagged . recordUndistributeMaybe . unTagged
 {-# INLINE mayHsR #-}
@@ -573,7 +590,7 @@ col prx = cola prx . _Unwrapped
 --
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
 -- when trying to change the type of @a@ during an update, or when implementing
--- 'fromHsR'.
+-- 'unHsR'.
 cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
@@ -588,7 +605,7 @@ cola = go where -- just to hide the "forall" from the haddocks
 -- | @'setc' ('C' :: 'C' "x") hs = 'set' ('cola' ('C' :: 'C' "x")) ('toPgColumn' hs)@
 --
 -- This function is particularly useful when writing functions of type
--- @(PgR t -> PgW t)@, such as those required by 'O.runUpdate'.
+-- @('PgR' t -> 'PgW' t)@, such as those required by 'O.runUpdate'.
 setc :: ( ToPgColumn a' hs
         , HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a') )
      => C c -> hs -> Rec t xs -> Rec t xs'

@@ -1,7 +1,8 @@
 module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
- , fromHsR
+ , unHsR
+ , toHsI
  , rhiBuild
 
    -- * Working with 'Tisch'
