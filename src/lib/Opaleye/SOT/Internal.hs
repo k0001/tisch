@@ -95,23 +95,16 @@ wdef b f = \w -> case w of { WDef -> b; WVal a -> f a }
 -- * @hsType@: Type of the column value used in Haskell outside Opaleye
 --   queries. Hint: don't use something like @'Maybe' 'Bool'@ here if you
 --   want to indicate that this is an optional 'Bool' column. Instead, use
---   'Int' here and 'WD' and 'RN' in the @wd@ and @rn@ fields.
+--   'Int' here and 'RN' in the @rn@ field.
 data Col name wd rn pgType hsType
    = Col name wd rn pgType hsType
 
 --
 
-type Cols_Names (t :: *) = List.Map Col_NameSym0 (Cols t)
 type family Col_Name (col :: Col GHC.Symbol WD RN * *) :: GHC.Symbol where
   Col_Name ('Col n w r p h) = n
 data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) GHC.Symbol)
 type instance Apply Col_NameSym0 col = Col_Name col
-
-type family Col_WN (col :: Col GHC.Symbol WD RN * *) :: WD where
-  Col_WN ('Col n w r p h) = w
-
-type family Col_RN (col :: Col GHC.Symbol WD RN * *) :: RN where
-  Col_RN ('Col n w r p h) = r
 
 type family Col_PgTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgTypeR ('Col n w 'R  p h) = O.Column p
@@ -132,15 +125,6 @@ type family Col_HsTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
 type family Col_HsTypeI (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_HsTypeI ('Col n 'W  r p h) = Col_HsTypeR ('Col n 'W r p h)
   Col_HsTypeI ('Col n 'WD r p h) = WDef (Col_HsTypeR ('Col n 'WD r p h))
-
----
-
--- | Lookup column info by name
-type Col_ByName (t :: *) (name :: GHC.Symbol) = Col_ByName' name (Cols t)
-type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *])
-       :: Col GHC.Symbol WD RN * * where
-  Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
-  Col_ByName' n ('Col n' w r p h ': xs) = Col_ByName' n xs
 
 ---
 
@@ -539,6 +523,8 @@ instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pg
 --------------------------------------------------------------------------------
 
 -- | Lens to the value of a column.
+-- 
+-- Mnemonic: the COLumn.
 col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
     => C c
     -> Lens (Rec t xs) (Rec t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
@@ -550,6 +536,8 @@ col prx = cola prx . _Unwrapped
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
 -- when trying to change the type of @a@ during an update, or when implementing
 -- 'unHsR'.
+--
+-- Mnemonic: the A in a COLumn.
 cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
@@ -563,6 +551,8 @@ cola = go where -- just to hide the "forall" from the haddocks
 
 
 -- | Like 'cola', but just a 'Setter' that takes constant 'ToPgColumn' values.
+-- 
+-- Mnemonic: the constant Value A the COLumn.
 colav
   :: (HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a'), ToPgColumn a' hs)
   => C c -> Setter (Rec t xs) (Rec t xs') (O.Column a) hs
@@ -577,6 +567,8 @@ type family IsNotNullable (x :: *) :: Constraint where
 
 -- | Like 'O..==', but restricted to 'Comparable' columns and not 'O.Nullable'
 -- columns.
+-- 
+-- Mnemonic: EQual.
 eq :: (Comparable lt lc rt rc a, IsNotNullable a)
    => Tagged (TC lt lc) (O.Column a)
    -> Tagged (TC rt rc) (O.Column a)
@@ -585,6 +577,8 @@ eq l r = (O..==) (view _ComparableL l) (view _ComparableR r)
 {-# INLINE eq #-}
 
 -- | Like 'eq', but the first argument is a constant 'ToPgColumn' value.
+--
+-- Mnemonic: EQual constant Value.
 eqv :: (ToPgColumn a h, IsNotNullable a)
     => h
     -> Tagged (TC rt rc) (O.Column a)
@@ -594,6 +588,8 @@ eqv lh r = (O..==) (toPgColumn lh) (unTagged r)
 
 -- | Like 'O..==', but restricted to 'Comparable' columns and 'O.Nullable'
 -- columns. The first argument doesn't need to be 'O.Nullable' already.
+--
+-- Mnemonic: EQual Nullable.
 eqn :: ( Comparable lt lc rt rc (O.Nullable a)
        , PP.Default OI.NullMaker (O.Column a') (O.Column (O.Nullable a)))
     => Tagged (TC lt lc) (O.Column a')
@@ -605,6 +601,8 @@ eqn l r = O.toNullable $ (O..==)
 {-# INLINE eqn #-}
 
 -- | Like 'eqn', but the first argument is a constant 'ToPgColumn' value.
+--
+-- Mnemonic: EQual Nullable constant Value.
 eqnv :: ToPgColumn (O.Nullable a) (Maybe h)
      => Maybe h
      -> Tagged (TC rt rc) (O.Column (O.Nullable a))
@@ -614,7 +612,9 @@ eqnv lmh r = O.toNullable $ (O..==) (toPgColumn lmh) (unTagged r)
 
 --------------------------------------------------------------------------------
 
--- | The functional dependencies make type inference easier, but also forbid some
+-- | A generalization of product profunctor adaptors such as 'PP.p1', 'PP.p4', etc.
+--
+-- The functional dependencies make type inference easier, but also forbid some
 -- otherwise acceptable instances. See the instance for 'Tagged' for example.
 class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
   ppa :: l -> p ra rb
