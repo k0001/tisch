@@ -31,7 +31,7 @@ module Opaleye.SOT
  , Comparable
  , ToPgColumn(..)
  , Col(..)
- , WN(..)
+ , WD(..)
  , RN(..)
  , C(..)
  ) where

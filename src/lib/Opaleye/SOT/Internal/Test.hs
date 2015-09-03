@@ -38,8 +38,8 @@ instance Tisch TTest where
   type TableName TTest = "t"
   type Cols TTest = [ 'Col "c1" 'W 'R O.PGBool Bool
                     , 'Col "c2" 'W 'RN O.PGBool Bool
-                    , 'Col "c3" 'WN 'R O.PGBool Bool
-                    , 'Col "c4" 'WN 'RN O.PGInt8 Int64 ]
+                    , 'Col "c3" 'WD 'R O.PGBool Bool
+                    , 'Col "c4" 'WD 'RN O.PGInt8 Int64 ]
   fromRecHsRead' = \r -> return $ TestR
      (r ^. cola (C::C "c1"))
      (r ^. cola (C::C "c2"))
