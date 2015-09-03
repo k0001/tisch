@@ -275,6 +275,21 @@ class ITisch t => Tisch (t :: *) where
   -- See 'UnHsI'.
   type UnHsR t :: *
 
+  -- | Convert an Opaleye-compatible Haskell representation of @('UnHsR' t)@ to
+  -- @('UnHsR' t)@.
+  --
+  -- For your convenience, you are encouraged to use 'cola', but you may also use
+  -- other tools from "Data.HList.Record" as you see fit:
+  --
+  -- @
+  -- 'unHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
+  --                   (r '^.' 'cola' ('C' :: 'C' "age"))
+  -- @
+  --
+  -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@,
+  -- consider using 'unHsR' instead.
+  unHsR' :: HsR t -> Either Ex.SomeException (UnHsR t)
+
   -- | Haskell representation for this 'Tisch' when /inserting/ a row to the database.
   --
   -- By default @('UnHsR' t ~ 'UnHsI' t)@. However, if for example,
@@ -305,21 +320,6 @@ class ITisch t => Tisch (t :: *) where
   -- fields in 'UnHsI', you can just deal with them internally in 'toHsI''.
   type UnHsI t :: *
   type UnHsI t = UnHsR t
-
-  -- | Convert an Opaleye-compatible Haskell representation of @('UnHsR' t)@ to
-  -- @('UnHsR' t)@.
-  --
-  -- For your convenience, you are encouraged to use 'cola', but you may also use
-  -- other tools from "Data.HList.Record" as you see fit:
-  --
-  -- @
-  -- 'unHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
-  --                   (r '^.' 'cola' ('C' :: 'C' "age"))
-  -- @
-  --
-  -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@,
-  -- consider using 'unHsR' instead.
-  unHsR' :: HsR t -> Either Ex.SomeException (UnHsR t)
 
   -- | Convert an @'UnHsI' t@ to an Opaleye-compatible Haskell representation 
   -- to be used when inserting a new row to this table.
