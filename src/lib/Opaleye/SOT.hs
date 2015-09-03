@@ -2,8 +2,10 @@ module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
  , unHsR
- , toHsI
  , mkHsI
+ , toHsI
+ , toPgW
+ , toPgW'
 
    -- * Working with 'Tisch'
  , TischTable
@@ -14,8 +16,6 @@ module Opaleye.SOT
  , PgR
  , PgRN
  , PgW
- , toPgW
- , toPgW'
 
    -- * Querying columns
  , eq
