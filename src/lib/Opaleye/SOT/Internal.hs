@@ -230,6 +230,7 @@ type ITisch t
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
     , HL.HMapAux HList HToPgWField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.HMapAux HList HToPgWField (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.HRLabelSet (Cols_HsR t)
     , HL.HRLabelSet (Cols_HsI t)
     , HL.HRLabelSet (Cols_PgR t)
@@ -237,8 +238,11 @@ type ITisch t
     , HL.HRLabelSet (Cols_PgW t)
     , HL.RecordValues (Cols_HsR t)
     , HL.RecordValues (Cols_HsI t)
+    , HL.RecordValues (Cols_PgR t)
+    , HL.RecordValues (Cols_PgRN t)
     , HL.RecordValues (Cols_PgW t)
     , HL.SameLength (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.SameLength (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
     , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
     )
@@ -373,12 +377,17 @@ mkHsI k = Tagged
 -- | Use with 'HL.ApplyAB' to apply convert a field in a
 -- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
 data HToPgWField = HToPgWField
-
-instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField hs (O.Column pg) where
+instance {-# OVERLAPPABLE #-} (ToPgColumn pg hs) => HL.ApplyAB HToPgWField hs (O.Column pg) where
   applyAB _ = toPgColumn
+  {-# INLINE applyAB #-}
+instance HL.ApplyAB HToPgWField (O.Column pg) (O.Column pg) where
+  applyAB _ = id 
   {-# INLINE applyAB #-}
 instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField (WDef hs) (Maybe (O.Column pg)) where
   applyAB _ = fmap toPgColumn . wdef Nothing Just 
+  {-# INLINE applyAB #-}
+instance HL.ApplyAB HToPgWField (O.Column pg) (Maybe (O.Column pg)) where
+  applyAB _ = Just
   {-# INLINE applyAB #-}
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
@@ -391,6 +400,8 @@ toPgW_fromHsI :: Tisch t => t -> HsI t -> PgW t
 toPgW_fromHsI _ = toPgW_fromHsI'
 {-# INLINE toPgW_fromHsI #-}
 
+--------------------------------------------------------------------------------
+
 -- | Convert an @('UnHsI' t)@ to a representation appropiate for inserting it as a new row.
 toPgW' :: Tisch t => UnHsI t -> PgW t
 toPgW' = toPgW_fromHsI' . toHsI'
@@ -400,6 +411,19 @@ toPgW' = toPgW_fromHsI' . toHsI'
 toPgW :: Tisch t => t -> UnHsI t -> PgW t
 toPgW _ = toPgW'
 {-# INLINE toPgW #-}
+
+--------------------------------------------------------------------------------
+
+-- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
+-- to a @('PgW' t)@ that can be used in a 'O.runUpdate'-like operation.
+update' :: Tisch t => PgR t -> PgW t
+update' = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField . HL.recordValues . unTagged
+{-# INLINE update' #-}
+
+-- | Like 'update'', but takes an explicit @t@ for when it can't be inferred.
+update :: Tisch t => t -> PgR t -> PgW t
+update _ = update'
+{-# INLINE update #-}
 
 --------------------------------------------------------------------------------
 
@@ -502,8 +526,6 @@ class ToPgColumn (pg :: *) (hs :: *) where
   toPgColumn = toPgColumn . view _Wrapped'
   {-# INLINE toPgColumn #-}
 
--- | Trivial.
-instance ToPgColumn pg (O.Column pg) where toPgColumn = id
 -- | OVERLAPPABLE. Any @pg@ can be made 'O.Nullable'.
 instance {-# OVERLAPPABLE #-} ToPgColumn pg hs => ToPgColumn (O.Nullable pg) hs where
   toPgColumn = O.toNullable . toPgColumn

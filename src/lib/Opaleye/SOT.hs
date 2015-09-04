@@ -16,16 +16,18 @@ module Opaleye.SOT
  , PgR
  , PgRN
  , PgW
+ , update'
+ , update
 
-   -- * Querying columns
+   -- * Columns
  , eq
  , eqv
  , eqn
  , eqnv
-   -- ** Selecting columns
+   -- ** Selecting
  , col
  , cola
-   -- ** Modifying columns
+   -- ** Modifying
  , colav
 
    -- * Types
