@@ -106,53 +106,66 @@ type family Col_Name (col :: Col GHC.Symbol WD RN * *) :: GHC.Symbol where
 data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) GHC.Symbol)
 type instance Apply Col_NameSym0 col = Col_Name col
 
-type family Col_PgTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgTypeR ('Col n w 'R  p h) = O.Column p
-  Col_PgTypeR ('Col n w 'RN p h) = O.Column (O.Nullable p)
+type family Col_PgRType (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgRType ('Col n w 'R  p h) = O.Column p
+  Col_PgRType ('Col n w 'RN p h) = O.Column (O.Nullable p)
 
-type family Col_PgTypeRN (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgTypeRN ('Col n w 'R  p h) = O.Column (O.Nullable p)
-  Col_PgTypeRN ('Col n w 'RN p h) = O.Column (O.Nullable (O.Nullable p))
+type family Col_PgRNType (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgRNType ('Col n w 'R  p h) = O.Column (O.Nullable p)
+  Col_PgRNType ('Col n w 'RN p h) = O.Column (O.Nullable (O.Nullable p))
 
-type family Col_PgTypeW (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgTypeW ('Col n 'W  r p h) = Col_PgTypeR ('Col n 'W r p h)
-  Col_PgTypeW ('Col n 'WD r p h) = Maybe (Col_PgTypeR ('Col n 'WD r p h))
+type family Col_PgWType (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgWType ('Col n 'W  r p h) = Col_PgRType ('Col n 'W r p h)
+  Col_PgWType ('Col n 'WD r p h) = Maybe (Col_PgRType ('Col n 'WD r p h))
 
-type family Col_HsTypeR (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsTypeR ('Col n w 'R  p h) = h
-  Col_HsTypeR ('Col n w 'RN p h) = Maybe h
+type family Col_HsRType (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_HsRType ('Col n w 'R  p h) = h
+  Col_HsRType ('Col n w 'RN p h) = Maybe h
 
-type family Col_HsTypeI (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsTypeI ('Col n 'W  r p h) = Col_HsTypeR ('Col n 'W r p h)
-  Col_HsTypeI ('Col n 'WD r p h) = WDef (Col_HsTypeR ('Col n 'WD r p h))
+type family Col_HsIType (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_HsIType ('Col n 'W  r p h) = Col_HsRType ('Col n 'W r p h)
+  Col_HsIType ('Col n 'WD r p h) = WDef (Col_HsRType ('Col n 'WD r p h))
+
+---
+
+-- | Lookup a column in @'Tisch' t@ by its name.
+type Col_ByName (t :: *) (c :: GHC.Symbol) = Col_ByName' c (Cols t)
+type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Col GHC.Symbol WD RN * * where
+  Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
+  Col_ByName' n ('Col n' w r p h ': xs) = Col_ByName' n xs
+
+type HasColName (t :: *) (c :: GHC.Symbol) =  HasColName' c (Cols t)
+type family HasColName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Constraint where
+  HasColName' n ('Col n  w r p h ': xs) = ()
+  HasColName' n ('Col n' w r p h ': xs) = HasColName' n xs
 
 ---
 
 -- | Payload for @('HsR' t)@
 type Cols_HsR (t :: *) = List.Map (Col_HsRFieldSym1 t) (Cols t)
 type Col_HsRField (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsTypeR col)
+  = Tagged (TC t (Col_Name col)) (Col_HsRType col)
 data Col_HsRFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
 
 -- | Payload for @('HsI' t)@
 type Cols_HsI (t :: *) = List.Map (Col_HsIFieldSym1 t) (Cols t)
 type Col_HsIField (t :: *) (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsTypeI col)
+  = Tagged (TC t (Col_Name col)) (Col_HsIType col)
 data Col_HsIFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsIFieldSym1 t) col = Col_HsIField t col
 
 -- | Payload for @('PgR' t)@
 type Cols_PgR (t :: *) = List.Map (Col_PgRSym1 t) (Cols t)
 type family Col_PgR (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgR t ('Col n w r p h) = Tagged (TC t n) (Col_PgTypeR ('Col n w r p h))
+  Col_PgR t ('Col n w r p h) = Tagged (TC t n) (Col_PgRType ('Col n w r p h))
 data Col_PgRSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
 
 -- | Payload for @('PgRN' t)@
 type Cols_PgRN (t :: *) = List.Map (Col_PgRNSym1 t) (Cols t)
 type family Col_PgRN (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRN t ('Col n w r p h) = Tagged (TC t n) (Col_PgTypeRN ('Col n w r p h))
+  Col_PgRN t ('Col n w r p h) = Tagged (TC t n) (Col_PgRNType ('Col n w r p h))
 data Col_PgRNSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 
@@ -160,7 +173,7 @@ type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 -- payload for @('PgI' t)@.
 type Cols_PgW (t :: *) = List.Map (Col_PgWSym1 t) (Cols t)
 type family Col_PgW (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgW t ('Col n w r p h) = Tagged (TC t n) (Col_PgTypeW ('Col n w r p h))
+  Col_PgW t ('Col n w r p h) = Tagged (TC t n) (Col_PgWType ('Col n w r p h))
 data Col_PgWSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
@@ -501,14 +514,15 @@ tisch _ = tisch'
 
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
-class (Tisch t1, Tisch t2) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: *) where
+class ( Tisch t1, Tisch t2, HasColName t1 c1, HasColName t2 c2
+      ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: *) where
   _ComparableL :: Iso (Tagged (TC t1 c1) (O.Column a)) (Tagged (TC t2 c2) (O.Column a)) (O.Column a) (O.Column a)
   _ComparableL = _Wrapped
   _ComparableR :: Iso (Tagged (TC t2 c2) (O.Column a)) (Tagged (TC t1 c1) (O.Column a)) (O.Column a) (O.Column a)
   _ComparableR = _Wrapped
 
 -- | Trivial. Same table, same column, same value.
-instance Tisch t => Comparable t c t c a 
+instance (Tisch t, HasColName t c) => Comparable t c t c a 
 
 --------------------------------------------------------------------------------
 
@@ -517,7 +531,7 @@ instance Tisch t => Comparable t c t c a
 --
 -- You probably won't ever need to call 'toPgColumn' explicity, yet you need to
 -- provide an instance for every Haskell type you plan to convert to its
--- PostgreSQL representation.
+-- PostgreSQL representation. Quite likely, you will be using 'toPgTC' though.
 --
 -- A a default implementation of 'toPgColumn' is available for 'Wrapped' types
 class ToPgColumn (pg :: *) (hs :: *) where
@@ -562,6 +576,13 @@ instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pg
 
 --------------------------------------------------------------------------------
 
+-- | Like 'toPgColumn', but wraps the resulting 'O.Column' in a 'TC'.
+toPgTC :: ToPgColumn pg hs => t -> C c -> hs -> Tagged (TC t c) (O.Column pg)
+toPgTC _ _ = Tagged . toPgColumn
+{-# INLINE toPgTC #-}
+
+--------------------------------------------------------------------------------
+
 -- | Lens to the value of a column.
 -- 
 -- Mnemonic: the COLumn.
@@ -601,15 +622,15 @@ colav c = cola c . sets (\f ca -> toPgColumn (f ca))
 
 --------------------------------------------------------------------------------
 
-type family IsNotNullable (x :: *) :: Constraint where
-  IsNotNullable (O.Nullable x) = ('True ~ 'False)
-  IsNotNullable x = ()
+type family NotNullable (x :: *) :: Constraint where
+  NotNullable (O.Nullable x) = ('True ~ 'False)
+  NotNullable x = ()
 
 -- | Like 'O..==', but restricted to 'Comparable' columns and not 'O.Nullable'
 -- columns.
 -- 
 -- Mnemonic: EQual.
-eq :: (Comparable lt lc rt rc a, IsNotNullable a)
+eq :: (Comparable lt lc rt rc a, NotNullable a)
    => Tagged (TC lt lc) (O.Column a)
    -> Tagged (TC rt rc) (O.Column a)
    -> O.Column O.PGBool
@@ -619,7 +640,7 @@ eq l r = (O..==) (view _ComparableL l) (view _ComparableR r)
 -- | Like 'eq', but the first argument is a constant 'ToPgColumn' value.
 --
 -- Mnemonic: EQual constant Value.
-eqv :: (ToPgColumn a h, IsNotNullable a)
+eqv :: (ToPgColumn a h, NotNullable a)
     => h
     -> Tagged (TC rt rc) (O.Column a)
     -> O.Column O.PGBool

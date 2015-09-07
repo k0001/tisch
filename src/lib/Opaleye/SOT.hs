@@ -20,6 +20,7 @@ module Opaleye.SOT
  , update
 
    -- * Columns
+ , toPgTC
  , eq
  , eqv
  , eqn
@@ -32,12 +33,24 @@ module Opaleye.SOT
 
    -- * Types
  , Comparable
+ , NotNullable
  , ToPgColumn(..)
  , Col(..)
  , C(..)
+ , T(..)
+ , TC(..)
  , RN(..)
  , WD(..)
  , WDef(..)
+
+   -- * Column type details
+ , Col_ByName
+ , Col_Name
+ , Col_PgRType
+ , Col_PgRNType
+ , Col_PgWType
+ , Col_HsRType
+ , Col_HsIType
  ) where
 
 import           Opaleye.SOT.Internal
