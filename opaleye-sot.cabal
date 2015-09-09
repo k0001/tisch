@@ -41,5 +41,4 @@ library
     , text
     , time
     , uuid
-  ghcjs-options: -Wall -O3
-  ghc-options: -Wall -O2
+  ghc-options: -Wall -O0
