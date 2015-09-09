@@ -32,19 +32,21 @@ data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
 
 -- | Internal. See "Opaleye.SOT.Internal.TTest".
 instance Tisch TTest where
-  type UnHsR TTest = TestR
-  type UnHsI TTest = TestW
   type SchemaName TTest = "s"
   type TableName TTest = "t"
   type Cols TTest = [ 'Col "c1" 'W 'R O.PGBool Bool
                     , 'Col "c2" 'W 'RN O.PGBool Bool
                     , 'Col "c3" 'WD 'R O.PGBool Bool
                     , 'Col "c4" 'WD 'RN O.PGInt8 Int64 ]
+
+instance UnHsR TTest TestR where
   unHsR' = \r -> return $ TestR
      (r ^. cola (C::C "c1"))
      (r ^. cola (C::C "c2"))
      (r ^. cola (C::C "c3"))
      (r ^. cola (C::C "c4"))
+
+instance ToHsI TTest TestW where
   toHsI' (TestW c1 c2 c3 c4) = mkHsI $ \set_ -> HL.hBuild
      (set_ (C::C "c1") c1)
      (set_ (C::C "c2") c2)

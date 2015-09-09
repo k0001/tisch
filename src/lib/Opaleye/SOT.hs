@@ -1,9 +1,11 @@
 module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
+ , UnHsR(..)
  , unHsR
- , mkHsI
+ , ToHsI(..)
  , toHsI
+ , mkHsI
  , toPgW'
  , toPgW
 

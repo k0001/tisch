@@ -37,9 +37,12 @@ import qualified Data.Profunctor.Product.Default as PP
 import           Data.Singletons
 import qualified Data.Promotion.Prelude.List as List (Map)
 import           GHC.Exts (Constraint)
+import           GHC.Float (float2Double)
 import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
+import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
 import qualified Opaleye.Internal.Join as OI
+import qualified Opaleye.Internal.PGTypes as OI
 
 -------------------------------------------------------------------------------
 
@@ -207,7 +210,7 @@ type HsR (t :: *) = Rec t (Cols_HsR t)
 -- | Output type of 'toHsI', used when inserting a new row to the table.
 --
 -- This type is used internally as an intermediate representation between
--- @('UnHsI' t)@ and @('PgW' t)@.
+-- your own Haskell representation for a to-be-inserted @t@ and @('PgW' t)@.
 --
 -- Mnemonic: Haskell Insert.
 type HsI (t :: *) = Rec t (Cols_HsI t)
@@ -223,7 +226,7 @@ type PgR (t :: *) = Rec t (Cols_PgR t)
 -- Mnemonic: PostGresql Read Nulls.
 type PgRN (t :: *) = Rec t (Cols_PgRN t)
 
--- | Representation of @('UnHsI' t)@ as 'O.Columns'. To be used when
+-- | Representation of @('ToHsI' t)@ as 'O.Columns'. To be used when
 -- writing to the database.
 --
 -- Mnemonic: PostGresql Write.
@@ -288,12 +291,16 @@ class ITisch t => Tisch (t :: *) where
   -- | Columns in this table. See the documentation for 'Col'.
   type Cols t :: [Col GHC.Symbol WD RN * *]
 
-  -- | Haskell representation for this 'Tisch' when /reading/ from the database.
-  -- See 'UnHsI'.
-  type UnHsR t :: *
+--------------------------------------------------------------------------------
 
-  -- | Convert an Opaleye-compatible Haskell representation of @('UnHsR' t)@ to
-  -- @('UnHsR' t)@.
+-- | Convert an Opaleye-compatible Haskell representation of @a@ to @a@ when
+-- /reading/ from the database.
+--
+-- Notice that you are not required to provide instances of this class if working
+-- with @'HsR' t@ is sufficient for you, or if you already have a function
+-- @('HsR' t -> a)@ at hand.
+class Tisch t => UnHsR t (a :: *) where
+  -- | Convert an Opaleye-compatible Haskell representation of @a@ to @a@.
   --
   -- For your convenience, you are encouraged to use 'cola', but you may also use
   -- other tools from "Data.HList.Record" as you see fit:
@@ -303,42 +310,25 @@ class ITisch t => Tisch (t :: *) where
   --                   (r '^.' 'cola' ('C' :: 'C' "age"))
   -- @
   --
-  -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@,
+  -- Hint: If the type checker is having trouble inferring @('HsR' t)@,
   -- consider using 'unHsR' instead.
-  unHsR' :: HsR t -> Either Ex.SomeException (UnHsR t)
+  unHsR' :: HsR t -> Either Ex.SomeException a
 
-  -- | Haskell representation for this 'Tisch' when /inserting/ a row to the database.
-  --
-  -- By default @('UnHsR' t ~ 'UnHsI' t)@. However, if for example,
-  -- you have not-nullable columns that are filled with some default value during
-  -- insert, then they will be different.
-  --
-  -- Suppose your table has three columns:
-  --
-  --   * id /(int4, not nullable, with default value)/
-  --
-  --   * email /(text, not null)/
-  --
-  --   * name /(text, nullable)/
-  --
-  --   * description /(text, nullable, with default value)/ 
-  --
-  -- In that case, you may set 'UnHsR' and 'UnHsI' to this:
-  --
-  -- @
-  -- type 'UnHsR' t = ('Int32', 'Text', 'Maybe' 'Text', 'Maybe' 'Text')
-  -- type 'UnHsI' t = ('WDef' 'Int32', 'Text', 'Maybe' 'Text', 'WDef' ('Maybe' 'Text'))
-  -- @
-  --
-  -- /Note: tuples are used in the above example for simplicity, but you may use any type you want./
-  --
-  -- If you know, however, that those fields wrapped in 'WDef' will always be set to
-  -- the @DEFAULT@ value in the table, then you don't really need to expose those 'WDef'
-  -- fields in 'UnHsI', you can just deal with them internally in 'toHsI''.
-  type UnHsI t :: *
-  type UnHsI t = UnHsR t
+-- | Like 'unHsR'', except it takes @t@ explicitely for the times when
+-- it can't be inferred.
+unHsR :: UnHsR t a => t -> HsR t -> Either Ex.SomeException a
+unHsR _ = unHsR'
+{-# INLINE unHsR #-}
 
-  -- | Convert an @'UnHsI' t@ to an Opaleye-compatible Haskell representation 
+--------------------------------------------------------------------------------
+
+-- | Build a @('HsR' t)@ representation for @a@ for /inserting/ it to the database.
+--
+-- Notice that you are not required to provide instances of this class if working
+-- with @'HsI' t@ is sufficient for you, or if you already have a function
+-- @(a -> 'HsI' t)@ at hand.
+class Tisch t => ToHsI t (a :: *) where 
+  -- | Convert an @a@ to an Opaleye-compatible Haskell representation
   -- to be used when inserting a new row to this table.
   --
   -- For your convenience, you may use 'mkHsI' together with 'HL.hBuild' to build
@@ -352,21 +342,15 @@ class ITisch t => Tisch (t :: *) where
   --
   -- You may also use other tools from "Data.HList.Record" as you see fit.
   --
-  -- Hint: If the type checker is having trouble inferring @('UnHsR' t)@
-  -- and @('HsI' t)@, consider using 'toHsI' instead. Nevertheless, it is more
+  -- Hint: If the type checker is having trouble inferring @('HsI' t)@,
+  -- consider using 'toHsI' instead. Nevertheless, it is more
   -- likely that you use 'toPgW' directly, which skips the 'HsI' intermediate
   -- representation altogether.
-  toHsI' :: UnHsI t -> HsI t
-
--- | Like 'unHsR'', except it takes @t@ explicitely for the times when
--- it can't be inferred.
-unHsR :: Tisch t => t -> HsR t -> Either Ex.SomeException (UnHsR t)
-unHsR _ = unHsR'
-{-# INLINE unHsR #-}
+  toHsI' :: a -> HsI t
 
 -- | Like 'toHsI'', except it takes @t@ explicitely for the times when
 -- it can't be inferred.
-toHsI :: Tisch t => t -> UnHsI t -> HsI t
+toHsI :: ToHsI t a => t -> a -> HsI t
 toHsI _ = toHsI'
 {-# INLINE toHsI #-}
 
@@ -415,13 +399,14 @@ toPgW_fromHsI _ = toPgW_fromHsI'
 
 --------------------------------------------------------------------------------
 
--- | Convert an @('UnHsI' t)@ to a representation appropiate for inserting it as a new row.
-toPgW' :: Tisch t => UnHsI t -> PgW t
+-- | Convert a custom Haskell type to a representation appropiate for /inserting/
+-- it as a new row.
+toPgW' :: ToHsI t a => a -> PgW t
 toPgW' = toPgW_fromHsI' . toHsI'
 {-# INLINE toPgW' #-}
 
 -- | Like 'toPgW'', but takes an explicitl @t@.
-toPgW :: Tisch t => t -> UnHsI t -> PgW t
+toPgW :: ToHsI t a => t -> a -> PgW t
 toPgW _ = toPgW'
 {-# INLINE toPgW #-}
 
@@ -559,6 +544,8 @@ instance ToPgColumn O.PGInt4 Int32 where toPgColumn = O.pgInt4 . fromIntegral
 -- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
 -- Use 'Int32', 'Int64', etc. explicitely.
 instance ToPgColumn O.PGInt8 Int64 where toPgColumn = O.pgInt8
+instance ToPgColumn O.PGFloat4 Float where toPgColumn = pgFloat4
+instance ToPgColumn O.PGFloat8 Float where toPgColumn = pgFloat8
 instance ToPgColumn O.PGFloat8 Double where toPgColumn = O.pgDouble
 instance ToPgColumn O.PGText Data.Text.Text where toPgColumn = O.pgStrictText
 instance ToPgColumn O.PGText Data.Text.Lazy.Text where toPgColumn = O.pgLazyText
@@ -799,3 +786,13 @@ instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x
 unRecord :: HL.Record xs -> HList xs
 unRecord = \(HL.Record x) -> x
 {-# INLINE unRecord #-}
+
+
+--------------------------------------------------------------------------------
+-- Belongs in Opaleye
+
+pgFloat4 :: Float -> O.Column O.PGFloat4
+pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
+
+pgFloat8 :: Float -> O.Column O.PGFloat8
+pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double

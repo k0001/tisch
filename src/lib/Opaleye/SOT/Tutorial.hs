@@ -41,11 +41,15 @@ module Opaleye.SOT.Tutorial
   , TEmployee(..)
   , TProductType(..)
   , TProduct(..)
+  , TCustomer(..)
+  , TIndividual(..)
+  , TBusiness(..)
+  , TOfficer(..)
+  , TAccount(..)
+  , TTransaction(..)
   ) where
 
-import           Control.Lens
-import qualified Data.HList as HL
-import           Data.Time (Day)
+import           Data.Time (Day, LocalTime)
 import           Data.Int
 import qualified Opaleye as O
 import           Opaleye.SOT
@@ -56,6 +60,9 @@ import           Opaleye.SOT
 -- where more precise and descriptive types would be usually better. This is just
 -- to keep the examples simple for the time being. We will fix this before
 -- relasing these examples to the wild.
+--
+-- Also, to be honest, the example SQL from LearningSQLExample.sql is quite poor,
+-- not exactly great. We should improve that.
 
 ---
 
@@ -68,15 +75,8 @@ instance Tisch TDepartment where
   type TableName TDepartment = "department"
   type Cols TDepartment =
     [ 'Col "department_id" 'WD 'R O.PGInt4 Department_Id
-    , 'Col "name" 'W 'R O.PGText Department_Name ]
-  type UnHsR TDepartment = (Department_Id, Department_Name)
-  unHsR' = \r -> return
-    ( r ^. cola (C::C "department_id")
-    , r ^. cola (C::C "name") )
-  type UnHsI TDepartment = Department_Name
-  toHsI' = \n -> mkHsI $ \set_ -> HL.hBuild
-    (set_ (C::C "department_id") WDef)
-    (set_ (C::C "name") n)
+    , 'Col "name" 'W 'R O.PGText Department_Name
+    ]
 
 ---
 
@@ -97,26 +97,8 @@ instance Tisch TBranch where
     , 'Col "address" 'W 'RN O.PGText Branch_Address
     , 'Col "city" 'W 'RN O.PGText Branch_City
     , 'Col "state" 'W 'RN O.PGText Branch_State
-    , 'Col "zip" 'W 'RN O.PGText Branch_Zip ]
-  type UnHsR TBranch = (Branch_Id, Branch_Name, Maybe Branch_Address,
-                        Maybe Branch_City, Maybe Branch_State, Maybe Branch_Zip)
-  unHsR' = \r -> return
-    ( r ^. cola (C::C "branch_id")
-    , r ^. cola (C::C "name")
-    , r ^. cola (C::C "address")
-    , r ^. cola (C::C "city")
-    , r ^. cola (C::C "state")
-    , r ^. cola (C::C "zip") )
-  type UnHsI TBranch = (Branch_Name, Maybe Branch_Address, Maybe Branch_City,
-                        Maybe Branch_State, Maybe Branch_Zip)
-  toHsI' = \(n,ma,mc,ms,mz) -> mkHsI $ \set_ -> HL.hBuild
-    (set_ (C::C "branch_id") WDef)
-    (set_ (C::C "address") ma)
-    (set_ (C::C "name") n) -- the order of the fields doesn't matter.
-    (set_ (C::C "state") ms)
-    (set_ (C::C "city") mc)
-    (set_ (C::C "zip") mz)
-
+    , 'Col "zip" 'W 'RN O.PGText Branch_Zip
+    ]
 
 ---
 
@@ -143,47 +125,8 @@ instance Tisch TEmployee where
     , 'Col "superior_employee_id" 'W 'RN O.PGInt4 Employee_SuperiorEmployeeId
     , 'Col "department_id" 'W 'RN O.PGInt4 Employee_DepartmentId
     , 'Col "title" 'W 'RN O.PGText Employee_Title
-    , 'Col "assigned_branch_id" 'W 'RN O.PGInt4 Employee_AssignedBranchId ]
-  type UnHsR TEmployee =
-    ( Employee_Id
-    , Employee_FirstName
-    , Employee_LastName
-    , Employee_StartDate
-    , Maybe Employee_EndDate
-    , Maybe Employee_SuperiorEmployeeId
-    , Maybe Employee_DepartmentId
-    , Maybe Employee_Title
-    , Maybe Employee_AssignedBranchId )
-  unHsR' = \r -> return
-    ( r ^. cola (C::C "employee_id")
-    , r ^. cola (C::C "fname")
-    , r ^. cola (C::C "lname")
-    , r ^. cola (C::C "start_date")
-    , r ^. cola (C::C "end_date")
-    , r ^. cola (C::C "superior_employee_id")
-    , r ^. cola (C::C "department_id")
-    , r ^. cola (C::C "title")
-    , r ^. cola (C::C "assigned_branch_id") )
-  type UnHsI TEmployee =
-    ( Employee_FirstName
-    , Employee_LastName
-    , Employee_StartDate
-    , Maybe Employee_EndDate
-    , Maybe Employee_SuperiorEmployeeId
-    , Maybe Employee_DepartmentId
-    , Maybe Employee_Title
-    , Maybe Employee_AssignedBranchId )
-  toHsI' = \(fn, ln, sd, med, mseId, mdId, mt, mabId) -> mkHsI $ \set_ -> HL.hBuild
-    (set_ (C::C "employee_id") WDef)
-    (set_ (C::C "fname") fn)
-    (set_ (C::C "lname") ln)
-    (set_ (C::C "start_date") sd)
-    (set_ (C::C "end_date") med)
-    (set_ (C::C "superior_employee_id") mseId)
-    (set_ (C::C "department_id") mdId)
-    (set_ (C::C "title") mt)
-    (set_ (C::C "assigned_branch_id") mabId)
-
+    , 'Col "assigned_branch_id" 'W 'RN O.PGInt4 Employee_AssignedBranchId
+    ]
 
 ---
 
@@ -196,15 +139,8 @@ instance Tisch TProductType where
   type TableName TProductType = "product_type"
   type Cols TProductType =
     [ 'Col "product_type_cd" 'W 'R O.PGText ProductType_Cd
-    , 'Col "name" 'W 'R O.PGText ProductType_Name ]
-  type UnHsR TProductType = (ProductType_Cd, ProductType_Name)
-  unHsR' = \r -> return
-    ( r ^. cola (C::C "product_type_cd")
-    , r ^. cola (C::C "name") )
-  toHsI' = \(cd,n) -> mkHsI $ \set_ -> HL.hBuild
-    (set_ (C::C "product_type_cd") cd)
-    (set_ (C::C "name") n)
-
+    , 'Col "name" 'W 'R O.PGText ProductType_Name
+    ]
 
 ---
 
@@ -223,17 +159,147 @@ instance Tisch TProduct where
     , 'Col "name" 'W 'R O.PGText Product_Name
     , 'Col "product_type_cd" 'W 'R O.PGText Product_TypeCd
     , 'Col "date_offered" 'W 'RN O.PGDate Product_DateOffered
-    , 'Col "date_retired" 'W 'RN O.PGDate Product_DateRetired ]
-  type UnHsR TProduct = (Product_Cd, Product_Name, Product_TypeCd, Maybe Product_DateOffered, Maybe Product_DateRetired)
-  unHsR' = \r -> return
-    ( r ^. cola (C::C "product_cd")
-    , r ^. cola (C::C "name")
-    , r ^. cola (C::C "product_type_cd")
-    , r ^. cola (C::C "date_offered")
-    , r ^. cola (C::C "date_retired") )
-  toHsI' = \(cd,n,tcd,mo,mr) -> mkHsI $ \set_ -> HL.hBuild
-    (set_ (C::C "product_cd") cd)
-    (set_ (C::C "name") n)
-    (set_ (C::C "product_type_cd") tcd)
-    (set_ (C::C "date_offered") mo)
-    (set_ (C::C "date_retired") mr)
+    , 'Col "date_retired" 'W 'RN O.PGDate Product_DateRetired
+    ]
+
+---
+
+type Customer_Id = Int32
+type Customer_FedId = String
+type Customer_TypeId = Char
+type Customer_Address = String
+type Customer_City = String
+type Customer_State = String
+type Customer_PostalCode = String
+
+data TCustomer = TCustomer
+instance Tisch TCustomer where
+  type SchemaName TCustomer = "public"
+  type TableName TCustomer = "customer"
+  type Cols TCustomer =
+    [ 'Col "customer_id" 'WD 'R O.PGInt4 Customer_Id
+    , 'Col "fed_id" 'W 'R O.PGText Customer_FedId
+    , 'Col "cust_type_id" 'W 'R O.PGText Customer_TypeId
+    , 'Col "address" 'W 'RN O.PGText Customer_Address
+    , 'Col "city" 'W 'RN O.PGText Customer_City
+    , 'Col "state" 'W 'RN O.PGText Customer_State
+    , 'Col "postal_code" 'W 'RN O.PGText Customer_PostalCode
+    ]
+
+---
+
+type Individual_CustomerId = Customer_Id
+type Individual_FirstName = String
+type Individual_LastName = String
+type Individual_BirthDate = Day
+
+data TIndividual = TIndividual
+instance Tisch TIndividual where
+  type SchemaName TIndividual = "public"
+  type TableName TIndividual = "individual"
+  type Cols TIndividual =
+    [ 'Col "customer_id" 'W 'R O.PGInt4 Individual_CustomerId
+    , 'Col "fname" 'W 'R O.PGText Individual_FirstName
+    , 'Col "lname" 'W 'R O.PGText Individual_LastName
+    , 'Col "birth_date" 'W 'RN O.PGDate Individual_BirthDate
+    ]
+
+---
+
+type Business_CustomerId = Customer_Id
+type Business_Name = String
+type Business_StateId = String
+type Business_IncorpDate = Day
+
+data TBusiness = TBusiness
+instance Tisch TBusiness where
+  type SchemaName TBusiness = "public"
+  type TableName TBusiness = "business"
+  type Cols TBusiness =
+    [ 'Col "customer_id" 'W 'R O.PGInt4 Business_CustomerId
+    , 'Col "name" 'W 'R O.PGText Business_Name
+    , 'Col "state_id" 'W 'R O.PGText Business_StateId
+    , 'Col "incorp_date" 'W 'RN O.PGDate Business_IncorpDate
+    ]
+
+---
+
+type Officer_Id = Int32
+type Officer_CustomerId = Customer_Id
+type Officer_FirstName = String
+type Officer_LastName = String
+type Officer_Title = String
+type Officer_StartDate = Day
+type Officer_EndDate = Day
+
+data TOfficer = TOfficer
+instance Tisch TOfficer where
+  type SchemaName TOfficer = "public"
+  type TableName TOfficer = "officer"
+  type Cols TOfficer =
+    [ 'Col "officer_id" 'WD 'R O.PGInt4 Officer_Id
+    , 'Col "customer_id" 'W 'R O.PGInt4 Officer_CustomerId
+    , 'Col "fname" 'W 'R O.PGText Officer_FirstName
+    , 'Col "lname" 'W 'R O.PGText Officer_LastName
+    , 'Col "title" 'W 'RN O.PGText Officer_Title
+    , 'Col "start_date" 'W 'R O.PGDate Officer_StartDate
+    , 'Col "end_date" 'W 'RN O.PGDate Officer_EndDate
+    ]
+
+---
+
+type Account_Id = Int32
+type Account_ProductCd = Product_Cd
+type Account_CustomerId = Customer_Id
+type Account_OpenDate = Day
+type Account_CloseDate = Day
+type Account_LastActivityDate = Day
+type Account_Status = String
+type Account_OpenBranchId = Branch_Id
+type Account_OpenEmployeeId = Employee_Id
+type Account_AvailableBalance = Float
+type Account_PendingBalance = Float
+
+data TAccount = TAccount
+instance Tisch TAccount where
+  type SchemaName TAccount = "public"
+  type TableName TAccount = "account"
+  type Cols TAccount =
+    [ 'Col "account_id" 'WD 'R O.PGInt4 Account_Id
+    , 'Col "product_cd" 'W 'R O.PGText Account_ProductCd
+    , 'Col "customer_id" 'W 'R O.PGInt4 Account_CustomerId
+    , 'Col "open_date" 'W 'R O.PGDate Account_OpenDate
+    , 'Col "close_date" 'W 'RN O.PGDate Account_CloseDate
+    , 'Col "last_activity_date" 'W 'RN O.PGDate Account_LastActivityDate
+    , 'Col "status" 'W 'R O.PGText Account_Status
+    , 'Col "open_branch_id" 'W 'RN O.PGInt4 Account_OpenBranchId
+    , 'Col "open_employee_id" 'W 'RN O.PGInt4 Account_OpenEmployeeId
+    , 'Col "avail_balance" 'W 'RN O.PGFloat4 Account_AvailableBalance
+    , 'Col "pending_balance" 'W 'RN O.PGFloat4 Account_PendingBalance
+    ]
+
+---
+
+type Transaction_Id = Int32
+type Transaction_Date = LocalTime
+type Transaction_AccountId = Account_Id
+type Transaction_TypeCd = String
+type Transaction_Amount = Float
+type Transaction_TellerEmployeeId = Employee_Id
+type Transaction_ExecutionBranchId = Branch_Id
+type Transaction_FundsAvailableDate = LocalTime
+
+data TTransaction = TTransaction
+instance Tisch TTransaction where
+  type SchemaName TTransaction = "public"
+  type TableName TTransaction = "transaction"
+  type Cols TTransaction =
+    [ 'Col "txn_id" 'WD 'R O.PGInt4 Transaction_Id
+    , 'Col "txn_date" 'W 'R O.PGTimestamp Transaction_Date
+    , 'Col "account_id" 'W 'R O.PGInt4 Transaction_AccountId
+    , 'Col "txn_type_cd" 'W 'RN O.PGText Transaction_TypeCd
+    , 'Col "amount" 'W 'R O.PGFloat4 Transaction_Amount
+    , 'Col "teller_employee_id" 'W 'RN O.PGInt4 Transaction_TellerEmployeeId
+    , 'Col "execution_branch_id" 'W 'RN O.PGInt4 Transaction_ExecutionBranchId
+    , 'Col "funds_avail_date" 'W 'RN O.PGTimestamp Transaction_FundsAvailableDate
+    ]
