@@ -8,23 +8,34 @@
 {- | @opaleye-sot@ is a different API for the core @opaleye@
 infraestructure with the following goals in mind:
 
+* Close to @opaleye@.
+
+  @opaleye-sot@ is fully compatible with @opalaye@ and doesn't aim
+  to replace it, just to complement it. @opaleye-sot@ is designed in
+  such a way that we are expected to work with tools both from
+  "Opaleye" and "Opaleye.SOT" at the same time. If anything, perhaps
+  some of the best ideas on @opaleye-sot@ can eventually be ported
+  to the core @opaleye@ project.
+
 * Type safety everywhere.
 
   While it is true that @opaleye@, by relying in the type system,
-  makes it impossible to write malformed queries, it doesn't keep
-  us for accidentaly referring to a wrong column, comparing two
+  makes it mostly impossible to write malformed queries, it doesn't
+  keep us for accidentaly referring to a wrong column, comparing two
   columns we are not supposed to compare, confusing two tables
-  that happen to have the same shape, or similar scenarios.
-  @opaleye-sot@, by making a heavy use of the GHC type system,
-  provides an additional layer of safety that can prevent these
-  undesired scenarios.
+  that happen to have the same shape, accidentally mixing nullable
+  and not nullable columns, or similar scenarios. @opaleye-sot@, by
+  making a heavy use of the GHC type system, provides an additional
+  layer of safety that can prevent these undesired scenarios.
 
 * Boilerplate removal.
 
   Working with @opaleye@ can get a bit boilerplatey. @opaleye-sot@
   never requires us to say the same thing more than once, and it
   provides us with generic machinery so that we can skip altogether
-  the provision of the types that @opaleye@ requires.
+  the provision of the types that @opaleye@ requires. Also,
+  @opaleye-sot@ does not rely on Template Haskell to achieve this,
+  but on the type system instead.
 
 * Maintenance.
 
@@ -36,8 +47,11 @@ infraestructure with the following goals in mind:
   querying code using the old name will not compile.
 
 * THIS IS A WORK IN PROCESS! I'M NOT DONE WRITING WHAT'S NICE ABOUT
-  THIS. Meanwhile, read the source code here as an example.
-
+  THIS. Meanwhile, read the source code here as an example. These
+  examples come from the LearningSQLExample.sql file in this project,
+  which is maybe not such great example SQL. We'll see if we can come up
+  with a better example SQL. Also, this example code doesn't belong in
+  this module, probably.
 -}
 module Opaleye.SOT.Tutorial
   ( TDepartment(..)
