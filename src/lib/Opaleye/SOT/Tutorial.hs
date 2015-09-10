@@ -14,7 +14,7 @@ infraestructure with the following goals in mind:
   to replace it, just to complement it. @opaleye-sot@ is designed in
   such a way that we are expected to work with tools both from
   "Opaleye" and "Opaleye.SOT" at the same time. If anything, perhaps
-  some of the best ideas on @opaleye-sot@ can eventually be ported
+  some of the ideas on @opaleye-sot@ can eventually be ported
   to the core @opaleye@ project.
 
 * Type safety everywhere.
@@ -357,6 +357,7 @@ q_TEmployee_1 = proc () -> do
   e <- O.queryTable tisch' -< () -- Here: tisch' == tisch TEmployee
   O.restrict -< isNull (e ^. col (C::C "end_date"))
   O.restrict <<< nullFalse -< orn
-     (O.toNullable (lt (toPgColumn (Time.fromGregorian 2003 1 1)) (e ^. col (C::C "start_date"))))
+     (O.toNullable (lt (toPgColumn (Time.fromGregorian 2003 1 1))
+                       (e ^. col (C::C "start_date"))))
      (eqn (toPgColumnN "Teller") (e ^. col (C::C "title")))
   id -< e
