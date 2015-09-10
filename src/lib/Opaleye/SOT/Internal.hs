@@ -282,9 +282,10 @@ type ITisch t
 -- and the @TUser@ term constructor can be used as a type proxy for tools such
 -- as 'tisch' or 'unHsR'. 
 class ITisch t => Tisch (t :: *) where
-  -- | PostgreSQL schema name where to find the table (@"public"@ is PostgreSQL's
-  -- default schema name).
+  -- | PostgreSQL schema name where to find the table (defaults to @"public"@, 
+  -- PostgreSQL's default schema name).
   type SchemaName t :: GHC.Symbol
+  type SchemaName t = "public"
 
   -- | Table name.
   type TableName t :: GHC.Symbol

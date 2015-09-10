@@ -358,5 +358,5 @@ q_TEmployee_1 = proc () -> do
   O.restrict -< isNull (e ^. col (C::C "end_date"))
   O.restrict <<< nullFalse -< orn
      (O.toNullable (lt (toPgColumn (Time.fromGregorian 2003 1 1)) (e ^. col (C::C "start_date"))))
-     (eqn (O.toNullable (toPgColumn "Teller")) (e ^. col (C::C "title")))
+     (eqn (toPgColumnN "Teller") (e ^. col (C::C "title")))
   id -< e
