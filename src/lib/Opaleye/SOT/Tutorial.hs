@@ -369,12 +369,12 @@ q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
   e <- O.queryTable tisch' -< () -- inferred
   d <- O.queryTable tisch' -< () -- inferred
-  O.restrict <<< nullFalse -<
-     -- Comparing these two fields doesn't compile without the
+  O.restrict <<< nullFalse -< eqn
+     (e ^. col  (C::C "department_id"))
+     (d ^. coln (C::C "department_id"))
+     -- Comparing the two columns above doesn't compile without the
      -- 'Comparable' instance below. Yay for not allowing
      -- comparissons/joins between unrelated columns!
-     eqn (e ^. col  (C::C "department_id"))
-         (d ^. coln (C::C "department_id"))
   id -< (e,d)
 
 instance Comparable TEmployee "department_id" TDepartment "department_id" O.PGInt4
