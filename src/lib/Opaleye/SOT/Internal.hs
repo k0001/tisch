@@ -710,6 +710,8 @@ instance WrappedCol w a => WrappedCol (Tagged (TC t c) w) a where
 
 --------------------------------------------------------------------------------
 
+-- | Horrible hack to workaround the current represenation for nullable columns.
+-- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 type family NotNullable (x :: *) :: Constraint where
   NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
   NotNullable x = ()
