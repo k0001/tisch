@@ -1,5 +1,6 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -68,6 +69,8 @@ module Opaleye.SOT.Tutorial
   , q_TAccount_desc
   , q_TAccount_asc_multi
   , q_TEmployee_1
+  , q_TEmployee_TDepartment_join
+  , q_TAccount_TIndividual_leftJoin
   ) where
 
 import           Control.Arrow
@@ -343,21 +346,46 @@ instance Tisch TTransaction where
 q_TAccount_desc :: O.Query (PgR TAccount)
 q_TAccount_desc =
   O.orderBy (descnf (view (col (C::C "avail_balance"))))
-            (O.queryTable tisch') -- Here: tisch' == tisch TAccount
+            (O.queryTable tisch') -- Here: tisch' == tisch TAccount, inferred.
 
 -- | Order by multiple fields, asc.
 q_TAccount_asc_multi :: O.Query (PgR TAccount)
 q_TAccount_asc_multi =
   O.orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
                      (asc   (view (col (C::C "product_cd")))))
-            (O.queryTable tisch') -- Here: tisch' == tisch TAccount
+            (O.queryTable tisch') -- Here: tisch' == tisch TAccount, inferred.
 
 q_TEmployee_1 :: O.Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
-  e <- O.queryTable tisch' -< () -- Here: tisch' == tisch TEmployee
+  e <- O.queryTable tisch' -< () -- Here: tisch' == tisch TEmployee, inferred.
   O.restrict -< isNull (e ^. col (C::C "end_date"))
   O.restrict <<< nullFalse -< orn
      (O.toNullable (lt (toPgColumn (Time.fromGregorian 2003 1 1))
                        (e ^. col (C::C "start_date"))))
      (eqn (toPgColumnN "Teller") (e ^. col (C::C "title")))
   id -< e
+
+q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
+q_TEmployee_TDepartment_join = proc () -> do
+  e <- O.queryTable tisch' -< () -- inferred
+  d <- O.queryTable tisch' -< () -- inferred
+  O.restrict <<< nullFalse -<
+     -- Comparing these two fields doesn't compile without the
+     -- 'Comparable' instance below. Yay for not allowing
+     -- comparissons/joins between unrelated columns!
+     eqn (e ^. col  (C::C "department_id"))
+         (d ^. coln (C::C "department_id"))
+  id -< (e,d)
+
+instance Comparable TEmployee "department_id" TDepartment "department_id" O.PGInt4
+
+
+q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
+q_TAccount_TIndividual_leftJoin =
+  O.leftJoin
+     (O.queryTable (tisch TAccount))    -- Can't be inferred.
+     (O.queryTable (tisch TIndividual)) -- Can't be inferred.
+     (\(a,i) -> eq (a ^. col (C::C "customer_id"))
+                   (i ^. col (C::C "customer_id")))
+
+instance Comparable TAccount "customer_id" TIndividual "customer_id" O.PGInt4

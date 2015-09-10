@@ -44,6 +44,7 @@ module Opaleye.SOT
    -- ** Selecting
  , col
  , cola
+ , coln
    -- ** Modifying
  , colav
    -- ** Ordering

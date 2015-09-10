@@ -590,6 +590,19 @@ col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
 col prx = cola prx . _Unwrapped
 {-# INLINE col #-}
 
+-- | Getter to a column, wrapped in 'O.Nullable'.
+-- 
+-- This is mostly here to be used with functions such as 'orn', 'eqn' or 'ltn'.
+--
+-- Mnemonic: the COLumn Nullable.
+coln
+  :: NotNullable a
+  => HL.HLensCxt (TC t c) HL.Record xs xs (O.Column a) (O.Column a)
+  => C c
+  -> Getter (Rec t xs) (Tagged (TC t c) (O.Column (O.Nullable a)))
+coln prx = cola prx . to O.toNullable . _Unwrapped
+{-# INLINE coln #-}
+
 -- | Lens to the value of a column without the 'TC' tag.
 --
 -- Most of the time you'll want to use 'col' instead, but this might be more useful
@@ -733,14 +746,28 @@ isNull = O.isNull . view _UnwrappedNullableCol
 -- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@ or compatible
 -- (see 'WrappedNullableCol') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
 -- converted to @TRUE@.
-nullTrue :: WrappedNullableCol w O.PGBool => O.QueryArr w (O.Column O.PGBool)
-nullTrue = arr (\w -> let w' = view _UnwrappedNullableCol w
-                      in O.ors [O.isNull w', unsafeUnNullable w'])
+--
+-- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
+-- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
+--
+-- @
+-- 'O.restrict' '<<<' 'nullTrue' -< ...
+-- @
+nullTrue :: Arrow f => WrappedNullableCol w O.PGBool => f w (O.Column O.PGBool)
+nullTrue = arr $ O.matchNullable (O.pgBool True) id . view _UnwrappedNullableCol
 
--- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@
--- to @('O.Column' 'O.PGBool')@. An outer @NULL@ is converted to @FALSE@.
-nullFalse :: O.QueryArr (O.Column (O.Nullable O.PGBool)) (O.Column O.PGBool)
-nullFalse = arr (\w -> O.not (O.isNull w) O..|| unsafeUnNullable w)
+-- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@ or compatible
+-- (see 'WrappedNullableCol') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
+-- converted to @False@.
+--
+-- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
+-- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
+--
+-- @
+-- 'O.restrict' '<<<' 'nullFalse' -< ...
+-- @
+nullFalse :: Arrow f => WrappedNullableCol w O.PGBool => f w (O.Column O.PGBool)
+nullFalse = arr $ O.matchNullable (O.pgBool False) id . view _UnwrappedNullableCol
 
 --------------------------------------------------------------------------------
 
