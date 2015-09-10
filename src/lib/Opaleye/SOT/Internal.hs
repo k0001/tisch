@@ -671,32 +671,41 @@ orn = pgCompatOp2N (O..||)
 
 --------------------------------------------------------------------------------
 -- Ordering
---
--- TODO: The return type of the given function could be more general.
 
 -- | Ascending order, no @NULL@s involved.
-asc :: (O.PGOrd b, NotNullable b) => (a -> Tagged (TC t c) (O.Column b)) -> O.Order a
-asc f = O.asc (unTagged . f)
+asc :: (WrappedCol w b, NotNullable b, O.PGOrd b) => (a -> w) -> O.Order a
+asc f = O.asc (view _UnwrappedCol . f)
 
 -- | Ascending order, @NULL@s last.
-ascnl :: O.PGOrd b => (a -> Tagged (TC t c) (O.Column (O.Nullable b))) -> O.Order a
-ascnl f = O.asc (unsafeUnNullable . unTagged . f)
+ascnl :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
+ascnl f = O.asc (unsafeUnNullable . view _UnwrappedNullableCol . f)
 
 -- | Ascending order, @NULL@s first.
-ascnf :: O.PGOrd b => (a -> Tagged (TC t c) (O.Column (O.Nullable b))) -> O.Order a
-ascnf f = O.ascNullsFirst (unsafeUnNullable . unTagged . f)
+ascnf :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
+ascnf f = O.ascNullsFirst (unsafeUnNullable . view _UnwrappedNullableCol . f)
 
 -- | Descending order, no @NULL@s involved.
-desc :: (O.PGOrd b, NotNullable b) => (a -> Tagged (TC t c) (O.Column b)) -> O.Order a
-desc f = O.desc (unTagged . f)
+desc :: (WrappedCol w b, NotNullable b, O.PGOrd b) => (a -> w) -> O.Order a
+desc f = O.desc (view _UnwrappedCol . f)
 
 -- | Descending order, @NULL@s first.
-descnf :: O.PGOrd b => (a -> Tagged (TC t c) (O.Column (O.Nullable b))) -> O.Order a
-descnf f = O.desc (unsafeUnNullable . unTagged . f)
+descnf :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
+descnf f = O.desc (unsafeUnNullable . view _UnwrappedNullableCol . f)
 
 -- | Descending order, @NULL@s last.
-descnl :: O.PGOrd b => (a -> Tagged (TC t c) (O.Column (O.Nullable b))) -> O.Order a
-descnl f = O.descNullsLast (unsafeUnNullable . unTagged . f)
+descnl :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
+descnl f = O.descNullsLast (unsafeUnNullable . view _UnwrappedNullableCol . f)
+
+--------------------------------------------------------------------------------
+
+-- | Like 'Control.Lens.Wrapped', but the "unwrapped" type is expected to be
+-- @('O.Column' a))@.
+class WrappedCol (w :: *) (a :: *) | w -> a where
+  _UnwrappedCol :: Iso' w (O.Column a)
+instance WrappedCol (O.Column a) a where
+  _UnwrappedCol = id
+instance WrappedCol w a => WrappedCol (Tagged (TC t c) w) a where
+  _UnwrappedCol = _Wrapped . _UnwrappedCol
 
 --------------------------------------------------------------------------------
 
@@ -712,10 +721,6 @@ instance WrappedNullableCol (O.Column (O.Nullable a)) a where
   _UnwrappedNullableCol = id
 instance WrappedNullableCol w a => WrappedNullableCol (Tagged (TC t c) w) a where
   _UnwrappedNullableCol = _Wrapped . _UnwrappedNullableCol
-
--- | Existential wrapper for a @('WrappedNullableCol' w a)@
-data SomeWrappedNullableCol a = forall w.
-  WrappedNullableCol w a => SomeWrappedNullableCol w
 
 -- | Like 'O.isNull', but also works with the return type of
 -- @('view' ('col' ('C' :: 'C' "foo"))@
