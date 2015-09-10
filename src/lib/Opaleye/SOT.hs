@@ -1,3 +1,10 @@
+-- | For a better experience, it is recommended that you import this module
+-- unqualified. It overrides some exports of "Opaleye" module. Import as follows:
+--
+-- @
+-- import           Opaleye.SOT
+-- import qualified Opaleye as O
+-- @
 module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
@@ -23,20 +30,35 @@ module Opaleye.SOT
 
    -- * Columns
  , toPgTC
+ , toPgTCN
+   -- ** Querying
+ , isNull
+ , nullTrue
+ , nullFalse
  , eq
- , eqv
  , eqn
- , eqnv
+ , lt
+ , ltn
+ , or_
+ , orn
    -- ** Selecting
  , col
  , cola
    -- ** Modifying
  , colav
+   -- ** Ordering
+ , asc
+ , ascnf
+ , ascnl
+ , desc
+ , descnf
+ , descnl
 
    -- * Types
  , Comparable
  , NotNullable
  , ToPgColumn(..)
+ , toPgColumnN
  , Col(..)
  , C(..)
  , T(..)
