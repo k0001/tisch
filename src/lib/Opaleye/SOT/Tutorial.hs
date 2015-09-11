@@ -377,7 +377,7 @@ q_TEmployee_TDepartment_join = proc () -> do
      -- comparissons/joins between unrelated columns!
   id -< (e,d)
 
-instance Comparable TEmployee "department_id" TDepartment "department_id" O.PGInt4
+instance Comparable TEmployee "department_id" TDepartment "department_id"
 
 
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
@@ -388,4 +388,4 @@ q_TAccount_TIndividual_leftJoin =
      (\(a,i) -> eq (a ^. col (C::C "customer_id"))
                    (i ^. col (C::C "customer_id")))
 
-instance Comparable TAccount "customer_id" TIndividual "customer_id" O.PGInt4
+instance Comparable TAccount "customer_id" TIndividual "customer_id"

@@ -267,7 +267,8 @@ type ITisch t
 -- | Tisch means table in german.
 --
 -- An instance of this class can uniquely describe a PostgreSQL table and
--- how to convert back and forth between it and its Haskell representation.
+-- how to convert back and forth between it and its Haskell representation
+-- used when writing Opaleye queries.
 --
 -- The @t@ type is only used as a tag for the purposes of uniquely identifying
 -- this 'Tisch'. We recommend that for each 'Tisch' you define a tag with a
@@ -502,14 +503,14 @@ tisch _ = tisch'
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
 class ( Tisch t1, Tisch t2, HasColName t1 c1, HasColName t2 c2
-      ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) (a :: *) where
+      ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) where 
   _ComparableL :: Iso (Tagged (TC t1 c1) (O.Column a)) (Tagged (TC t2 c2) (O.Column a)) (O.Column a) (O.Column a)
   _ComparableL = _Wrapped
   _ComparableR :: Iso (Tagged (TC t2 c2) (O.Column a)) (Tagged (TC t1 c1) (O.Column a)) (O.Column a) (O.Column a)
   _ComparableR = _Wrapped
 
 -- | Trivial. Same table, same column, same value.
-instance (Tisch t, HasColName t c) => Comparable t c t c a 
+instance (Tisch t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
 
@@ -642,8 +643,8 @@ class (NotNullable ua, NotNullable ub) => PgCompatOp2 (ua :: *) (ub :: *) (la ::
   pgCompatOp2 :: (O.Column ua -> O.Column ub -> O.Column r) -> la -> lb -> O.Column r
 instance (NotNullable a, NotNullable b) => PgCompatOp2 a b (O.Column a) (O.Column b) where
   pgCompatOp2 f = f
-instance (NotNullable x, Comparable ta ca tb cb x) => PgCompatOp2 x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
-  pgCompatOp2 f (Tagged a) (Tagged b) = f a b
+instance (NotNullable x, Comparable ta ca tb cb) => PgCompatOp2 x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
+  pgCompatOp2 f ta tb = f (ta^._ComparableL) (tb^._ComparableR)
 instance (NotNullable a, NotNullable b) => PgCompatOp2 a b (Tagged ta (O.Column a)) (O.Column b) where
   pgCompatOp2 f (Tagged a) b = f a b
 instance (NotNullable a, NotNullable b) => PgCompatOp2 a b (O.Column a) (Tagged tb (O.Column b)) where
@@ -656,8 +657,8 @@ class (NotNullable ua, NotNullable ub) => PgCompatOp2N (ua :: *) (ub :: *) (la :
 instance (NotNullable a, NotNullable b) => PgCompatOp2N a b (O.Column (O.Nullable a)) (O.Column (O.Nullable b)) where
   pgCompatOp2N f a b = O.ifThenElse (isNull a O..|| isNull b) O.null
       (O.toNullable (unsafeUnNullable a `f` unsafeUnNullable b))
-instance (NotNullable x, Comparable ta ca tb cb x) => PgCompatOp2N x x (Tagged (TC ta ca) (O.Column (O.Nullable x))) (Tagged (TC tb cb) (O.Column (O.Nullable x))) where
-  pgCompatOp2N f (Tagged a) (Tagged b) = pgCompatOp2N f a b
+instance (NotNullable x, Comparable ta ca tb cb) => PgCompatOp2N x x (Tagged (TC ta ca) (O.Column (O.Nullable x))) (Tagged (TC tb cb) (O.Column (O.Nullable x))) where
+  pgCompatOp2N f ta tb = pgCompatOp2N f (ta^._ComparableL) (tb^._ComparableR)
 instance (NotNullable a, NotNullable b) => PgCompatOp2N a b (Tagged ta (O.Column (O.Nullable a))) (O.Column (O.Nullable b)) where
   pgCompatOp2N f (Tagged a) b = pgCompatOp2N f a b
 instance (NotNullable a, NotNullable b) => PgCompatOp2N a b (O.Column (O.Nullable a)) (Tagged tb (O.Column (O.Nullable b))) where

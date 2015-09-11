@@ -68,7 +68,7 @@ types = seq x () where
   x = ()
 
 -- | Internal. See "Opaleye.SOT.Internal.TTest".
-instance Comparable TTest "c1" TTest "c3" O.PGBool 
+instance Comparable TTest "c1" TTest "c3" 
 
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
