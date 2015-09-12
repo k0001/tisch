@@ -54,6 +54,9 @@ import qualified Opaleye.Internal.RunQuery as OI
 -- We do not use 'O.Column ('O.Nullable' a)', but instead we use
 -- @('NullableColumn' a)@.
 --
+-- Think of @('NullableColumn' a)@ as @('Maybe' a)@, where
+-- @('Nothing' == 'nullc')@ and @('Just' a == 'O.Column' a).
+--
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 --
 -- Note: The 'NotNullable' constraint is a hack to prevent accidentaly 
@@ -101,6 +104,8 @@ instance {-# OVERLAPPABLE #-}
 toNullableColumn :: NotNullable a => O.Column a -> NullableColumn a
 toNullableColumn = NullableColumn . O.toNullable
 
+-- | Evaluates to the first argument if the 'NullableColumn' is @NULL@,
+-- otherwise it evaluates to the 'O.Column' wrapped in the 'NullableColumn'.
 fromNullableColumn :: NotNullable a => O.Column a -> NullableColumn a -> O.Column a
 fromNullableColumn ca = O.matchNullable ca id . unNullableColumn
 
@@ -112,6 +117,9 @@ unsafeUnNullableColumn :: NotNullable a => NullableColumn a -> O.Column a
 unsafeUnNullableColumn = O.unsafeCoerceColumn . unNullableColumn
 {-# INLINE unsafeUnNullableColumn #-}
 
+-- | Monadic bind for the billon dollar mistake.
+--
+-- Works like 'Maybe's monadic bind.
 bindNullableColumn
   :: (NotNullable a, NotNullable b)
   => NullableColumn a
@@ -711,27 +719,31 @@ class PgCompatOp2' (c :: * -> *) ua ub la lb | la -> ua, lb -> ub where
     => (O.Column r -> c r')
     -> (O.Column ua -> O.Column ub -> O.Column r)
     -> (la -> lb -> c r')
--- | c ca cb
-instance PgCompatOp2' O.Column a b (O.Column a) (O.Column b) where
-  pgCompatOp2' k f ca cb = k (f ca cb)
--- | nc ca cb
-instance PgCompatOp2' NullableColumn a b (O.Column a) (O.Column b) where
+-- | x ca cb
+instance (NotNullable a, NotNullable b) => PgCompatOp2' c a b (O.Column a) (O.Column b) where
   pgCompatOp2' k f ca cb = k (f ca cb)
 -- | nc ca ncb
 instance
-    ( NotNullable b
+    ( NotNullable a, NotNullable b
     ) => PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b) where
   pgCompatOp2' k f ca ncb = bindNullableColumn ncb (\cb -> k (f ca cb))
 -- | x ca tcb
 instance
     ( PgCompatOp2' c a b (O.Column a) (O.Column b)
+    , NotNullable a, NotNullable b
     ) => PgCompatOp2' c a b (O.Column a) (Tagged t (O.Column b)) where
   pgCompatOp2' k f ca tcb = pgCompatOp2' k f ca (unTagged tcb)
 -- | nc ca tncb
 instance
     ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
+    , NotNullable a, NotNullable b
     ) => PgCompatOp2' NullableColumn a b (O.Column a) (Tagged t (NullableColumn b)) where
   pgCompatOp2' k f ca tncb = pgCompatOp2' k f ca (unTagged tncb)
+-- | nc nca cb
+instance
+    ( NotNullable a, NotNullable b
+    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (O.Column b) where
+  pgCompatOp2' k f nca cb = bindNullableColumn nca (\ca -> k (f ca cb))
 -- | nc nca ncb
 instance
     ( NotNullable a, NotNullable b
@@ -740,40 +752,70 @@ instance
      bindNullableColumn nca (\ca -> bindNullableColumn ncb (\cb -> k (f ca cb)))
 -- | nc nca tcb
 instance
-    ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
+    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (O.Column b)
+    , NotNullable a, NotNullable b
     ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (Tagged t (O.Column b)) where
   pgCompatOp2' k f nca tcb = pgCompatOp2' k f nca (unTagged tcb)
 -- | nc nca tncb
 instance
     ( PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b)
+    , NotNullable a, NotNullable b
     ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (Tagged t (NullableColumn b)) where
   pgCompatOp2' k f nca tncb = pgCompatOp2' k f nca (unTagged tncb)
--- | c tca tcb
+-- | x tca cb
 instance
-    ( Comparable ta ca tb cb
-    , PgCompatOp2' O.Column x x (O.Column x) (O.Column x)
-    ) => PgCompatOp2' O.Column x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
-  pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
--- | nc tca tcb
+    ( PgCompatOp2' c a b (O.Column a) (O.Column b)
+    , NotNullable a, NotNullable b
+    ) => PgCompatOp2' c a b (Tagged t (O.Column a)) (O.Column b) where
+  pgCompatOp2' k f tca cb = pgCompatOp2' k f (unTagged tca) cb
+-- | nc tca ncb
 instance
-    ( Comparable ta ca tb cb
-    , PgCompatOp2' NullableColumn x x (O.Column x) (O.Column x)
-    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
+    ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
+    , NotNullable a, NotNullable b
+    ) => PgCompatOp2' NullableColumn a b (Tagged t (O.Column a)) (NullableColumn b) where
+  pgCompatOp2' k f tca ncb = pgCompatOp2' k f (unTagged tca) ncb
+-- | x tca tcb
+instance
+    ( Comparable ta ca tb cb, NotNullable x
+    , PgCompatOp2' c x x (O.Column x) (O.Column x)
+    ) => PgCompatOp2' c x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
   pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
 -- | nc tca tncb
 instance
-    ( Comparable ta ca tb cb, PgCompatOp2' NullableColumn x x (O.Column x) (NullableColumn x)
+    ( Comparable ta ca tb cb, NotNullable x
+    , PgCompatOp2' NullableColumn x x (O.Column x) (NullableColumn x)
     ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (NullableColumn x)) where
-  pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
--- | x flip
-instance {-# OVERLAPPABLE #-} PgCompatOp2' c ua ub la lb => PgCompatOp2' c ua ub la lb where
-  pgCompatOp2' k f la lb = pgCompatOp2' k (flip f) lb la
+  pgCompatOp2' k f tca tncb = pgCompatOp2' k f (tca ^. _ComparableL) (tncb ^. _ComparableR)
+-- | nc tnca cb
+instance
+    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (O.Column b)
+    , NotNullable a, NotNullable b
+    ) => PgCompatOp2' NullableColumn a b (Tagged t (NullableColumn a)) (O.Column b) where
+  pgCompatOp2' k f tnca cb = pgCompatOp2' k f (unTagged tnca) cb
+-- | nc tnca ncb
+instance
+    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b)
+    , NotNullable a, NotNullable b
+    ) => PgCompatOp2' NullableColumn a b (Tagged t (NullableColumn a)) (NullableColumn b) where
+  pgCompatOp2' k f tnca ncb = pgCompatOp2' k f (unTagged tnca) ncb
+-- | nc tnca tcb
+instance
+    ( Comparable ta ca tb cb, NotNullable x
+    , PgCompatOp2' NullableColumn x x (NullableColumn x) (O.Column x)
+    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (NullableColumn x)) (Tagged (TC tb cb) (O.Column x)) where
+  pgCompatOp2' k f tnca tcb = pgCompatOp2' k f (tnca ^. _ComparableL) (tcb ^. _ComparableR)
+-- | nc tnca tncb
+instance
+    ( Comparable ta ca tb cb, NotNullable x
+    , PgCompatOp2' NullableColumn x x (NullableColumn x) (NullableColumn x)
+    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (NullableColumn x)) (Tagged (TC tb cb) (NullableColumn x)) where
+  pgCompatOp2' k f tnca tncb = pgCompatOp2' k f (tnca ^. _ComparableL) (tncb ^. _ComparableR)
 
 ---
 
 -- | Like 'PgCompatOp2'', but the first argument to 'pgCompatOp2'' is passed implicitly.
 class
-  ( PgCompatOp2' c ua ub la lb, NotNullable r'
+  ( NotNullable r'
   ) => PgCompatOp2 (c :: * -> *) r r' ua ub la lb | la -> ua, lb -> ub where
   pgCompatOp2 :: (O.Column ua -> O.Column ub -> O.Column r) -> (la -> lb -> c r')
 instance
@@ -795,8 +837,10 @@ instance
 --
 -- @
 -- 'eq'' :: 'O.Column' x -> 'O.Column' x -> 'O.Column' 'O.PGBool'
+-- 'eq'' :: 'O.Column' x -> 'O.Column' x -> 'NullableColumn' 'O.PGBool'
 -- 'eq'' :: 'O.Column' x -> 'NullableColumn' x -> 'NullableColumn' 'O.PGBool'
 -- 'eq'' :: 'O.Column' x -> 'Tagged' t ('O.Column' x) -> 'O.Column' 'O.PGBool'
+-- 'eq'' :: 'O.Column' x -> 'Tagged' t ('O.Column' x) -> 'NullableColumn' 'O.PGBool'
 -- 'eq'' :: 'O.Column' x -> 'Tagged' t ('NullableColumn' x) -> 'NullableColumn' 'O.PGBool'
 -- 'eq'' :: 'NullableColumn' x -> 'O.Column' x -> 'NullableColumn' 'O.PGBool'
 -- 'eq'' :: 'NullableColumn' x -> 'NullableColumn' x -> 'NullableColumn' 'O.PGBool'
@@ -804,7 +848,7 @@ instance
 -- 'eq'' :: 'NullableColumn' x -> 'Tagged' t ('NullableColumn' x) -> 'NullableColumn' 'O.PGBool'
 -- @
 --
--- Any of the above combinations with the arguments fliped is accepte too.
+-- Any of the above combinations with the arguments fliped is accepted too.
 -- Additionally, a 'Comparable' constraint will be required if you try to
 -- compare two 'Tisch'-aware columns directly, such as those obtained with
 -- @('view' '.' 'col')@:
@@ -820,10 +864,10 @@ instance
 eq' :: (PgCompatOp2 c O.PGBool O.PGBool x x a b) => a -> b -> c O.PGBool
 eq' = pgCompatOp2 (O..==)
 -- | Like 'eq'', but the return column type is fixed to 'O.Column' to help with type inference.
-eq :: (PgCompatOp2' O.Column x x a b) => a -> b -> O.Column O.PGBool
+eq :: (PgCompatOp2 O.Column O.PGBool O.PGBool x x a b) => a -> b -> O.Column O.PGBool
 eq = eq'
 -- | Like 'eq'', but the return column type is fixed to 'NullableColumn' to help with type inference.
-eqn :: (PgCompatOp2' NullableColumn x x a b) => a -> b -> NullableColumn O.PGBool
+eqn :: (PgCompatOp2 NullableColumn O.PGBool O.PGBool x x a b) => a -> b -> NullableColumn O.PGBool
 eqn = eq'
 
 
@@ -850,6 +894,19 @@ ou = ou'
 -- | Like 'ou'', but the return column type is fiO.PGBooled to 'NullableColumn' to help with type inference.
 oun :: PgCompatOp2' NullableColumn O.PGBool O.PGBool a b => a -> b -> NullableColumn O.PGBool
 oun = ou'
+
+-- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column' (see 'eq').
+--
+-- "et" means "and" in French, and it is a great name because it doesn't overlap
+-- with 'Prelude.and'. N'est-ce pas?
+et' :: PgCompatOp2 c O.PGBool O.PGBool O.PGBool O.PGBool a b => a -> b -> c O.PGBool
+et' = pgCompatOp2 (O..&&)
+-- | Like 'et'', but the return column type is fixed to 'O.Column' to help with type inference.
+et :: PgCompatOp2' O.Column O.PGBool O.PGBool a b => a -> b -> O.Column O.PGBool
+et = et'
+-- | Like 'et'', but the return column type is fiO.PGBooled to 'NullableColumn' to help with type inference.
+etn :: PgCompatOp2' NullableColumn O.PGBool O.PGBool a b => a -> b -> NullableColumn O.PGBool
+etn = et'
 
 --------------------------------------------------------------------------------
 -- Ordering

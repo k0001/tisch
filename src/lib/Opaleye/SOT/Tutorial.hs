@@ -370,15 +370,14 @@ q_TEmployee_TDepartment_join = proc () -> do
   e <- O.queryTable tisch' -< () -- inferred
   d <- O.queryTable tisch' -< () -- inferred
   O.restrict <<< nullFalse -< eqn
-     (e ^. col (C::C "department_id"))
-     (d ^. col (C::C "department_id"))
+     (e ^. col (C::C "department_id")) -- tnc
+     (d ^. col (C::C "department_id")) -- tc
      -- Comparing the two columns above doesn't compile without the
      -- 'Comparable' instance below. Yay for not allowing
      -- comparissons/joins between unrelated columns!
   id -< (e,d)
 
--- TODO: THIS SHOULD BE REQUIRED!!
--- instance Comparable TEmployee "department_id" TDepartment "department_id"
+instance Comparable TEmployee "department_id" TDepartment "department_id"
 
 
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)

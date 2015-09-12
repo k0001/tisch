@@ -41,6 +41,9 @@ module Opaleye.SOT
  , ou'
  , ou
  , oun
+ , et'
+ , et
+ , etn
    -- ** Selecting
  , col
  , cola
