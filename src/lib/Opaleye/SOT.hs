@@ -32,15 +32,15 @@ module Opaleye.SOT
  , toPgTC
  , toPgTCN
    -- ** Querying
- , isNull
- , nullTrue
- , nullFalse
+ , eq'
  , eq
  , eqn
+ , lt'
  , lt
  , ltn
- , or_
- , orn
+ , ou'
+ , ou
+ , oun
    -- ** Selecting
  , col
  , cola
@@ -55,18 +55,29 @@ module Opaleye.SOT
  , descnf
  , descnl
 
+   -- * Nullable columns
+ , NullableColumn
+ , NotNullable
+ , toNullableColumn
+ , fromNullableColumn
+ , bindNullableColumn
+ , nullc
+ , toPgColumnN
+ , isNull
+ , nullTrue
+ , nullTrue'
+ , nullFalse
+ , nullFalse'
+
    -- * Types
  , Comparable
- , NotNullable
  , ToPgColumn(..)
- , toPgColumnN
  , Col(..)
  , C(..)
  , T(..)
  , TC(..)
  , RN(..)
  , WD(..)
- , WDef(..)
 
    -- * Column type details
  , Col_ByName

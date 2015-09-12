@@ -44,10 +44,86 @@ import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
 import qualified Opaleye.Internal.PGTypes as OI
+import qualified Opaleye.Internal.RunQuery as OI
 
 -------------------------------------------------------------------------------
 
--- | Whether to read a plain value or possibly @NULL@. 
+-- | This is where we drift a bit appart from Opaleye, but hopefully not for
+-- a long time.
+--
+-- We do not use 'O.Column ('O.Nullable' a)', but instead we use
+-- @('NullableColumn' a)@.
+--
+-- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+--
+-- Note: The 'NotNullable' constraint is a hack to prevent accidentaly 
+-- constructing a @('NullableColumn' ('O.Nullable' a))@.
+newtype NotNullable a => NullableColumn a
+  = NullableColumn { unNullableColumn :: O.Column (O.Nullable a) }
+  deriving (Show)
+
+-- | Horrible hack to workaround the current represenation for nullable columns.
+-- See 'NullableColumn'.
+type family NotNullable (x :: *) :: Constraint where
+  NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
+  NotNullable x = ()
+
+-- | OVERLAPPABLE.
+instance {-# OVERLAPPABLE #-}
+    ( P.Profunctor p, NotNullable a
+    , PP.Default p x (O.Column (O.Nullable a))
+    ) => PP.Default p x (NullableColumn a) where
+  def = P.rmap NullableColumn PP.def
+  {-# INLINE def #-}
+
+-- | OVERLAPPABLE.
+instance {-# OVERLAPPABLE #-}
+    ( P.Profunctor p, NotNullable a
+    , PP.Default p (O.Column (O.Nullable a)) x
+    ) => PP.Default p (NullableColumn a) x where
+  def = P.lmap unNullableColumn PP.def
+  {-# INLINE def #-}
+
+instance
+    ( P.Profunctor p, NotNullable a, NotNullable b
+    , PP.Default p (O.Column (O.Nullable a)) (O.Column (O.Nullable b))
+    ) => PP.Default p (NullableColumn a) (NullableColumn b) where
+  def = P.dimap unNullableColumn NullableColumn PP.def
+  {-# INLINE def #-}
+
+-- | OVERLAPPABLE.
+instance {-# OVERLAPPABLE #-}
+    ( O.QueryRunnerColumnDefault pg hs, NotNullable pg
+    ) => O.QueryRunnerColumnDefault pg (Maybe hs) where
+  queryRunnerColumnDefault = OI.QueryRunnerColumn u (fmap (fmap (fmap Just)) fp)
+    where OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
+
+toNullableColumn :: NotNullable a => O.Column a -> NullableColumn a
+toNullableColumn = NullableColumn . O.toNullable
+
+fromNullableColumn :: NotNullable a => O.Column a -> NullableColumn a -> O.Column a
+fromNullableColumn ca = O.matchNullable ca id . unNullableColumn
+
+-- | PostgreSQL's @NULL@.
+nullc :: NotNullable a => NullableColumn a
+nullc = NullableColumn O.null
+
+unsafeUnNullableColumn :: NotNullable a => NullableColumn a -> O.Column a
+unsafeUnNullableColumn = O.unsafeCoerceColumn . unNullableColumn
+{-# INLINE unsafeUnNullableColumn #-}
+
+bindNullableColumn
+  :: (NotNullable a, NotNullable b)
+  => NullableColumn a
+  -> (O.Column a -> NullableColumn b)
+  -> NullableColumn b
+bindNullableColumn nca f = NullableColumn $
+   O.ifThenElse (isNull nca) O.null
+      (unNullableColumn (f (unsafeUnNullableColumn nca)))
+
+-------------------------------------------------------------------------------
+
+-- | Whether to read a plain value or possibly @NULL@.
 data RN = R  -- ^ Read plain value.
         | RN -- ^ Possibly read @NULL@.
 
@@ -55,34 +131,9 @@ data RN = R  -- ^ Read plain value.
 data WD = W  -- ^ Write a specific value.
         | WD -- ^ Possibly write @DEFAULT@.
 
--- | Whether to write @DEFAULT@ or a specific value when writing to a column.
-data WDef a = WDef   -- ^ Write @DEFAULT@.
-            | WVal a -- ^ Write the specified value.
-  deriving (Eq, Ord, Show, Functor)
-
-instance Applicative WDef where
-  pure = WVal
-  {-# INLINE pure #-}
-  WVal f <*> WVal a = WVal (f a)
-  _ <*> _ = WDef
-  {-# INLINE (<*>) #-}
-
-instance Monad WDef where
-  return = pure
-  {-# INLINE return #-} 
-  WVal a >>= k = k a
-  _ >>= _ = WDef
-  {-# INLINE (>>=) #-} 
-
--- | Case analysis for 'WDef'. Evaluates to the first argument if 'WDef',
--- otherwise applies the given function to the @a@ in 'WVal'.
-wdef :: b -> (a -> b) -> WDef a -> b
-wdef b f = \w -> case w of { WDef -> b; WVal a -> f a }
-{-# INLINE wdef #-}
-
 --------------------------------------------------------------------------------
 
--- | Column description.
+-- | Column properties.
 --
 -- This is only used as a promoted datatype expected to have kind
 -- @'Col' 'GHC.Symbol' 'WD' 'RN' * *@.
@@ -112,11 +163,10 @@ type instance Apply Col_NameSym0 col = Col_Name col
 
 type family Col_PgRType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgRType ('Col n w 'R  p h) = O.Column p
-  Col_PgRType ('Col n w 'RN p h) = O.Column (O.Nullable p)
+  Col_PgRType ('Col n w 'RN p h) = NullableColumn p
 
 type family Col_PgRNType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRNType ('Col n w 'R  p h) = O.Column (O.Nullable p)
-  Col_PgRNType ('Col n w 'RN p h) = O.Column (O.Nullable (O.Nullable p))
+  Col_PgRNType ('Col n w r p h) = NullableColumn p
 
 type family Col_PgWType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgWType ('Col n 'W  r p h) = Col_PgRType ('Col n 'W r p h)
@@ -128,7 +178,7 @@ type family Col_HsRType (col :: Col GHC.Symbol WD RN * *) :: * where
 
 type family Col_HsIType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_HsIType ('Col n 'W  r p h) = Col_HsRType ('Col n 'W r p h)
-  Col_HsIType ('Col n 'WD r p h) = WDef (Col_HsRType ('Col n 'WD r p h))
+  Col_HsIType ('Col n 'WD r p h) = Maybe (Col_HsRType ('Col n 'WD r p h))
 
 ---
 
@@ -221,7 +271,7 @@ type HsI (t :: *) = Rec t (Cols_HsI t)
 -- Mnemonic: PostGresql Read.
 type PgR (t :: *) = Rec t (Cols_PgR t)
 
--- | Like @('PgRN' t)@ but every field is 'O.Nullable', as in the
+-- | Like @('PgRN' t)@ but every field is 'NullableColumn', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
@@ -246,8 +296,8 @@ type ITisch t
     , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
-    , HL.HMapAux HList HToPgWField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.HMapAux HList HToPgWField (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.HMapAux HList HPgWfromHsIField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.HMapAux HList HPgWfromPgRField (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.HRLabelSet (Cols_HsR t)
     , HL.HRLabelSet (Cols_HsI t)
     , HL.HRLabelSet (Cols_PgR t)
@@ -281,9 +331,9 @@ type ITisch t
 --
 -- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
 -- and the @TUser@ term constructor can be used as a type proxy for tools such
--- as 'tisch' or 'unHsR'. 
+-- as 'tisch' or 'unHsR'.
 class ITisch t => Tisch (t :: *) where
-  -- | PostgreSQL schema name where to find the table (defaults to @"public"@, 
+  -- | PostgreSQL schema name where to find the table (defaults to @"public"@,
   -- PostgreSQL's default schema name).
   type SchemaName t :: GHC.Symbol
   type SchemaName t = "public"
@@ -330,7 +380,7 @@ unHsR _ = unHsR'
 -- Notice that you are not required to provide instances of this class if working
 -- with @'HsI' t@ is sufficient for you, or if you already have a function
 -- @(a -> 'HsI' t)@ at hand.
-class Tisch t => ToHsI t (a :: *) where 
+class Tisch t => ToHsI t (a :: *) where
   -- | Convert an @a@ to an Opaleye-compatible Haskell representation
   -- to be used when inserting a new row to this table.
   --
@@ -376,23 +426,21 @@ mkHsI k = Tagged
 
 -- | Use with 'HL.ApplyAB' to apply convert a field in a
 -- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
-data HToPgWField = HToPgWField
-instance {-# OVERLAPPABLE #-} (ToPgColumn pg hs) => HL.ApplyAB HToPgWField hs (O.Column pg) where
+data HPgWfromHsIField = HPgWfromHsIField
+instance HL.ApplyAB HPgWfromHsIField x x where
+  applyAB _ = id
+instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField hs (O.Column pg) where
   applyAB _ = toPgColumn
-  {-# INLINE applyAB #-}
-instance HL.ApplyAB HToPgWField (O.Column pg) (O.Column pg) where
-  applyAB _ = id 
-  {-# INLINE applyAB #-}
-instance (ToPgColumn pg hs) => HL.ApplyAB HToPgWField (WDef hs) (Maybe (O.Column pg)) where
-  applyAB _ = fmap toPgColumn . wdef Nothing Just 
-  {-# INLINE applyAB #-}
-instance HL.ApplyAB HToPgWField (O.Column pg) (Maybe (O.Column pg)) where
-  applyAB _ = Just
-  {-# INLINE applyAB #-}
+instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (O.Column pg)) where
+  applyAB _ = fmap toPgColumn
+instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (NullableColumn pg) where
+  applyAB _ = maybe nullc toPgColumnN
+instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (NullableColumn pg)) where
+  applyAB _ = fmap (maybe nullc toPgColumnN)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
 toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
-toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField . HL.recordValues . unTagged
+toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromHsIField . HL.recordValues . unTagged
 {-# INLINE toPgW_fromHsI' #-}
 
 -- | Like 'toPgW_fromHsI'', but takes an explicit @t@.
@@ -415,16 +463,44 @@ toPgW _ = toPgW'
 
 --------------------------------------------------------------------------------
 
+-- | Use with 'HL.ApplyAB' to apply convert a field in a
+-- @('HList' ('Cols_PgR' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
+data HPgWfromPgRField = HPgWfromPgRField
+instance HL.ApplyAB HPgWfromPgRField x x where
+  applyAB _ = id
+instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (O.Column pg) (Maybe (O.Column pg)) where
+  applyAB _ = Just
+instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (NullableColumn pg) (Maybe (NullableColumn pg)) where
+  applyAB _ = Just
+
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
 -- to a @('PgW' t)@ that can be used in a 'O.runUpdate'-like operation.
 update' :: Tisch t => PgR t -> PgW t
-update' = Tagged . HL.hMapTaggedFn . HL.hMapL HToPgWField . HL.recordValues . unTagged
+update' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromPgRField . HL.recordValues . unTagged
 {-# INLINE update' #-}
 
 -- | Like 'update'', but takes an explicit @t@ for when it can't be inferred.
 update :: Tisch t => t -> PgR t -> PgW t
 update _ = update'
 {-# INLINE update #-}
+
+--------------------------------------------------------------------------------
+
+-- | Column properties: Write (no default), Read (not nullable).
+colProps_wr :: NotNullable a => String -> O.TableProperties (O.Column a) (O.Column a)
+colProps_wr = O.required
+
+-- | Column properties: Write (no default), Read (nullable).
+colProps_wrn :: NotNullable a => String -> O.TableProperties (NullableColumn a) (NullableColumn a)
+colProps_wrn = P.dimap unNullableColumn NullableColumn . O.required
+
+-- | Column properties: Write (optional default), Read (not nullable).
+colProps_wdr :: NotNullable a => String -> O.TableProperties (Maybe (O.Column a)) (O.Column a)
+colProps_wdr = O.optional
+
+-- | Column properties: Write (optional default), Read (nullable).
+colProps_wdrn :: NotNullable a => String -> O.TableProperties (Maybe (NullableColumn a)) (NullableColumn a)
+colProps_wdrn = P.dimap (fmap unNullableColumn) NullableColumn . O.optional
 
 --------------------------------------------------------------------------------
 
@@ -442,21 +518,21 @@ type instance Apply Col_PropsSym0 t = Col_PropsSym1 t
 class ICol_Props (col :: Col GHC.Symbol WD RN * *) where
   colProps :: Tisch t => Proxy t -> Proxy col -> Col_Props t col
 
--- | 'colProps' is equivalent 'O.required'.
-instance forall n p h. GHC.KnownSymbol n => ICol_Props ('Col n 'W 'R p h) where
-  colProps _ = \_ -> P.dimap unTagged Tagged (O.required (GHC.symbolVal (Proxy :: Proxy n)))
+-- | 'colProps' is equivalent 'colProps_wr'.
+instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'W 'R p h) where
+  colProps _ = \_ -> ppaUnTagged (colProps_wr (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
--- | 'colProps' is equivalent 'O.required'.
-instance forall n p h. GHC.KnownSymbol n => ICol_Props ('Col n 'W 'RN p h) where
-  colProps _ = \_ -> P.dimap unTagged Tagged (O.required (GHC.symbolVal (Proxy :: Proxy n)))
+-- | 'colProps' is equivalent 'colProps_wrn'.
+instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'W 'RN p h) where
+  colProps _ = \_ -> ppaUnTagged (colProps_wrn (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
--- | 'colProps' is equivalent 'O.optional'.
-instance forall n p h. GHC.KnownSymbol n => ICol_Props ('Col n 'WD 'R p h) where
-  colProps _ = \_ -> P.dimap unTagged Tagged (O.optional (GHC.symbolVal (Proxy :: Proxy n)))
+-- | 'colProps' is equivalent 'colProps_wdr'.
+instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'WD 'R p h) where
+  colProps _ = \_ -> ppaUnTagged (colProps_wdr (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
--- | 'colProps' is equivalent 'O.optional'.
-instance forall n p h. GHC.KnownSymbol n => ICol_Props ('Col n 'WD 'RN p h) where
-  colProps _ = \_ -> P.dimap unTagged Tagged (O.optional (GHC.symbolVal (Proxy :: Proxy n)))
+-- | 'colProps' is equivalent 'colProps_wdrn'.
+instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'WD 'RN p h) where
+  colProps _ = \_ -> ppaUnTagged (colProps_wdrn (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 
 -- | Use with 'HL.ApplyAB' to apply 'colProps' to each element of an 'HList'.
@@ -503,10 +579,10 @@ tisch _ = tisch'
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
 class ( Tisch t1, Tisch t2, HasColName t1 c1, HasColName t2 c2
-      ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) where 
-  _ComparableL :: Iso (Tagged (TC t1 c1) (O.Column a)) (Tagged (TC t2 c2) (O.Column a)) (O.Column a) (O.Column a)
+      ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) where
+  _ComparableL :: Iso (Tagged (TC t1 c1) a) (Tagged (TC t2 c2) a) a a
   _ComparableL = _Wrapped
-  _ComparableR :: Iso (Tagged (TC t2 c2) (O.Column a)) (Tagged (TC t1 c1) (O.Column a)) (O.Column a) (O.Column a)
+  _ComparableR :: Iso (Tagged (TC t2 c2) a) (Tagged (TC t1 c1) a) a a
   _ComparableR = _Wrapped
 
 -- | Trivial. Same table, same column, same value.
@@ -522,26 +598,17 @@ instance (Tisch t, HasColName t c) => Comparable t c t c
 -- PostgreSQL representation. Quite likely, you will be using 'toPgTC' though.
 --
 -- A a default implementation of 'toPgColumn' is available for 'Wrapped' types
-class ToPgColumn (pg :: *) (hs :: *) where
+class NotNullable pg => ToPgColumn (pg :: *) (hs :: *) where
   toPgColumn :: hs -> O.Column pg
   default toPgColumn :: (Wrapped hs, ToPgColumn pg (Unwrapped hs)) => hs -> O.Column pg
   toPgColumn = toPgColumn . view _Wrapped'
   {-# INLINE toPgColumn #-}
 
-toPgColumnN :: ToPgColumn pg hs => hs -> O.Column (O.Nullable pg)
-toPgColumnN = O.toNullable . toPgColumn
+toPgColumnN :: ToPgColumn pg hs => hs -> NullableColumn pg
+toPgColumnN = toNullableColumn . toPgColumn
 {-# INLINE toPgColumnN #-}
 
--- | OVERLAPPABLE. Any @pg@ can be made 'O.Nullable'. TODO: Do we need this instance?
-instance {-# OVERLAPPABLE #-} ToPgColumn pg hs => ToPgColumn (O.Nullable pg) hs where
-  toPgColumn = toPgColumnN
-  {-# INLINE toPgColumn #-}
--- | OVERLAPPS @'ToPgColumn' ('O.Nullable' pg) hs@. 'Nothing' is @NULL@.
-instance ToPgColumn pg hs => ToPgColumn (O.Nullable pg) (Maybe hs) where
-  toPgColumn = maybe O.null toPgColumnN
-  {-# INLINE toPgColumn #-}
-
-instance ToPgColumn ph hs => ToPgColumn ph (Tagged t hs)
+instance ToPgColumn pg hs => ToPgColumn pg (Tagged t hs)
 instance ToPgColumn O.PGText [Char] where toPgColumn = O.pgString
 instance ToPgColumn O.PGText Char where toPgColumn = toPgColumn . (:[])
 instance ToPgColumn O.PGBool Bool where toPgColumn = O.pgBool
@@ -576,14 +643,14 @@ toPgTC _ _ = Tagged . toPgColumn
 {-# INLINE toPgTC #-}
 
 -- | Like 'toPgColumnN', but wraps the resulting 'O.Column' in a 'TC'.
-toPgTCN :: ToPgColumn pg hs => t -> C c -> hs -> Tagged (TC t c) (O.Column (O.Nullable pg))
+toPgTCN :: ToPgColumn pg hs => t -> C c -> hs -> Tagged (TC t c) (NullableColumn pg)
 toPgTCN _ _ = Tagged . toPgColumnN
 {-# INLINE toPgTCN #-}
 
 --------------------------------------------------------------------------------
 
 -- | Lens to the value of a column.
--- 
+--
 -- Mnemonic: the COLumn.
 col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
     => C c
@@ -592,7 +659,7 @@ col prx = cola prx . _Unwrapped
 {-# INLINE col #-}
 
 -- | Getter to a column, wrapped in 'O.Nullable'.
--- 
+--
 -- This is mostly here to be used with functions such as 'orn', 'eqn' or 'ltn'.
 --
 -- Mnemonic: the COLumn Nullable.
@@ -624,7 +691,7 @@ cola = go where -- just to hide the "forall" from the haddocks
 
 
 -- | Like 'cola', but just a 'Setter' that takes constant 'ToPgColumn' values.
--- 
+--
 -- Mnemonic: the COLumn's A constant Value.
 colav
   :: (HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a'), ToPgColumn a' hs)
@@ -634,141 +701,247 @@ colav c = cola c . sets (\f ca -> toPgColumn (f ca))
 
 --------------------------------------------------------------------------------
 -- Binary operations on columns
---
--- We need to make a difference between nullable and not nullable columns due to
--- https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 
-class (NotNullable ua, NotNullable ub) => PgCompatOp2 (ua :: *) (ub :: *) (la :: *) (lb :: *) | la -> ua, lb -> ub where
+-- | Wrap an Opaleye function such as 'eq' so that it can take different input
+-- types and provide different output types.
+class PgCompatOp2' (c :: * -> *) ua ub la lb | la -> ua, lb -> ub where
   -- | Wrap the given function so that it supports input types other than 'O.Column' as well.
-  pgCompatOp2 :: (O.Column ua -> O.Column ub -> O.Column r) -> la -> lb -> O.Column r
-instance (NotNullable a, NotNullable b) => PgCompatOp2 a b (O.Column a) (O.Column b) where
-  pgCompatOp2 f = f
-instance (NotNullable x, Comparable ta ca tb cb) => PgCompatOp2 x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
-  pgCompatOp2 f ta tb = f (ta^._ComparableL) (tb^._ComparableR)
-instance (NotNullable a, NotNullable b) => PgCompatOp2 a b (Tagged ta (O.Column a)) (O.Column b) where
-  pgCompatOp2 f (Tagged a) b = f a b
-instance (NotNullable a, NotNullable b) => PgCompatOp2 a b (O.Column a) (Tagged tb (O.Column b)) where
-  pgCompatOp2 f a (Tagged b) = f a b
-
-class (NotNullable ua, NotNullable ub) => PgCompatOp2N (ua :: *) (ub :: *) (la :: *) (lb :: *) | la -> ua, lb -> ub where
-  -- | PostgreSQL version of @(liftA2 :: (Maybe a -> b -> c) -> Maybe a -> Maybe b -> Maybe c)@,
-  -- but it wraps the given function so that it supports input types other than 'O.Column' as well.
-  pgCompatOp2N :: (O.Column ua -> O.Column ub -> O.Column r) -> la -> lb -> O.Column (O.Nullable r)
-instance (NotNullable a, NotNullable b) => PgCompatOp2N a b (O.Column (O.Nullable a)) (O.Column (O.Nullable b)) where
-  pgCompatOp2N f a b = O.ifThenElse (isNull a O..|| isNull b) O.null
-      (O.toNullable (unsafeUnNullable a `f` unsafeUnNullable b))
-instance (NotNullable x, Comparable ta ca tb cb) => PgCompatOp2N x x (Tagged (TC ta ca) (O.Column (O.Nullable x))) (Tagged (TC tb cb) (O.Column (O.Nullable x))) where
-  pgCompatOp2N f ta tb = pgCompatOp2N f (ta^._ComparableL) (tb^._ComparableR)
-instance (NotNullable a, NotNullable b) => PgCompatOp2N a b (Tagged ta (O.Column (O.Nullable a))) (O.Column (O.Nullable b)) where
-  pgCompatOp2N f (Tagged a) b = pgCompatOp2N f a b
-instance (NotNullable a, NotNullable b) => PgCompatOp2N a b (O.Column (O.Nullable a)) (Tagged tb (O.Column (O.Nullable b))) where
-  pgCompatOp2N f a (Tagged b) = pgCompatOp2N f a b
+  pgCompatOp2'
+    :: NotNullable r'
+    => (O.Column r -> c r')
+    -> (O.Column ua -> O.Column ub -> O.Column r)
+    -> (la -> lb -> c r')
+-- | c ca cb
+instance PgCompatOp2' O.Column a b (O.Column a) (O.Column b) where
+  pgCompatOp2' k f ca cb = k (f ca cb)
+-- | nc ca cb
+instance PgCompatOp2' NullableColumn a b (O.Column a) (O.Column b) where
+  pgCompatOp2' k f ca cb = k (f ca cb)
+-- | nc ca ncb
+instance
+    ( NotNullable b
+    ) => PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b) where
+  pgCompatOp2' k f ca ncb = bindNullableColumn ncb (\cb -> k (f ca cb))
+-- | x ca tcb
+instance
+    ( PgCompatOp2' c a b (O.Column a) (O.Column b)
+    ) => PgCompatOp2' c a b (O.Column a) (Tagged t (O.Column b)) where
+  pgCompatOp2' k f ca tcb = pgCompatOp2' k f ca (unTagged tcb)
+-- | nc ca tncb
+instance
+    ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
+    ) => PgCompatOp2' NullableColumn a b (O.Column a) (Tagged t (NullableColumn b)) where
+  pgCompatOp2' k f ca tncb = pgCompatOp2' k f ca (unTagged tncb)
+-- | nc nca ncb
+instance
+    ( NotNullable a, NotNullable b
+    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b) where
+  pgCompatOp2' k f nca ncb =
+     bindNullableColumn nca (\ca -> bindNullableColumn ncb (\cb -> k (f ca cb)))
+-- | nc nca tcb
+instance
+    ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
+    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (Tagged t (O.Column b)) where
+  pgCompatOp2' k f nca tcb = pgCompatOp2' k f nca (unTagged tcb)
+-- | nc nca tncb
+instance
+    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b)
+    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (Tagged t (NullableColumn b)) where
+  pgCompatOp2' k f nca tncb = pgCompatOp2' k f nca (unTagged tncb)
+-- | c tca tcb
+instance
+    ( Comparable ta ca tb cb
+    , PgCompatOp2' O.Column x x (O.Column x) (O.Column x)
+    ) => PgCompatOp2' O.Column x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
+  pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
+-- | nc tca tcb
+instance
+    ( Comparable ta ca tb cb
+    , PgCompatOp2' NullableColumn x x (O.Column x) (O.Column x)
+    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
+  pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
+-- | nc tca tncb
+instance
+    ( -- NotNullable x
+      Comparable ta ca tb cb, PgCompatOp2' NullableColumn x x (O.Column x) (NullableColumn x)
+    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (NullableColumn x)) where
+  pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
+-- | x flip
+instance {-# OVERLAPPABLE #-} PgCompatOp2' c ua ub la lb => PgCompatOp2' c ua ub la lb where
+  pgCompatOp2' k f la lb = pgCompatOp2' k (flip f) lb la
 
 ---
 
-eq :: PgCompatOp2 x x a b => a -> b -> O.Column O.PGBool
-eq = pgCompatOp2 (O..==)
+-- | Like 'PgCompatOp2'', but the first argument to 'pgCompatOp2'' is passed implicitly.
+class
+  ( PgCompatOp2' c ua ub la lb, NotNullable r'
+  ) => PgCompatOp2 (c :: * -> *) r r' ua ub la lb | la -> ua, lb -> ub where
+  pgCompatOp2 :: (O.Column ua -> O.Column ub -> O.Column r) -> (la -> lb -> c r')
+instance
+    ( PgCompatOp2' O.Column ua ub la lb, NotNullable r
+    ) => PgCompatOp2 O.Column r r ua ub la lb where
+  pgCompatOp2 = pgCompatOp2' id
+instance
+   ( PgCompatOp2' NullableColumn ua ub la lb, NotNullable r
+   ) => PgCompatOp2 NullableColumn (O.Nullable r) r ua ub la lb where
+  pgCompatOp2 = pgCompatOp2' NullableColumn
+instance
+   ( PgCompatOp2' NullableColumn ua ub la lb, NotNullable r
+   ) => PgCompatOp2 NullableColumn r r ua ub la lb where
+  pgCompatOp2 = pgCompatOp2' toNullableColumn
 
-eqn :: PgCompatOp2N x x a b => a -> b -> O.Column (O.Nullable O.PGBool)
-eqn = pgCompatOp2N (O..==)
+---
 
-lt :: (O.PGOrd x, PgCompatOp2 x x a b) => a -> b -> O.Column O.PGBool
-lt = pgCompatOp2 (O..<)
+-- | Like Opaleye's @('O..==')@, but can accept more arguments than just 'O.Column'.
+--
+-- @
+-- 'eq'' :: 'O.Column' x -> 'O.Column' x -> 'O.Column' 'O.PGBool'
+-- 'eq'' :: 'O.Column' x -> 'NullableColumn' x -> 'NullableColumn' 'O.PGBool'
+-- 'eq'' :: 'O.Column' x -> 'Tagged' t ('O.Column' x) -> 'O.Column' 'O.PGBool'
+-- 'eq'' :: 'O.Column' x -> 'Tagged' t ('NullableColumn' x) -> 'NullableColumn' 'O.PGBool'
+-- 'eq'' :: 'NullableColumn' x -> 'O.Column' x -> 'NullableColumn' 'O.PGBool'
+-- 'eq'' :: 'NullableColumn' x -> 'NullableColumn' x -> 'NullableColumn' 'O.PGBool'
+-- 'eq'' :: 'NullableColumn' x -> 'Tagged' t ('O.Column' x) -> 'NullableColumn' 'O.PGBool'
+-- 'eq'' :: 'NullableColumn' x -> 'Tagged' t ('NullableColumn' x) -> 'NullableColumn' 'O.PGBool'
+-- @
+--
+-- Any of the above combinations with the arguments fliped is accepte too.
+-- Additionally, a 'Comparable' constraint will be required if you try to
+-- compare two 'Tisch'-aware columns directly, such as those obtained with
+-- @('view' '.' 'col')@:
+--
+-- @
+-- -- The following are fake type signatures just so that you get an idea:
+--
+-- 'eq'' :: 'Comparable' t1 c1 t2 c2
+--         => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'O.Column' 'O.PGBool'
+-- 'eq'' :: 'Comparable' t1 c1 t2 c2
+--         => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'NullableColumn' 'O.PGBool'
+-- @
+eq' :: (PgCompatOp2 c O.PGBool O.PGBool x x a b) => a -> b -> c O.PGBool
+eq' = pgCompatOp2 (O..==)
+-- | Like 'eq'', but the return column type is fixed to 'O.Column' to help with type inference.
+eq :: (PgCompatOp2' O.Column x x a b) => a -> b -> O.Column O.PGBool
+eq = eq'
+-- | Like 'eq'', but the return column type is fixed to 'NullableColumn' to help with type inference.
+eqn :: (PgCompatOp2' NullableColumn x x a b) => a -> b -> NullableColumn O.PGBool
+eqn = eq'
 
-ltn :: (O.PGOrd x, PgCompatOp2N x x a b) => a -> b -> O.Column (O.Nullable O.PGBool)
-ltn = pgCompatOp2N (O..<)
 
-or_ :: PgCompatOp2 O.PGBool O.PGBool a b => a -> b -> O.Column O.PGBool
-or_ = pgCompatOp2 (O..||)
+-- | Like Opaleye's @('O..==')@, but can accept more arguments than just 'O.Column' (see 'eq').
+lt' :: (O.PGOrd x, PgCompatOp2 c O.PGBool O.PGBool x x a b, NotNullable x) => a -> b -> c O.PGBool
+lt' = pgCompatOp2 (O..<)
+-- | Like 'lt'', but the return column type is fixed to 'O.Column' to help with type inference.
+lt :: (O.PGOrd x, PgCompatOp2' O.Column x x a b, NotNullable x) => a -> b -> O.Column O.PGBool
+lt = lt'
+-- | Like 'lt'', but the return column type is fixed to 'NullableColumn' to help with type inference.
+ltn :: (O.PGOrd x, PgCompatOp2' NullableColumn x x a b, NotNullable x) => a -> b -> NullableColumn O.PGBool
+ltn = lt'
 
-orn :: PgCompatOp2N O.PGBool O.PGBool a b => a -> b -> O.Column (O.Nullable O.PGBool)
-orn = pgCompatOp2N (O..||)
+
+-- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column' (see 'eq').
+--
+-- "Ou" means "or" in French, and it is a great name because it doesn't overlap
+-- with 'Prelude.or'. N'est-ce pas?
+ou' :: PgCompatOp2 c O.PGBool O.PGBool O.PGBool O.PGBool a b => a -> b -> c O.PGBool
+ou' = pgCompatOp2 (O..||)
+-- | Like 'ou'', but the return column type is fixed to 'O.Column' to help with type inference.
+ou :: PgCompatOp2' O.Column O.PGBool O.PGBool a b => a -> b -> O.Column O.PGBool
+ou = ou'
+-- | Like 'ou'', but the return column type is fiO.PGBooled to 'NullableColumn' to help with type inference.
+oun :: PgCompatOp2' NullableColumn O.PGBool O.PGBool a b => a -> b -> NullableColumn O.PGBool
+oun = ou'
 
 --------------------------------------------------------------------------------
 -- Ordering
 
 -- | Ascending order, no @NULL@s involved.
-asc :: (WrappedCol w b, NotNullable b, O.PGOrd b) => (a -> w) -> O.Order a
-asc f = O.asc (view _UnwrappedCol . f)
+asc :: (WrappedColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
+asc f = O.asc (view _UnwrappedColumn . f)
 
 -- | Ascending order, @NULL@s last.
-ascnl :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
-ascnl f = O.asc (unsafeUnNullable . view _UnwrappedNullableCol . f)
+ascnl :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
+ascnl f = O.asc (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
 
 -- | Ascending order, @NULL@s first.
-ascnf :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
-ascnf f = O.ascNullsFirst (unsafeUnNullable . view _UnwrappedNullableCol . f)
+ascnf :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
+ascnf f = O.ascNullsFirst (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
 
 -- | Descending order, no @NULL@s involved.
-desc :: (WrappedCol w b, NotNullable b, O.PGOrd b) => (a -> w) -> O.Order a
-desc f = O.desc (view _UnwrappedCol . f)
+desc :: (WrappedColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
+desc f = O.desc (view _UnwrappedColumn . f)
 
 -- | Descending order, @NULL@s first.
-descnf :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
-descnf f = O.desc (unsafeUnNullable . view _UnwrappedNullableCol . f)
+descnf :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
+descnf f = O.desc (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
 
 -- | Descending order, @NULL@s last.
-descnl :: (WrappedNullableCol w b, O.PGOrd b) => (a -> w) -> O.Order a
-descnl f = O.descNullsLast (unsafeUnNullable . view _UnwrappedNullableCol . f)
+descnl :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
+descnl f = O.descNullsLast (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
 
 --------------------------------------------------------------------------------
 
 -- | Like 'Control.Lens.Wrapped', but the "unwrapped" type is expected to be
--- @('O.Column' a))@.
-class WrappedCol (w :: *) (a :: *) | w -> a where
-  _UnwrappedCol :: Iso' w (O.Column a)
-instance WrappedCol (O.Column a) a where
-  _UnwrappedCol = id
-instance WrappedCol w a => WrappedCol (Tagged (TC t c) w) a where
-  _UnwrappedCol = _Wrapped . _UnwrappedCol
+-- @('O.Column' a))@ where @a@ is 'NotNullable'.
+class NotNullable a => WrappedColumn (w :: *) (a :: *) | w -> a where
+  _UnwrappedColumn :: Iso' w (O.Column a)
+instance NotNullable a => WrappedColumn (O.Column a) a where
+  _UnwrappedColumn = id
+instance WrappedColumn w a => WrappedColumn (Tagged (TC t c) w) a where
+  _UnwrappedColumn = _Wrapped . _UnwrappedColumn
 
 --------------------------------------------------------------------------------
-
--- | Horrible hack to workaround the current represenation for nullable columns.
--- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
-type family NotNullable (x :: *) :: Constraint where
-  NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
-  NotNullable x = ()
 
 -- | Like 'Control.Lens.Wrapped', but the "unwrapped" type is expected to be
 -- @('O.Column' ('O.Nullable' a))@.
-class WrappedNullableCol (w :: *) (a :: *) | w -> a where
-  _UnwrappedNullableCol :: Iso' w (O.Column (O.Nullable a))
-instance WrappedNullableCol (O.Column (O.Nullable a)) a where
-  _UnwrappedNullableCol = id
-instance WrappedNullableCol w a => WrappedNullableCol (Tagged (TC t c) w) a where
-  _UnwrappedNullableCol = _Wrapped . _UnwrappedNullableCol
+class NotNullable a => WrappedNullableColumn (w :: *) (a :: *) | w -> a where
+  _UnwrappedNullableColumn :: Iso' w (NullableColumn a)
+instance NotNullable a => WrappedNullableColumn (NullableColumn a) a where
+  _UnwrappedNullableColumn = id
+-- | TODO: Remove this instance once Opaleye removes 'O.Nullable'.
+instance NotNullable a => WrappedNullableColumn (O.Column (O.Nullable a)) a where
+  _UnwrappedNullableColumn = iso NullableColumn unNullableColumn
+instance WrappedNullableColumn w a => WrappedNullableColumn (Tagged (TC t c) w) a where
+  _UnwrappedNullableColumn = _Wrapped . _UnwrappedNullableColumn
 
 -- | Like 'O.isNull', but also works with the return type of
 -- @('view' ('col' ('C' :: 'C' "foo"))@
-isNull :: WrappedNullableCol w a => w -> O.Column O.PGBool
-isNull = O.isNull . view _UnwrappedNullableCol
+isNull :: WrappedNullableColumn w a => w -> O.Column O.PGBool
+isNull = O.isNull . unNullableColumn . view _UnwrappedNullableColumn
 
 -- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@ or compatible
--- (see 'WrappedNullableCol') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
+-- (see 'WrappedNullableColumn') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
 -- converted to @TRUE@.
 --
 -- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
 -- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
 --
 -- @
--- 'O.restrict' '<<<' 'nullTrue' -< ...
+-- 'O.restrict' '<<<' 'nullTrue'' -< ...
 -- @
-nullTrue :: Arrow f => WrappedNullableCol w O.PGBool => f w (O.Column O.PGBool)
-nullTrue = arr $ O.matchNullable (O.pgBool True) id . view _UnwrappedNullableCol
+nullTrue' :: Arrow f => WrappedNullableColumn w O.PGBool => f w (O.Column O.PGBool)
+nullTrue' = arr $ fromNullableColumn (O.pgBool True) . view _UnwrappedNullableColumn
+
+-- | Like 'nullTrue'', but constrained to @('NullableColumn' 'O.PGBool')@ to help type inference.
+nullTrue :: Arrow arr => NullableColumn O.PGBool `arr` O.Column O.PGBool
+nullTrue = nullTrue'
 
 -- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@ or compatible
--- (see 'WrappedNullableCol') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
+-- (see 'WrappedNullableColumn') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
 -- converted to @False@.
 --
 -- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
 -- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
 --
 -- @
--- 'O.restrict' '<<<' 'nullFalse' -< ...
+-- 'O.restrict' '<<<' 'nullFalse'' -< ...
 -- @
-nullFalse :: Arrow f => WrappedNullableCol w O.PGBool => f w (O.Column O.PGBool)
-nullFalse = arr $ O.matchNullable (O.pgBool False) id . view _UnwrappedNullableCol
+nullFalse' :: Arrow arr => WrappedNullableColumn w O.PGBool => w `arr` O.Column O.PGBool
+nullFalse' = arr $ fromNullableColumn (O.pgBool False) . view _UnwrappedNullableColumn
+
+-- | Like 'nullFalse'', but constrained to @('NullableColumn' 'O.PGBool')@ to help type inference.
+nullFalse :: Arrow arr => NullableColumn O.PGBool `arr` O.Column O.PGBool
+nullFalse = nullFalse'
 
 --------------------------------------------------------------------------------
 
@@ -841,7 +1014,7 @@ instance
 -- Maybes on the rhs
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
-instance 
+instance
     ( PP.ProductProfunctor p, PP.Default p a (Maybe b)
     ) => PP.Default p (Tagged ta a) (Maybe (Tagged tb b)) where
   def = P.dimap unTagged (fmap Tagged) PP.def
@@ -908,6 +1081,3 @@ pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
 pgFloat8 :: Float -> O.Column O.PGFloat8
 pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double
 
-unsafeUnNullable :: O.Column (O.Nullable a) -> O.Column a
-unsafeUnNullable = O.unsafeCoerceColumn
-{-# INLINE unsafeUnNullable #-}

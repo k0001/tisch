@@ -354,15 +354,15 @@ q_TAccount_asc_multi =
   O.orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
                      (asc   (view (col (C::C "product_cd")))))
             (O.queryTable tisch') -- Here: tisch' == tisch TAccount, inferred.
-
 q_TEmployee_1 :: O.Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
   e <- O.queryTable tisch' -< () -- Here: tisch' == tisch TEmployee, inferred.
   O.restrict -< isNull (e ^. col (C::C "end_date"))
-  O.restrict <<< nullFalse -< orn
-     (O.toNullable (lt (toPgColumn (Time.fromGregorian 2003 1 1))
-                       (e ^. col (C::C "start_date"))))
-     (eqn (toPgColumnN "Teller") (e ^. col (C::C "title")))
+  O.restrict <<< nullFalse -< oun
+     (lt (toPgColumn (Time.fromGregorian 2003 1 1))
+         (e ^. col (C::C "start_date")))
+     (eqn (toPgColumn "Teller")
+          (e ^. col (C::C "title")))
   id -< e
 
 q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
@@ -370,14 +370,15 @@ q_TEmployee_TDepartment_join = proc () -> do
   e <- O.queryTable tisch' -< () -- inferred
   d <- O.queryTable tisch' -< () -- inferred
   O.restrict <<< nullFalse -< eqn
-     (e ^. col  (C::C "department_id"))
-     (d ^. coln (C::C "department_id"))
+     (e ^. col (C::C "department_id"))
+     (d ^. col (C::C "department_id"))
      -- Comparing the two columns above doesn't compile without the
      -- 'Comparable' instance below. Yay for not allowing
      -- comparissons/joins between unrelated columns!
   id -< (e,d)
 
-instance Comparable TEmployee "department_id" TDepartment "department_id"
+-- TODO: THIS SHOULD BE REQUIRED!!
+-- instance Comparable TEmployee "department_id" TDepartment "department_id"
 
 
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)

@@ -28,7 +28,7 @@ import           Opaleye.SOT.Internal
 data TTest = TTest
 
 data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
-data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
+data TestW = TestW Bool (Maybe Bool) (Maybe Bool) (Maybe (Maybe Int64))
 
 -- | Internal. See "Opaleye.SOT.Internal.TTest".
 instance Tisch TTest where
