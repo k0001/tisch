@@ -762,8 +762,7 @@ instance
   pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
 -- | nc tca tncb
 instance
-    ( -- NotNullable x
-      Comparable ta ca tb cb, PgCompatOp2' NullableColumn x x (O.Column x) (NullableColumn x)
+    ( Comparable ta ca tb cb, PgCompatOp2' NullableColumn x x (O.Column x) (NullableColumn x)
     ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (NullableColumn x)) where
   pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
 -- | x flip
