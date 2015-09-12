@@ -55,7 +55,7 @@ import qualified Opaleye.Internal.RunQuery as OI
 -- @('NullableColumn' a)@.
 --
 -- Think of @('NullableColumn' a)@ as @('Maybe' a)@, where
--- @('Nothing' == 'nullc')@ and @('Just' a == 'O.Column' a).
+-- @('Nothing' == 'nullc')@ and @('Just' a == 'O.Column' a)@.
 --
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 --
@@ -119,7 +119,7 @@ unsafeUnNullableColumn = O.unsafeCoerceColumn . unNullableColumn
 
 -- | Monadic bind for the billon dollar mistake.
 --
--- Works like 'Maybe's monadic bind.
+-- Works like @(('>>=') :: 'Maybe' a -> (a -> 'Maybe' b) -> 'Maybe' b)@.
 bindNullableColumn
   :: (NotNullable a, NotNullable b)
   => NullableColumn a
