@@ -158,6 +158,13 @@ bindKoln :: Koln a -> (Kol a -> Koln b) -> Koln b
 bindKoln kna f = UnsafeKoln $
   O.matchNullable O.null (unKoln . f . UnsafeKol) (unKoln kna)
 
+-- | Like @(('<|>') :: 'Maybe' a -> 'Maybe' a -> 'Maybe' a)@.
+-- That is, evaluates to the first argument if it is not @NULL@,
+-- otherwise evaluates to the second argument.
+altKoln :: Koln a -> Koln a -> Koln a
+altKoln kna0 kna1 = UnsafeKoln $
+  O.matchNullable (unKoln kna1) O.toNullable (unKoln kna0)
+
 -- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
 nul :: NotNullable a => Koln a
 nul = UnsafeKoln O.null
@@ -749,7 +756,7 @@ cola = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 -- | Polymorphic Opaleye's 'O.not'. See 'eq' for the type of arguments this
 -- function can take.
 --
--- “no” is “not” in English, Spanish, and Italian, and it is a great name
+-- “No” means “not” in English, Spanish, and Italian, and it is a great name
 -- because it doesn't clash with 'Prelude.not'.
 no :: Fk1 O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b => a -> b
 no = fk1 (liftKol O.not)
@@ -778,25 +785,27 @@ no = fk1 (liftKol O.not)
 -- @
 -- -- Fake type signatures just so that you get an idea:
 -- 'eq' :: 'Comparable' t1 c1 t2 c2
---         => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'Koln' 'O.PGBool'
+--    => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'Koln' 'O.PGBool'
 -- @
 eq :: forall x a b c. Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c => a -> b -> c
 eq = fk2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 
 -- | Like Opaleye's @('O..=<')@, but can accept more arguments than just 'O.Column' (see 'eq').
+--
+-- Mnemonic: Less Than.
 lt :: forall x a b c. (O.PGOrd x, Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c) => a -> b -> c
 lt = fk2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
 
 -- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
--- "Ou" means "or" in French, and it is a great name because it doesn't overlap
+-- “Ou” means "or" in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.or'. N'est-ce pas?
 ou :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
 ou = fk2 (liftKol2 (O..||) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
 
 -- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
--- "et" means "and" in French, and it is a great name because it doesn't overlap
+-- “Et” means “and” in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.and'. N'est-ce pas?
 et :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
 et = fk2 (liftKol2 (O..&&) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)

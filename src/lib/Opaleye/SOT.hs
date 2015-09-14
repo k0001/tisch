@@ -43,6 +43,7 @@ module Opaleye.SOT
  , matchKoln
  , nul
  , isNull
+ , altKoln
  , bindKoln
  , liftKoln
  , liftKoln2
