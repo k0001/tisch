@@ -137,10 +137,8 @@ class MkKoln a x where
   koln :: x -> Koln a
 instance MkKoln a (Kol a) where
   koln = UnsafeKoln . O.toNullable . unKol
--- | Overlaps.
 instance NotNullable a => MkKoln a (O.Column (O.Nullable a)) where
   koln = UnsafeKoln
--- | Overlapped.
 instance {-# OVERLAPPABLE #-} NotNullable a => MkKoln a (O.Column a) where
   koln = koln . O.toNullable
 instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKoln pg hs where
