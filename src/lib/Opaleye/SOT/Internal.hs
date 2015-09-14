@@ -143,10 +143,12 @@ instance {-# OVERLAPPABLE #-} NotNullable a => MkKoln a (O.Column a) where
   koln = koln . O.toNullable
 instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKoln pg hs where
   koln = koln . (kol :: hs -> Kol pg)
-
-
 unKoln :: Koln a -> O.Column (O.Nullable a)
 unKoln (UnsafeKoln cna) = cna
+
+-- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
+nul :: NotNullable a => Koln a
+nul = UnsafeKoln O.null
 
 -- | Like 'maybe'. Case analysis for 'Koln'.
 matchKoln :: Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
@@ -154,20 +156,20 @@ matchKoln kb0 f kna = UnsafeKol $
   O.matchNullable (unKol kb0) (unKol . f . UnsafeKol) (unKoln kna)
 
 -- | Monadic bind like the one for 'Maybe'.
+--
+-- That is, apply the given function only as long as the given
+-- @('Koln' a)@ is not @NULL@.
 bindKoln :: Koln a -> (Kol a -> Koln b) -> Koln b
 bindKoln kna f = UnsafeKoln $
   O.matchNullable O.null (unKoln . f . UnsafeKol) (unKoln kna)
 
 -- | Like @(('<|>') :: 'Maybe' a -> 'Maybe' a -> 'Maybe' a)@.
+--
 -- That is, evaluates to the first argument if it is not @NULL@,
 -- otherwise evaluates to the second argument.
 altKoln :: Koln a -> Koln a -> Koln a
 altKoln kna0 kna1 = UnsafeKoln $
   O.matchNullable (unKoln kna1) O.toNullable (unKoln kna0)
-
--- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
-nul :: NotNullable a => Koln a
-nul = UnsafeKoln O.null
 
 liftKoln :: NotNullable b
          => (O.Column (O.Nullable a) -> O.Column (O.Nullable b))
