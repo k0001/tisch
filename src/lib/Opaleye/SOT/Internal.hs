@@ -724,8 +724,8 @@ instance ToColumn O.PGDate Data.Time.Day where toColumn = O.pgDay
 instance ToColumn O.PGUuid Data.UUID.UUID where toColumn = O.pgUUID
 instance ToColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Text) where toColumn = O.pgCiStrictText
 instance ToColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Lazy.Text) where toColumn = O.pgCiLazyText
-instance Data.Aeson.ToJSON hs => ToColumn O.PGJson hs where toColumn = O.pgLazyJSON . Data.Aeson.encode
-instance Data.Aeson.ToJSON hs => ToColumn O.PGJsonb hs where toColumn = O.pgLazyJSONB . Data.Aeson.encode
+instance ToColumn O.PGJson Data.Aeson.Value where toColumn = O.pgLazyJSON . Data.Aeson.encode
+instance ToColumn O.PGJsonb Data.Aeson.Value where toColumn = O.pgLazyJSONB . Data.Aeson.encode
 
 --------------------------------------------------------------------------------
 
