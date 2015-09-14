@@ -359,9 +359,9 @@ q_TEmployee_1 = proc () -> do
   e <- O.queryTable tisch' -< () -- Here: tisch' == tisch TEmployee, inferred.
   restrict -< isNull (e ^. col (C::C "end_date"))
   restrict <<< nullFalse -< ou
-     (lt (mkKoln (Time.fromGregorian 2003 1 1))
+     (lt (koln (Time.fromGregorian 2003 1 1))
          (e ^. col (C::C "start_date")))
-     (eq (mkKoln "Teller")
+     (eq (koln "Teller")
          (e ^. col (C::C "title")))
   id -< e
 

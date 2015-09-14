@@ -105,7 +105,7 @@ outQuery3 conn = O.runQuery conn query3
 update1 :: Pg.Connection -> IO Int64
 update1 = runReaderT $ runUpdate tisch' update' fil 
   where fil :: PgR TTest -> Kol O.PGBool
-        fil = \v -> eq (mkKol True) (view (col (C::C "c1")) v)
+        fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
 
 outQuery1 :: Pg.Connection
           -> IO [(HsR TTest, HsR TTest, HsR TTest, Maybe (HsR TTest))]

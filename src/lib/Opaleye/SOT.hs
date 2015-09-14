@@ -30,7 +30,7 @@ module Opaleye.SOT
 
    -- * Kol
  , Kol
- , mkKol
+ , kol
  , unKol
  , liftKol
  , liftKol2
@@ -38,7 +38,7 @@ module Opaleye.SOT
    -- * Koln
  , NotNullable
  , Koln
- , mkKoln
+ , koln
  , unKoln
  , matchKoln
  , nul

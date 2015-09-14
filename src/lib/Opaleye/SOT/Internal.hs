@@ -61,29 +61,29 @@ type family NotNullable (x :: *) :: Constraint where
 
 -- | Like @('O.Column' a)@, but guaranteed to be not-'O.Nullable'.
 --
--- Build using 'mkKol', view using 'unKol'.
+-- Build using 'kol', view using 'unKol'.
 --
 -- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
 -- we drift a bit appart from Opaleye, but hopefully not for a long time.
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 newtype Kol a = UnsafeKol (O.Column a) 
-  -- ^ Build safely using 'mkKol'.
+  -- ^ Build safely using 'kol'.
 
 class MkKol a x where
-  mkKol :: x -> Kol a
+  kol :: x -> Kol a
 instance NotNullable a => MkKol a (O.Column a) where
-  mkKol = UnsafeKol
+  kol = UnsafeKol
 instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKol pg hs where
-  mkKol = UnsafeKol . (toColumn :: hs -> O.Column pg)
+  kol = UnsafeKol . (toColumn :: hs -> O.Column pg)
 
 unKol :: Kol a -> O.Column a
 unKol (UnsafeKol ca) = ca
 
 liftKol :: NotNullable b => (O.Column a -> O.Column b) -> (Kol a -> Kol b)
-liftKol f = \ka -> mkKol (f (unKol ka))
+liftKol f = \ka -> kol (f (unKol ka))
 
 liftKol2 :: NotNullable c => (O.Column a -> O.Column b -> O.Column c) -> (Kol a -> Kol b -> Kol c)
-liftKol2 f = \ka kb -> mkKol (f (unKol ka) (unKol kb))
+liftKol2 f = \ka kb -> kol (f (unKol ka) (unKol kb))
 
 instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b)
          ) => PP.Default p (Kol a) (O.Column b) where
@@ -92,12 +92,12 @@ instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b)
 instance forall p a b.
     ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
     ) => PP.Default p (O.Column a) (Kol b) where
-  def = P.rmap mkKol (PP.def :: p (O.Column a) (O.Column b))
+  def = P.rmap kol (PP.def :: p (O.Column a) (O.Column b))
 
 instance forall p a b.
     ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
     ) => PP.Default p (Kol a) (Kol b) where
-  def = P.dimap unKol mkKol (PP.def :: p (O.Column a) (O.Column b))
+  def = P.dimap unKol kol (PP.def :: p (O.Column a) (O.Column b))
 
 instance
     ( PP.Default O.QueryRunner (O.Column a) b
@@ -109,7 +109,7 @@ instance
 -- | Like @('O.Column' @('O.Nullable' a))@, but @a@ is guaranteed to
 -- be not-'O.Nullable'.
 --
--- Build safely using 'mkKoln', view using 'unKoln'.
+-- Build safely using 'koln', view using 'unKoln'.
 --
 -- We do not use 'O.Column ('O.Nullable' a)', but instead we use
 -- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
@@ -119,20 +119,20 @@ instance
 -- Think of @('Koln' a)@ as @('Maybe' a)@, where
 -- @('Nothing' == 'nul')@ and @('Just' a == 'O.Column' a)@.
 newtype Koln a = UnsafeKoln (O.Column (O.Nullable a))
-  -- ^ Build safely using 'mkKoln'.
+  -- ^ Build safely using 'koln'.
 
 class MkKoln a x where
-  mkKoln :: x -> Koln a
+  koln :: x -> Koln a
 instance MkKoln a (Kol a) where
-  mkKoln = UnsafeKoln . O.toNullable . unKol
+  koln = UnsafeKoln . O.toNullable . unKol
 -- | Overlaps.
 instance NotNullable a => MkKoln a (O.Column (O.Nullable a)) where
-  mkKoln = UnsafeKoln
+  koln = UnsafeKoln
 -- | Overlapped.
 instance {-# OVERLAPPABLE #-} NotNullable a => MkKoln a (O.Column a) where
-  mkKoln = mkKoln . O.toNullable
+  koln = koln . O.toNullable
 instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKoln pg hs where
-  mkKoln = mkKoln . (mkKol :: hs -> Kol pg)
+  koln = koln . (kol :: hs -> Kol pg)
 
 
 unKoln :: Koln a -> O.Column (O.Nullable a)
@@ -155,19 +155,19 @@ nul = UnsafeKoln O.null
 liftKoln :: NotNullable b
          => (O.Column (O.Nullable a) -> O.Column (O.Nullable b))
          -> (Koln a -> Koln b)
-liftKoln f = \kna -> mkKoln (f (unKoln kna))
+liftKoln f = \kna -> koln (f (unKoln kna))
 
 liftKoln2 :: NotNullable c
           => (O.Column (O.Nullable a) -> O.Column (O.Nullable b) -> O.Column (O.Nullable c))
           -> (Koln a -> Koln b -> Koln c)
-liftKoln2 f = \kna knb -> mkKoln (f (unKoln kna) (unKoln knb))
+liftKoln2 f = \kna knb -> koln (f (unKoln kna) (unKoln knb))
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-} forall p x a.
     ( P.Profunctor p, NotNullable a
     , PP.Default p x (O.Column (O.Nullable a))
     ) => PP.Default p x (Koln a) where
-  def = P.rmap mkKoln (PP.def :: p x (O.Column (O.Nullable a)))
+  def = P.rmap koln (PP.def :: p x (O.Column (O.Nullable a)))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
@@ -182,7 +182,7 @@ instance
     ( P.Profunctor p, NotNullable b
     , PP.Default p (O.Column (O.Nullable a)) (O.Column (O.Nullable b))
     ) => PP.Default p (Koln a) (Koln b) where
-  def = P.dimap unKoln mkKoln (PP.def :: p (O.Column (O.Nullable a)) (O.Column (O.Nullable b)))
+  def = P.dimap unKoln koln (PP.def :: p (O.Column (O.Nullable a)) (O.Column (O.Nullable b)))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
@@ -501,13 +501,13 @@ data HPgWfromHsIField = HPgWfromHsIField
 instance HL.ApplyAB HPgWfromHsIField x x where
   applyAB _ = id
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
-  applyAB _ = mkKol
+  applyAB _ = kol
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (Kol pg)) where
-  applyAB _ = fmap mkKol
+  applyAB _ = fmap kol
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
-  applyAB _ = maybe nul mkKoln
+  applyAB _ = maybe nul koln
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (Koln pg)) where
-  applyAB _ = fmap (maybe nul mkKoln)
+  applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
 toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
@@ -559,19 +559,19 @@ update _ = update'
 
 -- | Column properties: Write (no default), Read (not nullable).
 colProps_wr :: NotNullable a => String -> O.TableProperties (Kol a) (Kol a)
-colProps_wr = P.dimap unKol mkKol . O.required
+colProps_wr = P.dimap unKol kol . O.required
 
 -- | Column properties: Write (no default), Read (nullable).
 colProps_wrn :: NotNullable a => String -> O.TableProperties (Koln a) (Koln a)
-colProps_wrn = P.dimap (unsafeUnNullableColumn . unKoln) mkKoln . O.required
+colProps_wrn = P.dimap (unsafeUnNullableColumn . unKoln) koln . O.required
 
 -- | Column properties: Write (optional default), Read (not nullable).
 colProps_wdr :: NotNullable a => String -> O.TableProperties (Maybe (Kol a)) (Kol a)
-colProps_wdr = P.dimap (fmap unKol) mkKol . O.optional
+colProps_wdr = P.dimap (fmap unKol) kol . O.optional
 
 -- | Column properties: Write (optional default), Read (nullable).
 colProps_wdrn :: NotNullable a => String -> O.TableProperties (Maybe (Koln a)) (Koln a)
-colProps_wdrn = P.dimap (fmap unKoln) mkKoln . O.optional
+colProps_wdrn = P.dimap (fmap unKoln) koln . O.optional
 
 --------------------------------------------------------------------------------
 
@@ -819,7 +819,7 @@ isNull = UnsafeKol . O.isNull . unKoln . getKoln
 -- 'restrict' '<<<' 'nullTrue' -< ...
 -- @
 nullTrue :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
-nullTrue = arr $ matchKoln (mkKol True) id . getKoln
+nullTrue = arr $ matchKoln (kol True) id . getKoln
 
 -- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
 -- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @FALSE@.
@@ -831,7 +831,7 @@ nullTrue = arr $ matchKoln (mkKol True) id . getKoln
 -- 'restrict' '<<<' 'nullFalse' -< ...
 -- @
 nullFalse :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
-nullFalse = arr $ matchKoln (mkKol False) id . getKoln
+nullFalse = arr $ matchKoln (kol False) id . getKoln
 
 -- | Like Opaleye's 'O.restric', but takes a 'Kol' as input.
 restrict :: GetKol w O.PGBool => O.QueryArr w ()
@@ -1032,7 +1032,7 @@ class Fk1 a b fa fb xa xb | fa -> a, fb -> b, xa -> a, xb -> b, xa fa fb -> xb w
 -- | kk -> kk
 instance Fk1 a b (Kol a) (Kol b) (Kol a) (Kol b) where fk1 f ka = f ka
 -- | kk -> nn
-instance Fk1 a b (Kol a) (Kol b) (Koln a) (Koln b) where fk1 f na = bindKoln na (mkKoln . f)
+instance Fk1 a b (Kol a) (Kol b) (Koln a) (Koln b) where fk1 f na = bindKoln na (koln . f)
 -- | kk -> tx
 instance Fk1 a b (Kol a) (Kol b) xa xb => Fk1 a b (Kol a) (Kol b) (Tagged (TC t c) xa) xb where fk1 f (Tagged xa) = fk1 f xa
 -- | kn -> kn
@@ -1042,13 +1042,13 @@ instance Fk1 a b (Kol a) (Koln b) (Koln a) (Koln b) where fk1 f na = bindKoln na
 -- | kn -> tn
 instance Fk1 a b (Kol a) (Koln b) xa (Koln b) => Fk1 a b (Kol a) (Koln b) (Tagged (TC t c) xa) (Koln b) where fk1 f (Tagged xa) = fk1 f xa
 -- | nk -> kk
-instance Fk1 a b (Koln a) (Kol b) (Kol a) (Kol b) where fk1 f ka = f (mkKoln ka)
+instance Fk1 a b (Koln a) (Kol b) (Kol a) (Kol b) where fk1 f ka = f (koln ka)
 -- | nk -> nk
 instance Fk1 a b (Koln a) (Kol b) (Koln a) (Kol b) where fk1 f na = f na
 -- | nk -> tk
 instance Fk1 a b (Koln a) (Kol b) xa (Kol b) => Fk1 a b (Koln a) (Kol b) (Tagged (TC t c) xa) (Kol b) where fk1 f (Tagged xa) = fk1 f xa
 -- | nn -> kn
-instance Fk1 a b (Koln a) (Koln b) (Kol a) (Koln b) where fk1 f ka = f (mkKoln ka)
+instance Fk1 a b (Koln a) (Koln b) (Kol a) (Koln b) where fk1 f ka = f (koln ka)
 -- | nn -> nn
 instance Fk1 a b (Koln a) (Koln b) (Koln a) (Koln b) where fk1 f na = f na
 -- | nn -> tn
@@ -1073,13 +1073,13 @@ class Fk2 a b c fa fb fc xa xb xc | fa -> a, fb -> b, fc -> c, xa -> a, xb -> b,
 -- | kkk -> kkk
 instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f ka kb
 -- | kkk -> knn
-instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (mkKoln . f ka)
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (koln . f ka)
 -- | kkk -> ktx
 instance (Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) xb xc) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | kkk -> nkn
-instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (mkKoln . flip f kb)
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (koln . flip f kb)
 -- | kkk -> nnn
-instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (\ka -> bindKoln nb (mkKoln . f ka))
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (\ka -> bindKoln nb (koln . f ka))
 -- | kkk -> ntn
 instance (Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) xb (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
 -- | kkk -> tkx
@@ -1109,15 +1109,15 @@ instance (Fk2 a b c (Kol a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c 
 instance (Fk2 a b c (Kol a) (Kol b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 
 -- | knk -> kkk
-instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f ka (mkKoln kb)
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f ka (koln kb)
 -- | knk -> knk
 instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where fk2 f ka nb = f ka nb
 -- | knk -> ktk
 instance (Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | knk -> nkn
-instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (mkKoln . flip f (mkKoln kb))
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (koln . flip f (koln kb))
 -- | knk -> nnn
-instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (mkKoln . flip f nb)
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (koln . flip f nb)
 -- | knk -> ntn
 instance (Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) xb (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
 -- | knk -> tkx
@@ -1128,13 +1128,13 @@ instance (Fk2 a b c (Kol a) (Koln b) (Kol c) xa (Koln b) (Koln c)) => Fk2 a b c 
 instance (Fk2 a b c (Kol a) (Koln b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 
 -- | knn -> kkn
-instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f ka (mkKoln kb)
+instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f ka (koln kb)
 -- | knn -> knn
 instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = f ka nb
 -- | knn -> ktn
 instance (Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | knn -> nkn
-instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (flip f (mkKoln kb))
+instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (flip f (koln kb))
 -- | knn -> nnn
 instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (flip f nb)
 -- | knn -> ntn
@@ -1147,15 +1147,15 @@ instance (Fk2 a b c (Kol a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c
 instance (Fk2 a b c (Kol a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 
 -- | nkk -> kkk
-instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f (mkKoln ka) kb
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f (koln ka) kb
 -- | nkk -> knn
-instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (mkKoln . f (mkKoln ka))
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (koln . f (koln ka))
 -- | nkk -> ktx
 instance (Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) xb xc) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | nkk -> nkk
 instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Kol b) (Kol c) where fk2 f na kb = f na kb
 -- | nkk -> nnn
-instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln nb (mkKoln . f na)
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln nb (koln . f na)
 -- | nkk -> ntx
 instance (Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) xb xc) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) xc where fk2 f na (Tagged xb) = fk2 f na xb
 -- | nkk -> tkk
@@ -1166,9 +1166,9 @@ instance (Fk2 a b c (Koln a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Fk2 a b c 
 instance (Fk2 a b c (Koln a) (Kol b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 
 -- | nkn -> kkn
-instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f (mkKoln ka) kb
+instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f (koln ka) kb
 -- | nkn -> knn
-instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (f (mkKoln ka))
+instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (f (koln ka))
 -- | nkn -> ktn
 instance (Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | nkn -> nkn
@@ -1185,13 +1185,13 @@ instance (Fk2 a b c (Koln a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c
 instance (Fk2 a b c (Koln a) (Kol b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 
 -- | nnk -> kkk
-instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f (mkKoln ka) (mkKoln kb)
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f (koln ka) (koln kb)
 -- | nnk -> knk
-instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where fk2 f ka nb = f (mkKoln ka) nb
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where fk2 f ka nb = f (koln ka) nb
 -- | nnk -> ktk
 instance (Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | nnk -> nkk
-instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) (Kol b) (Kol c) where fk2 f na kb = f na (mkKoln kb)
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) (Kol b) (Kol c) where fk2 f na kb = f na (koln kb)
 -- | nnk -> nnk
 instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) (Koln b) (Kol c) where fk2 f na nb = f na nb
 -- | nnk -> ntk
@@ -1204,13 +1204,13 @@ instance (Fk2 a b c (Koln a) (Koln b) (Kol c) xa (Koln b) (Kol c)) => Fk2 a b c 
 instance (Fk2 a b c (Koln a) (Koln b) (Kol c) xa xb (Kol c), Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Kol c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 
 -- | nnn -> kkn
-instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f (mkKoln ka) (mkKoln kb)
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f (koln ka) (koln kb)
 -- | nnn -> knn
-instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = f (mkKoln ka) nb
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = f (koln ka) nb
 -- | nnn -> ktn
 instance (Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
 -- | nnn -> nkn
-instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = f na (mkKoln kb)
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = f na (koln kb)
 -- | nnn -> nnn
 instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = f na nb
 -- | nnn -> ntn
