@@ -89,7 +89,7 @@ import           Prelude hiding (id)
 
 newtype DepartmentId = DepartmentId { unDepartmentId :: Int32 }
 instance Wrapped DepartmentId where { type Unwrapped DepartmentId = Int32; _Wrapped' = iso unDepartmentId DepartmentId }
-instance ToPgColumn O.PGInt4 DepartmentId
+instance ToColumn O.PGInt4 DepartmentId
 
 data TDepartment = TDepartment
 instance Tisch TDepartment where
@@ -104,7 +104,7 @@ instance Tisch TDepartment where
 
 newtype BranchId = BranchId { unBranchId :: Int32 }
 instance Wrapped BranchId where { type Unwrapped BranchId = Int32; _Wrapped' = iso unBranchId BranchId }
-instance ToPgColumn O.PGInt4 BranchId
+instance ToColumn O.PGInt4 BranchId
 
 data TBranch = TBranch
 instance Tisch TBranch where
@@ -123,7 +123,7 @@ instance Tisch TBranch where
 
 newtype EmployeeId = EmployeeId { unEmployeeId :: Int32 }
 instance Wrapped EmployeeId where { type Unwrapped EmployeeId = Int32; _Wrapped' = iso unEmployeeId EmployeeId }
-instance ToPgColumn O.PGInt4 EmployeeId
+instance ToColumn O.PGInt4 EmployeeId
 
 data TEmployee = TEmployee
 instance Tisch TEmployee where
@@ -145,7 +145,7 @@ instance Tisch TEmployee where
 
 newtype ProductTypeId = ProductTypeId { unProductTypeId :: String }
 instance Wrapped ProductTypeId where { type Unwrapped ProductTypeId = String; _Wrapped' = iso unProductTypeId ProductTypeId }
-instance ToPgColumn O.PGText ProductTypeId
+instance ToColumn O.PGText ProductTypeId
 
 data TProductType = TProductType
 instance Tisch TProductType where
@@ -160,7 +160,7 @@ instance Tisch TProductType where
 
 newtype ProductId = ProductId { unProductId :: String }
 instance Wrapped ProductId where { type Unwrapped ProductId = String; _Wrapped' = iso unProductId ProductId }
-instance ToPgColumn O.PGText ProductId
+instance ToColumn O.PGText ProductId
 
 data TProduct = TProduct
 instance Tisch TProduct where
@@ -178,7 +178,7 @@ instance Tisch TProduct where
 
 newtype CustomerId = CustomerId { unCustomerId :: Int32 }
 instance Wrapped CustomerId where { type Unwrapped CustomerId = Int32; _Wrapped' = iso unCustomerId CustomerId }
-instance ToPgColumn O.PGInt4 CustomerId
+instance ToColumn O.PGInt4 CustomerId
 
 data CustomerType
    = CustomerType_I
@@ -190,7 +190,7 @@ _CustomerType_Char = prism'
   (\case { CustomerType_I -> 'I'; CustomerType_B -> 'B' })
   (\case { 'I' -> Just CustomerType_I; 'B' -> Just CustomerType_B; _ -> Nothing })
 
-instance ToPgColumn O.PGText CustomerType where toPgColumn = toPgColumn . review _CustomerType_Char
+instance ToColumn O.PGText CustomerType where toColumn = toColumn . review _CustomerType_Char
 
 data TCustomer = TCustomer
 instance Tisch TCustomer where
@@ -223,7 +223,7 @@ instance Tisch TIndividual where
 
 newtype BizStateId = BizStateId { unBizStateId :: String }
 instance Wrapped BizStateId where { type Unwrapped BizStateId = String; _Wrapped' = iso unBizStateId BizStateId }
-instance ToPgColumn O.PGText BizStateId
+instance ToColumn O.PGText BizStateId
 
 data TBusiness = TBusiness
 instance Tisch TBusiness where
@@ -240,7 +240,7 @@ instance Tisch TBusiness where
 
 newtype OfficerId = OfficerId { unOfficerId :: Int32 }
 instance Wrapped OfficerId where { type Unwrapped OfficerId = Int32; _Wrapped' = iso unOfficerId OfficerId }
-instance ToPgColumn O.PGInt4 OfficerId
+instance ToColumn O.PGInt4 OfficerId
 
 data TOfficer = TOfficer
 instance Tisch TOfficer where
@@ -260,7 +260,7 @@ instance Tisch TOfficer where
 
 newtype AccountId = AccountId { unAccountId :: Int32 }
 instance Wrapped AccountId where { type Unwrapped AccountId = Int32; _Wrapped' = iso unAccountId AccountId }
-instance ToPgColumn O.PGInt4 AccountId
+instance ToColumn O.PGInt4 AccountId
 
 data AccountStatus
    = AccountStatus_Active
@@ -278,7 +278,7 @@ _AccountStatus_String = prism'
          "FROZEN" -> Just AccountStatus_Frozen
          _ -> Nothing)
 
-instance ToPgColumn O.PGText AccountStatus where toPgColumn = toPgColumn . review _AccountStatus_String
+instance ToColumn O.PGText AccountStatus where toColumn = toColumn . review _AccountStatus_String
 
 data TAccount = TAccount
 instance Tisch TAccount where
@@ -302,7 +302,7 @@ instance Tisch TAccount where
 
 newtype TransactionId = TransactionId { unTransactionId :: Int32 }
 instance Wrapped TransactionId where { type Unwrapped TransactionId = Int32; _Wrapped' = iso unTransactionId TransactionId }
-instance ToPgColumn O.PGInt4 TransactionId
+instance ToColumn O.PGInt4 TransactionId
 
 
 data TransactionType
@@ -318,7 +318,7 @@ _TransactionType_String = prism'
          "CDT" -> Just TransactionType_Credit
          _ -> Nothing)
 
-instance ToPgColumn O.PGText TransactionType where toPgColumn = toPgColumn . review _TransactionType_String
+instance ToColumn O.PGText TransactionType where toColumn = toColumn . review _TransactionType_String
 
 data TTransaction = TTransaction
 instance Tisch TTransaction where
@@ -357,19 +357,19 @@ q_TAccount_asc_multi =
 q_TEmployee_1 :: O.Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
   e <- O.queryTable tisch' -< () -- Here: tisch' == tisch TEmployee, inferred.
-  O.restrict -< isNull (e ^. col (C::C "end_date"))
-  O.restrict <<< nullFalse -< oun
-     (lt (toPgColumn (Time.fromGregorian 2003 1 1))
+  restrict -< isNull (e ^. col (C::C "end_date"))
+  restrict <<< nullFalse -< ou
+     (lt (val (Time.fromGregorian 2003 1 1))
          (e ^. col (C::C "start_date")))
-     (eqn (toPgColumn "Teller")
-          (e ^. col (C::C "title")))
+     (eq (val "Teller")
+         (e ^. col (C::C "title")))
   id -< e
 
 q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
   e <- O.queryTable tisch' -< () -- inferred
   d <- O.queryTable tisch' -< () -- inferred
-  O.restrict <<< nullFalse -< eqn
+  restrict <<< nullFalse -< eq
      (e ^. col (C::C "department_id")) -- tnc
      (d ^. col (C::C "department_id")) -- tc
      -- Comparing the two columns above doesn't compile without the
@@ -382,10 +382,10 @@ instance Comparable TEmployee "department_id" TDepartment "department_id"
 
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
-  O.leftJoin
-     (O.queryTable (tisch TAccount))    -- Can't be inferred.
-     (O.queryTable (tisch TIndividual)) -- Can't be inferred.
-     (\(a,i) -> eq (a ^. col (C::C "customer_id"))
-                   (i ^. col (C::C "customer_id")))
+  leftJoin
+   (O.queryTable (tisch TAccount))    -- Can't be inferred.
+   (O.queryTable (tisch TIndividual)) -- Can't be inferred.
+   (\(a,i) -> eq (a ^. col (C::C "customer_id"))
+                 (i ^. col (C::C "customer_id")))
 
 instance Comparable TAccount "customer_id" TIndividual "customer_id"

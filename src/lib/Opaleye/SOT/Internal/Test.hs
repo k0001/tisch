@@ -15,6 +15,7 @@ module Opaleye.SOT.Internal.Test where
 
 import           Control.Arrow
 import           Control.Lens
+import           Control.Monad.Reader (runReaderT)
 import qualified Data.HList as HL
 import           Data.Int
 import qualified Database.PostgreSQL.Simple as Pg
@@ -74,10 +75,10 @@ query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
    t1 <- O.queryTable tisch' -< ()
    t2 <- O.queryTable tisch' -< ()
-   O.restrict -< eq
+   restrict -< eq
       (view (col (C::C "c1")) t1)
       (view (col (C::C "c1")) t2)
-   (t3, t4n) <- O.leftJoin 
+   (t3, t4n) <- leftJoin
       (O.queryTable (tisch TTest))
       (O.queryTable (tisch TTest))
       (\(t3, t4) -> eq -- requires instance Comparable TTest "c1" TTest "c3" O.PGBool 
@@ -102,13 +103,9 @@ outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
-update1 conn = O.runUpdate conn tisch' upd fil
-  where upd :: PgR TTest -> PgW TTest
-        upd = over (cola (C::C "c3")) Just
-            . over (cola (C::C "c4")) Just
-        fil :: PgR TTest -> O.Column O.PGBool
-        fil = \v -> eq (toPgColumn True)
-                       (view (col (C::C "c1")) v)
+update1 = runReaderT $ runUpdate tisch' update' fil 
+  where fil :: PgR TTest -> Kol O.PGBool
+        fil = \v -> eq (val True) (view (col (C::C "c1")) v)
 
 outQuery1 :: Pg.Connection
           -> IO [(HsR TTest, HsR TTest, HsR TTest, Maybe (HsR TTest))]

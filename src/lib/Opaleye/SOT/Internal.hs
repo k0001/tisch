@@ -19,6 +19,8 @@
 module Opaleye.SOT.Internal where
 
 import           Control.Arrow
+import           Control.Monad.Reader (MonadReader, ask)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Lens
 import qualified Control.Exception as Ex
 import qualified Data.Aeson
@@ -38,6 +40,7 @@ import qualified Data.Profunctor.Product as PP
 import qualified Data.Profunctor.Product.Default as PP
 import           Data.Singletons
 import qualified Data.Promotion.Prelude.List as List (Map)
+import qualified Database.PostgreSQL.Simple as Pg
 import           GHC.Exts (Constraint)
 import           GHC.Float (float2Double)
 import qualified GHC.TypeLits as GHC
@@ -45,53 +48,132 @@ import qualified Opaleye as O
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
 import qualified Opaleye.Internal.PGTypes as OI
 import qualified Opaleye.Internal.RunQuery as OI
+import qualified Opaleye.Internal.Join as OI
 
 -------------------------------------------------------------------------------
 
--- | This is where we drift a bit appart from Opaleye, but hopefully not for
--- a long time.
---
--- We do not use 'O.Column ('O.Nullable' a)', but instead we use
--- @('NullableColumn' a)@.
---
--- Think of @('NullableColumn' a)@ as @('Maybe' a)@, where
--- @('Nothing' == 'nullc')@ and @('Just' a == 'O.Column' a)@.
---
--- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
---
--- Note: The 'NotNullable' constraint is a hack to prevent accidentaly 
--- constructing a @('NullableColumn' ('O.Nullable' a))@.
-newtype NotNullable a => NullableColumn a
-  = NullableColumn { unNullableColumn :: O.Column (O.Nullable a) }
-  deriving (Show)
 
 -- | Horrible hack to workaround the current represenation for nullable columns.
--- See 'NullableColumn'.
+-- See 'Koln'.
 type family NotNullable (x :: *) :: Constraint where
   NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
   NotNullable x = ()
 
+-- | Like @('O.Column' a)@, but guaranteed to be not-'O.Nullable'.
+--
+-- Build using 'mkKol', view using 'unKol'.
+--
+-- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
+-- we drift a bit appart from Opaleye, but hopefully not for a long time.
+-- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+newtype Kol a = UnsafeKol (O.Column a) 
+  -- ^ Build safely using 'mkKol'.
+
+mkKol :: NotNullable a => O.Column a -> Kol a
+mkKol = UnsafeKol
+
+unKol :: Kol a -> O.Column a
+unKol (UnsafeKol ca) = ca
+
+liftKol :: NotNullable b => (O.Column a -> O.Column b) -> (Kol a -> Kol b)
+liftKol f = \ka -> mkKol (f (unKol ka))
+
+liftKol2 :: NotNullable c => (O.Column a -> O.Column b -> O.Column c) -> (Kol a -> Kol b -> Kol c)
+liftKol2 f = \ka kb -> mkKol (f (unKol ka) (unKol kb))
+
+instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b)
+         ) => PP.Default p (Kol a) (O.Column b) where
+  def = P.lmap unKol PP.def
+
+instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
+         ) => PP.Default p (O.Column a) (Kol b) where
+  def = P.rmap mkKol PP.def
+
+instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
+         ) => PP.Default p (Kol a) (Kol b) where
+  def = P.dimap unKol mkKol PP.def
+
+instance 
+    ( PP.Default O.QueryRunner (O.Column a) b
+    ) => PP.Default O.QueryRunner (Kol a) b where
+  def = P.lmap unKol PP.def
+
+---
+
+-- | Like @('O.Column' @('O.Nullable' a))@, but @a@ is guaranteed to
+-- be not-'O.Nullable'.
+--
+-- Build safely using 'mkKoln', view using 'unKoln'.
+--
+-- We do not use 'O.Column ('O.Nullable' a)', but instead we use
+-- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
+-- hopefully not for- a long time.
+-- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+--
+-- Think of @('Koln' a)@ as @('Maybe' a)@, where
+-- @('Nothing' == 'nul')@ and @('Just' a == 'O.Column' a)@.
+newtype Koln a = UnsafeKoln (O.Column (O.Nullable a))
+  -- ^ Build safely using 'mkKoln'.
+
+class MkKoln a x where
+  mkKoln :: x -> Koln a
+instance MkKoln a (Kol a) where
+  mkKoln = UnsafeKoln . O.toNullable . unKol
+-- | Overlaps.
+instance NotNullable a => MkKoln a (O.Column (O.Nullable a)) where
+  mkKoln = UnsafeKoln
+-- | Overlapped.
+instance {-# OVERLAPPABLE #-} NotNullable a => MkKoln a (O.Column a) where
+  mkKoln = mkKoln . O.toNullable
+
+unKoln :: Koln a -> O.Column (O.Nullable a)
+unKoln (UnsafeKoln cna) = cna
+
+-- | Like 'maybe'. Case analysis for 'Koln'.
+matchKoln :: Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
+matchKoln kb0 f kna = UnsafeKol $
+  O.matchNullable (unKol kb0) (unKol . f . UnsafeKol) (unKoln kna)
+
+-- | Monadic bind like the one for 'Maybe'.
+bindKoln :: Koln a -> (Kol a -> Koln b) -> Koln b
+bindKoln kna f = UnsafeKoln $
+  O.matchNullable O.null (unKoln . f . UnsafeKol) (unKoln kna)
+
+-- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
+nul :: NotNullable a => Koln a
+nul = UnsafeKoln O.null
+
+liftKoln :: NotNullable b
+         => (O.Column (O.Nullable a) -> O.Column (O.Nullable b))
+         -> (Koln a -> Koln b)
+liftKoln f = \kna -> mkKoln (f (unKoln kna))
+
+liftKoln2 :: NotNullable c
+          => (O.Column (O.Nullable a) -> O.Column (O.Nullable b) -> O.Column (O.Nullable c))
+          -> (Koln a -> Koln b -> Koln c)
+liftKoln2 f = \kna knb -> mkKoln (f (unKoln kna) (unKoln knb))
+
 -- | OVERLAPPABLE.
-instance {-# OVERLAPPABLE #-}
+instance {-# OVERLAPPABLE #-} forall p x a.
     ( P.Profunctor p, NotNullable a
     , PP.Default p x (O.Column (O.Nullable a))
-    ) => PP.Default p x (NullableColumn a) where
-  def = P.rmap NullableColumn PP.def
+    ) => PP.Default p x (Koln a) where
+  def = P.rmap mkKoln (PP.def :: p x (O.Column (O.Nullable a)))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-}
-    ( P.Profunctor p, NotNullable a
+    ( P.Profunctor p
     , PP.Default p (O.Column (O.Nullable a)) x
-    ) => PP.Default p (NullableColumn a) x where
-  def = P.lmap unNullableColumn PP.def
+    ) => PP.Default p (Koln a) x where
+  def = P.lmap unKoln PP.def
   {-# INLINE def #-}
 
 instance
-    ( P.Profunctor p, NotNullable a, NotNullable b
+    ( P.Profunctor p, NotNullable b
     , PP.Default p (O.Column (O.Nullable a)) (O.Column (O.Nullable b))
-    ) => PP.Default p (NullableColumn a) (NullableColumn b) where
-  def = P.dimap unNullableColumn NullableColumn PP.def
+    ) => PP.Default p (Koln a) (Koln b) where
+  def = P.dimap unKoln mkKoln (PP.def :: p (O.Column (O.Nullable a)) (O.Column (O.Nullable b)))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
@@ -100,34 +182,6 @@ instance {-# OVERLAPPABLE #-}
     ) => O.QueryRunnerColumnDefault pg (Maybe hs) where
   queryRunnerColumnDefault = OI.QueryRunnerColumn u (fmap (fmap (fmap Just)) fp)
     where OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
-
-toNullableColumn :: NotNullable a => O.Column a -> NullableColumn a
-toNullableColumn = NullableColumn . O.toNullable
-
--- | Evaluates to the first argument if the 'NullableColumn' is @NULL@,
--- otherwise it evaluates to the 'O.Column' wrapped in the 'NullableColumn'.
-fromNullableColumn :: NotNullable a => O.Column a -> NullableColumn a -> O.Column a
-fromNullableColumn ca = O.matchNullable ca id . unNullableColumn
-
--- | PostgreSQL's @NULL@.
-nullc :: NotNullable a => NullableColumn a
-nullc = NullableColumn O.null
-
-unsafeUnNullableColumn :: NotNullable a => NullableColumn a -> O.Column a
-unsafeUnNullableColumn = O.unsafeCoerceColumn . unNullableColumn
-{-# INLINE unsafeUnNullableColumn #-}
-
--- | Monadic bind for the billon dollar mistake.
---
--- Works like @(('>>=') :: 'Maybe' a -> (a -> 'Maybe' b) -> 'Maybe' b)@.
-bindNullableColumn
-  :: (NotNullable a, NotNullable b)
-  => NullableColumn a
-  -> (O.Column a -> NullableColumn b)
-  -> NullableColumn b
-bindNullableColumn nca f = NullableColumn $
-   O.ifThenElse (isNull nca) O.null
-      (unNullableColumn (f (unsafeUnNullableColumn nca)))
 
 -------------------------------------------------------------------------------
 
@@ -170,11 +224,11 @@ data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) GHC.Symbol)
 type instance Apply Col_NameSym0 col = Col_Name col
 
 type family Col_PgRType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRType ('Col n w 'R  p h) = O.Column p
-  Col_PgRType ('Col n w 'RN p h) = NullableColumn p
+  Col_PgRType ('Col n w 'R  p h) = Kol p
+  Col_PgRType ('Col n w 'RN p h) = Koln p
 
 type family Col_PgRNType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRNType ('Col n w r p h) = NullableColumn p
+  Col_PgRNType ('Col n w r p h) = Koln p
 
 type family Col_PgWType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgWType ('Col n 'W  r p h) = Col_PgRType ('Col n 'W r p h)
@@ -279,13 +333,13 @@ type HsI (t :: *) = Rec t (Cols_HsI t)
 -- Mnemonic: PostGresql Read.
 type PgR (t :: *) = Rec t (Cols_PgR t)
 
--- | Like @('PgRN' t)@ but every field is 'NullableColumn', as in the
+-- | Like @('PgRN' t)@ but every field is 'Koln', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
 type PgRN (t :: *) = Rec t (Cols_PgRN t)
 
--- | Representation of @('ToHsI' t)@ as 'O.Columns'. To be used when
+-- | Representation of @('ToHsI' t)@ as 'Kols'. To be used when
 -- writing to the database.
 --
 -- Mnemonic: PostGresql Write.
@@ -437,14 +491,14 @@ mkHsI k = Tagged
 data HPgWfromHsIField = HPgWfromHsIField
 instance HL.ApplyAB HPgWfromHsIField x x where
   applyAB _ = id
-instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField hs (O.Column pg) where
-  applyAB _ = toPgColumn
-instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (O.Column pg)) where
-  applyAB _ = fmap toPgColumn
-instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (NullableColumn pg) where
-  applyAB _ = maybe nullc toPgColumnN
-instance ToPgColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (NullableColumn pg)) where
-  applyAB _ = fmap (maybe nullc toPgColumnN)
+instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
+  applyAB _ = val
+instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (Kol pg)) where
+  applyAB _ = fmap val
+instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
+  applyAB _ = maybe nul valn
+instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (Koln pg)) where
+  applyAB _ = fmap (maybe nul valn)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
 toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
@@ -476,13 +530,13 @@ toPgW _ = toPgW'
 data HPgWfromPgRField = HPgWfromPgRField
 instance HL.ApplyAB HPgWfromPgRField x x where
   applyAB _ = id
-instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (O.Column pg) (Maybe (O.Column pg)) where
+instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Kol pg) (Maybe (Kol pg)) where
   applyAB _ = Just
-instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (NullableColumn pg) (Maybe (NullableColumn pg)) where
+instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (Maybe (Koln pg)) where
   applyAB _ = Just
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
--- to a @('PgW' t)@ that can be used in a 'O.runUpdate'-like operation.
+-- to a @('PgW' t)@ that can be used in a 'runUpdate'-like operation.
 update' :: Tisch t => PgR t -> PgW t
 update' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromPgRField . HL.recordValues . unTagged
 {-# INLINE update' #-}
@@ -495,20 +549,20 @@ update _ = update'
 --------------------------------------------------------------------------------
 
 -- | Column properties: Write (no default), Read (not nullable).
-colProps_wr :: NotNullable a => String -> O.TableProperties (O.Column a) (O.Column a)
-colProps_wr = O.required
+colProps_wr :: NotNullable a => String -> O.TableProperties (Kol a) (Kol a)
+colProps_wr = P.dimap unKol mkKol . O.required
 
 -- | Column properties: Write (no default), Read (nullable).
-colProps_wrn :: NotNullable a => String -> O.TableProperties (NullableColumn a) (NullableColumn a)
-colProps_wrn = P.dimap unNullableColumn NullableColumn . O.required
+colProps_wrn :: NotNullable a => String -> O.TableProperties (Koln a) (Koln a)
+colProps_wrn = P.dimap (unsafeUnNullableColumn . unKoln) mkKoln . O.required
 
 -- | Column properties: Write (optional default), Read (not nullable).
-colProps_wdr :: NotNullable a => String -> O.TableProperties (Maybe (O.Column a)) (O.Column a)
-colProps_wdr = O.optional
+colProps_wdr :: NotNullable a => String -> O.TableProperties (Maybe (Kol a)) (Kol a)
+colProps_wdr = P.dimap (fmap unKol) mkKol . O.optional
 
 -- | Column properties: Write (optional default), Read (nullable).
-colProps_wdrn :: NotNullable a => String -> O.TableProperties (Maybe (NullableColumn a)) (NullableColumn a)
-colProps_wdrn = P.dimap (fmap unNullableColumn) NullableColumn . O.optional
+colProps_wdrn :: NotNullable a => String -> O.TableProperties (Maybe (Koln a)) (Koln a)
+colProps_wdrn = P.dimap (fmap unKoln) mkKoln . O.optional
 
 --------------------------------------------------------------------------------
 
@@ -580,7 +634,17 @@ tisch' = go where -- to hide the "forall" from the haddocks
 -- can't infer @t@.
 tisch :: Tisch t => t -> TischTable t
 tisch _ = tisch'
-{-# INLINE tisch #-}
+
+--------------------------------------------------------------------------------
+-- RunXXX functions
+
+-- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
+-- return a @('GetKol' w 'O.PGBool')@.
+runUpdate
+  :: (MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+  => O.Table pgw pgr -> (pgr -> pgw) -> (pgr -> gkb) -> m Int64 -- ^
+runUpdate t upd fil = ask >>= \conn -> liftIO $ do
+   O.runUpdate conn t upd (unKol . getKol . fil)
 
 --------------------------------------------------------------------------------
 
@@ -598,62 +662,56 @@ instance (Tisch t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
 
+-- | Convert a constant Haskell value to a 'Kol'.
+val :: forall pg hs. ToColumn pg hs => hs -> Kol pg
+val = mkKol . toColumn
+{-# INLINE val #-}
+
+-- | Convert a constant Haskell value to a 'Koln'.
+valn :: forall pg hs. ToColumn pg hs => hs -> Koln pg
+valn = mkKoln . (val :: hs -> Kol pg)
+{-# INLINE valn #-}
+
 -- | Convert a Haskell value to a PostgreSQL 'O.Column' value.
 -- Think of 'O.pgString', 'O.pgInt4', 'O.pgStrictText', etc.
 --
--- You probably won't ever need to call 'toPgColumn' explicity, yet you need to
+-- You probably won't ever need to call 'toColumn' explicity, yet you need to
 -- provide an instance for every Haskell type you plan to convert to its
 -- PostgreSQL representation. Quite likely, you will be using 'toPgTC' though.
 --
--- A a default implementation of 'toPgColumn' is available for 'Wrapped' types
-class NotNullable pg => ToPgColumn (pg :: *) (hs :: *) where
-  toPgColumn :: hs -> O.Column pg
-  default toPgColumn :: (Wrapped hs, ToPgColumn pg (Unwrapped hs)) => hs -> O.Column pg
-  toPgColumn = toPgColumn . view _Wrapped'
-  {-# INLINE toPgColumn #-}
+-- A a default implementation of 'toColumn' is available for 'Wrapped' types
+class NotNullable pg => ToColumn (pg :: *) (hs :: *) where
+  toColumn :: hs -> O.Column pg
+  default toColumn :: (Wrapped hs, ToColumn pg (Unwrapped hs)) => hs -> O.Column pg
+  toColumn = toColumn . view _Wrapped'
+  {-# INLINE toColumn #-}
 
-toPgColumnN :: ToPgColumn pg hs => hs -> NullableColumn pg
-toPgColumnN = toNullableColumn . toPgColumn
-{-# INLINE toPgColumnN #-}
-
-instance ToPgColumn pg hs => ToPgColumn pg (Tagged t hs)
-instance ToPgColumn O.PGText [Char] where toPgColumn = O.pgString
-instance ToPgColumn O.PGText Char where toPgColumn = toPgColumn . (:[])
-instance ToPgColumn O.PGBool Bool where toPgColumn = O.pgBool
+instance ToColumn pg hs => ToColumn pg (Tagged t hs)
+instance ToColumn O.PGText [Char] where toColumn = O.pgString
+instance ToColumn O.PGText Char where toColumn = toColumn . (:[])
+instance ToColumn O.PGBool Bool where toColumn = O.pgBool
 -- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
 -- Use 'Int32', 'Int64', etc. explicitely.
-instance ToPgColumn O.PGInt4 Int32 where toPgColumn = O.pgInt4 . fromIntegral
+instance ToColumn O.PGInt4 Int32 where toColumn = O.pgInt4 . fromIntegral
 -- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
 -- Use 'Int32', 'Int64', etc. explicitely.
-instance ToPgColumn O.PGInt8 Int64 where toPgColumn = O.pgInt8
-instance ToPgColumn O.PGFloat4 Float where toPgColumn = pgFloat4
-instance ToPgColumn O.PGFloat8 Float where toPgColumn = pgFloat8
-instance ToPgColumn O.PGFloat8 Double where toPgColumn = O.pgDouble
-instance ToPgColumn O.PGText Data.Text.Text where toPgColumn = O.pgStrictText
-instance ToPgColumn O.PGText Data.Text.Lazy.Text where toPgColumn = O.pgLazyText
-instance ToPgColumn O.PGBytea Data.ByteString.ByteString where toPgColumn = O.pgStrictByteString
-instance ToPgColumn O.PGBytea Data.ByteString.Lazy.ByteString where toPgColumn = O.pgLazyByteString
-instance ToPgColumn O.PGTimestamptz Data.Time.UTCTime where toPgColumn = O.pgUTCTime
-instance ToPgColumn O.PGTimestamp Data.Time.LocalTime where toPgColumn = O.pgLocalTime
-instance ToPgColumn O.PGTime Data.Time.TimeOfDay where toPgColumn = O.pgTimeOfDay
-instance ToPgColumn O.PGDate Data.Time.Day where toPgColumn = O.pgDay
-instance ToPgColumn O.PGUuid Data.UUID.UUID where toPgColumn = O.pgUUID
-instance ToPgColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Text) where toPgColumn = O.pgCiStrictText
-instance ToPgColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Lazy.Text) where toPgColumn = O.pgCiLazyText
-instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJson hs where toPgColumn = O.pgLazyJSON . Data.Aeson.encode
-instance Data.Aeson.ToJSON hs => ToPgColumn O.PGJsonb hs where toPgColumn = O.pgLazyJSONB . Data.Aeson.encode
-
---------------------------------------------------------------------------------
-
--- | Like 'toPgColumn', but wraps the resulting 'O.Column' in a 'TC'.
-toPgTC :: ToPgColumn pg hs => t -> C c -> hs -> Tagged (TC t c) (O.Column pg)
-toPgTC _ _ = Tagged . toPgColumn
-{-# INLINE toPgTC #-}
-
--- | Like 'toPgColumnN', but wraps the resulting 'O.Column' in a 'TC'.
-toPgTCN :: ToPgColumn pg hs => t -> C c -> hs -> Tagged (TC t c) (NullableColumn pg)
-toPgTCN _ _ = Tagged . toPgColumnN
-{-# INLINE toPgTCN #-}
+instance ToColumn O.PGInt8 Int64 where toColumn = O.pgInt8
+instance ToColumn O.PGFloat4 Float where toColumn = pgFloat4
+instance ToColumn O.PGFloat8 Float where toColumn = pgFloat8
+instance ToColumn O.PGFloat8 Double where toColumn = O.pgDouble
+instance ToColumn O.PGText Data.Text.Text where toColumn = O.pgStrictText
+instance ToColumn O.PGText Data.Text.Lazy.Text where toColumn = O.pgLazyText
+instance ToColumn O.PGBytea Data.ByteString.ByteString where toColumn = O.pgStrictByteString
+instance ToColumn O.PGBytea Data.ByteString.Lazy.ByteString where toColumn = O.pgLazyByteString
+instance ToColumn O.PGTimestamptz Data.Time.UTCTime where toColumn = O.pgUTCTime
+instance ToColumn O.PGTimestamp Data.Time.LocalTime where toColumn = O.pgLocalTime
+instance ToColumn O.PGTime Data.Time.TimeOfDay where toColumn = O.pgTimeOfDay
+instance ToColumn O.PGDate Data.Time.Day where toColumn = O.pgDay
+instance ToColumn O.PGUuid Data.UUID.UUID where toColumn = O.pgUUID
+instance ToColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Text) where toColumn = O.pgCiStrictText
+instance ToColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Lazy.Text) where toColumn = O.pgCiLazyText
+instance Data.Aeson.ToJSON hs => ToColumn O.PGJson hs where toColumn = O.pgLazyJSON . Data.Aeson.encode
+instance Data.Aeson.ToJSON hs => ToColumn O.PGJsonb hs where toColumn = O.pgLazyJSONB . Data.Aeson.encode
 
 --------------------------------------------------------------------------------
 
@@ -665,19 +723,6 @@ col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
     -> Lens (Rec t xs) (Rec t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
 col prx = cola prx . _Unwrapped
 {-# INLINE col #-}
-
--- | Getter to a column, wrapped in 'O.Nullable'.
---
--- This is mostly here to be used with functions such as 'orn', 'eqn' or 'ltn'.
---
--- Mnemonic: the COLumn Nullable.
-coln
-  :: NotNullable a
-  => HL.HLensCxt (TC t c) HL.Record xs xs (O.Column a) (O.Column a)
-  => C c
-  -> Getter (Rec t xs) (Tagged (TC t c) (O.Column (O.Nullable a)))
-coln prx = cola prx . to O.toNullable . _Unwrapped
-{-# INLINE coln #-}
 
 -- | Lens to the value of a column without the 'TC' tag.
 --
@@ -698,154 +743,40 @@ cola = go where -- just to hide the "forall" from the haddocks
 {-# INLINE cola #-}
 
 
--- | Like 'cola', but just a 'Setter' that takes constant 'ToPgColumn' values.
+-- | Like 'cola', but just a 'Setter' that takes constant 'ToColumn' values.
 --
 -- Mnemonic: the COLumn's A constant Value.
 colav
-  :: (HL.HLensCxt (TC t c) HL.Record xs xs' (O.Column a) (O.Column a'), ToPgColumn a' hs)
-  => C c -> Setter (Rec t xs) (Rec t xs') (O.Column a) hs
-colav c = cola c . sets (\f ca -> toPgColumn (f ca))
+  :: (HL.HLensCxt (TC t c) HL.Record xs xs' (Kol a) (Kol a'), ToColumn a' hs)
+  => C c -> Setter (Rec t xs) (Rec t xs') (Kol a) hs
+colav c = cola c . sets (\f ca -> val (f ca))
 {-# INLINE colav #-}
+
+--------------------------------------------------------------------------------
+-- Unary operations on columns
+
+-- | Polymorphic Opaleye's 'O.not'. See 'eq' for the type of arguments this
+-- function can take.
+--
+-- “no” is “not” in English, Spanish, and Italian, and it is a great name
+-- because it doesn't clash with 'Prelude.not'.
+no :: Fk1 O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b => a -> b
+no = fk1 (liftKol O.not)
 
 --------------------------------------------------------------------------------
 -- Binary operations on columns
 
--- | Wrap an Opaleye function such as 'eq' so that it can take different input
--- types and provide different output types.
-class PgCompatOp2' (c :: * -> *) ua ub la lb | la -> ua, lb -> ub where
-  -- | Wrap the given function so that it supports input types other than 'O.Column' as well.
-  pgCompatOp2'
-    :: NotNullable r'
-    => (O.Column r -> c r')
-    -> (O.Column ua -> O.Column ub -> O.Column r)
-    -> (la -> lb -> c r')
--- | x ca cb
-instance (NotNullable a, NotNullable b) => PgCompatOp2' c a b (O.Column a) (O.Column b) where
-  pgCompatOp2' k f ca cb = k (f ca cb)
--- | nc ca ncb
-instance
-    ( NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b) where
-  pgCompatOp2' k f ca ncb = bindNullableColumn ncb (\cb -> k (f ca cb))
--- | x ca tcb
-instance
-    ( PgCompatOp2' c a b (O.Column a) (O.Column b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' c a b (O.Column a) (Tagged t (O.Column b)) where
-  pgCompatOp2' k f ca tcb = pgCompatOp2' k f ca (unTagged tcb)
--- | nc ca tncb
-instance
-    ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (O.Column a) (Tagged t (NullableColumn b)) where
-  pgCompatOp2' k f ca tncb = pgCompatOp2' k f ca (unTagged tncb)
--- | nc nca cb
-instance
-    ( NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (O.Column b) where
-  pgCompatOp2' k f nca cb = bindNullableColumn nca (\ca -> k (f ca cb))
--- | nc nca ncb
-instance
-    ( NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b) where
-  pgCompatOp2' k f nca ncb =
-     bindNullableColumn nca (\ca -> bindNullableColumn ncb (\cb -> k (f ca cb)))
--- | nc nca tcb
-instance
-    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (O.Column b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (Tagged t (O.Column b)) where
-  pgCompatOp2' k f nca tcb = pgCompatOp2' k f nca (unTagged tcb)
--- | nc nca tncb
-instance
-    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (NullableColumn a) (Tagged t (NullableColumn b)) where
-  pgCompatOp2' k f nca tncb = pgCompatOp2' k f nca (unTagged tncb)
--- | x tca cb
-instance
-    ( PgCompatOp2' c a b (O.Column a) (O.Column b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' c a b (Tagged t (O.Column a)) (O.Column b) where
-  pgCompatOp2' k f tca cb = pgCompatOp2' k f (unTagged tca) cb
--- | nc tca ncb
-instance
-    ( PgCompatOp2' NullableColumn a b (O.Column a) (NullableColumn b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (Tagged t (O.Column a)) (NullableColumn b) where
-  pgCompatOp2' k f tca ncb = pgCompatOp2' k f (unTagged tca) ncb
--- | x tca tcb
-instance
-    ( Comparable ta ca tb cb, NotNullable x
-    , PgCompatOp2' c x x (O.Column x) (O.Column x)
-    ) => PgCompatOp2' c x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (O.Column x)) where
-  pgCompatOp2' k f tca tcb = pgCompatOp2' k f (tca ^. _ComparableL) (tcb ^. _ComparableR)
--- | nc tca tncb
-instance
-    ( Comparable ta ca tb cb, NotNullable x
-    , PgCompatOp2' NullableColumn x x (O.Column x) (NullableColumn x)
-    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (O.Column x)) (Tagged (TC tb cb) (NullableColumn x)) where
-  pgCompatOp2' k f tca tncb = pgCompatOp2' k f (tca ^. _ComparableL) (tncb ^. _ComparableR)
--- | nc tnca cb
-instance
-    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (O.Column b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (Tagged t (NullableColumn a)) (O.Column b) where
-  pgCompatOp2' k f tnca cb = pgCompatOp2' k f (unTagged tnca) cb
--- | nc tnca ncb
-instance
-    ( PgCompatOp2' NullableColumn a b (NullableColumn a) (NullableColumn b)
-    , NotNullable a, NotNullable b
-    ) => PgCompatOp2' NullableColumn a b (Tagged t (NullableColumn a)) (NullableColumn b) where
-  pgCompatOp2' k f tnca ncb = pgCompatOp2' k f (unTagged tnca) ncb
--- | nc tnca tcb
-instance
-    ( Comparable ta ca tb cb, NotNullable x
-    , PgCompatOp2' NullableColumn x x (NullableColumn x) (O.Column x)
-    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (NullableColumn x)) (Tagged (TC tb cb) (O.Column x)) where
-  pgCompatOp2' k f tnca tcb = pgCompatOp2' k f (tnca ^. _ComparableL) (tcb ^. _ComparableR)
--- | nc tnca tncb
-instance
-    ( Comparable ta ca tb cb, NotNullable x
-    , PgCompatOp2' NullableColumn x x (NullableColumn x) (NullableColumn x)
-    ) => PgCompatOp2' NullableColumn x x (Tagged (TC ta ca) (NullableColumn x)) (Tagged (TC tb cb) (NullableColumn x)) where
-  pgCompatOp2' k f tnca tncb = pgCompatOp2' k f (tnca ^. _ComparableL) (tncb ^. _ComparableR)
-
----
-
--- | Like 'PgCompatOp2'', but the first argument to 'pgCompatOp2'' is passed implicitly.
-class
-  ( NotNullable r'
-  ) => PgCompatOp2 (c :: * -> *) r r' ua ub la lb | la -> ua, lb -> ub where
-  pgCompatOp2 :: (O.Column ua -> O.Column ub -> O.Column r) -> (la -> lb -> c r')
-instance
-    ( PgCompatOp2' O.Column ua ub la lb, NotNullable r
-    ) => PgCompatOp2 O.Column r r ua ub la lb where
-  pgCompatOp2 = pgCompatOp2' id
-instance
-   ( PgCompatOp2' NullableColumn ua ub la lb, NotNullable r
-   ) => PgCompatOp2 NullableColumn (O.Nullable r) r ua ub la lb where
-  pgCompatOp2 = pgCompatOp2' NullableColumn
-instance
-   ( PgCompatOp2' NullableColumn ua ub la lb, NotNullable r
-   ) => PgCompatOp2 NullableColumn r r ua ub la lb where
-  pgCompatOp2 = pgCompatOp2' toNullableColumn
-
----
-
--- | Like Opaleye's @('O..==')@, but can accept more arguments than just 'O.Column'.
+-- | Polymorphic Opaleye's @('O..==')@.
 --
 -- @
--- 'eq'' :: 'O.Column' x -> 'O.Column' x -> 'O.Column' 'O.PGBool'
--- 'eq'' :: 'O.Column' x -> 'O.Column' x -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'O.Column' x -> 'NullableColumn' x -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'O.Column' x -> 'Tagged' t ('O.Column' x) -> 'O.Column' 'O.PGBool'
--- 'eq'' :: 'O.Column' x -> 'Tagged' t ('O.Column' x) -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'O.Column' x -> 'Tagged' t ('NullableColumn' x) -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'NullableColumn' x -> 'O.Column' x -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'NullableColumn' x -> 'NullableColumn' x -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'NullableColumn' x -> 'Tagged' t ('O.Column' x) -> 'NullableColumn' 'O.PGBool'
--- 'eq'' :: 'NullableColumn' x -> 'Tagged' t ('NullableColumn' x) -> 'NullableColumn' 'O.PGBool'
+-- 'eq' :: 'Kol' x -> 'Kol' x -> 'Kol' 'O.PGBool'
+-- 'eq' :: 'Kol' x -> 'Koln' x -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Kol' x -> 'Tagged' t ('Kol' x) -> 'Kol' 'O.PGBool'
+-- 'eq' :: 'Kol' x -> 'Tagged' t ('Koln' x) -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Koln' x -> 'Kol' x -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Koln' x -> 'Koln' x -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Koln' x -> 'Tagged' t ('Kol' x) -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Koln' x -> 'Tagged' t ('Koln' x) -> 'Koln' 'O.PGBool'
 -- @
 --
 -- Any of the above combinations with the arguments fliped is accepted too.
@@ -854,173 +785,136 @@ instance
 -- @('view' '.' 'col')@:
 --
 -- @
--- -- The following are fake type signatures just so that you get an idea:
---
--- 'eq'' :: 'Comparable' t1 c1 t2 c2
---         => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'O.Column' 'O.PGBool'
--- 'eq'' :: 'Comparable' t1 c1 t2 c2
---         => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'NullableColumn' 'O.PGBool'
+-- -- Fake type signatures just so that you get an idea:
+-- 'eq' :: 'Comparable' t1 c1 t2 c2
+--         => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'Koln' 'O.PGBool'
 -- @
-eq' :: (PgCompatOp2 c O.PGBool O.PGBool x x a b) => a -> b -> c O.PGBool
-eq' = pgCompatOp2 (O..==)
--- | Like 'eq'', but the return column type is fixed to 'O.Column' to help with type inference.
-eq :: (PgCompatOp2 O.Column O.PGBool O.PGBool x x a b) => a -> b -> O.Column O.PGBool
-eq = eq'
--- | Like 'eq'', but the return column type is fixed to 'NullableColumn' to help with type inference.
-eqn :: (PgCompatOp2 NullableColumn O.PGBool O.PGBool x x a b) => a -> b -> NullableColumn O.PGBool
-eqn = eq'
-
+eq :: forall x a b c. Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c => a -> b -> c
+eq = fk2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 
 -- | Like Opaleye's @('O..==')@, but can accept more arguments than just 'O.Column' (see 'eq').
-lt' :: (O.PGOrd x, PgCompatOp2 c O.PGBool O.PGBool x x a b, NotNullable x) => a -> b -> c O.PGBool
-lt' = pgCompatOp2 (O..<)
--- | Like 'lt'', but the return column type is fixed to 'O.Column' to help with type inference.
-lt :: (O.PGOrd x, PgCompatOp2' O.Column x x a b, NotNullable x) => a -> b -> O.Column O.PGBool
-lt = lt'
--- | Like 'lt'', but the return column type is fixed to 'NullableColumn' to help with type inference.
-ltn :: (O.PGOrd x, PgCompatOp2' NullableColumn x x a b, NotNullable x) => a -> b -> NullableColumn O.PGBool
-ltn = lt'
-
+lt :: forall x a b c. (O.PGOrd x, Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c) => a -> b -> c
+lt = fk2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
 
 -- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
 -- "Ou" means "or" in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.or'. N'est-ce pas?
-ou' :: PgCompatOp2 c O.PGBool O.PGBool O.PGBool O.PGBool a b => a -> b -> c O.PGBool
-ou' = pgCompatOp2 (O..||)
--- | Like 'ou'', but the return column type is fixed to 'O.Column' to help with type inference.
-ou :: PgCompatOp2' O.Column O.PGBool O.PGBool a b => a -> b -> O.Column O.PGBool
-ou = ou'
--- | Like 'ou'', but the return column type is fiO.PGBooled to 'NullableColumn' to help with type inference.
-oun :: PgCompatOp2' NullableColumn O.PGBool O.PGBool a b => a -> b -> NullableColumn O.PGBool
-oun = ou'
+ou :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
+ou = fk2 (liftKol2 (O..||) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
 
 -- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
 -- "et" means "and" in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.and'. N'est-ce pas?
-et' :: PgCompatOp2 c O.PGBool O.PGBool O.PGBool O.PGBool a b => a -> b -> c O.PGBool
-et' = pgCompatOp2 (O..&&)
--- | Like 'et'', but the return column type is fixed to 'O.Column' to help with type inference.
-et :: PgCompatOp2' O.Column O.PGBool O.PGBool a b => a -> b -> O.Column O.PGBool
-et = et'
--- | Like 'et'', but the return column type is fiO.PGBooled to 'NullableColumn' to help with type inference.
-etn :: PgCompatOp2' NullableColumn O.PGBool O.PGBool a b => a -> b -> NullableColumn O.PGBool
-etn = et'
+-- et' :: IFunK2 (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
+et :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
+et = fk2 (liftKol2 (O..&&) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
+
+--------------------------------------------------------------------------------
+
+-- | Look up a 'Kol' inside some kind of wrapper.
+class GetKol (w :: *) (a :: *) | w -> a where getKol :: w -> Kol a
+instance GetKol (Kol a) a where getKol = id
+instance GetKol (Tagged (TC t c) (Kol a)) a where getKol = unTagged
+
+-- | Look up a 'Koln' inside some kind of wrapper.
+class GetKoln w a | w -> a where getKoln :: w -> Koln a
+instance GetKoln (Koln a) a where getKoln = id
+instance GetKoln (Tagged (TC t c) (Koln a)) a where getKoln = unTagged
+
+--------------------------------------------------------------------------------
+
+-- | Like 'O.isNull', but works for any 'GetKoln'.
+isNull :: GetKoln w a => w -> Kol O.PGBool
+isNull = UnsafeKol . O.isNull . unKoln . getKoln
+
+-- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
+-- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @TRUE@.
+--
+-- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
+-- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
+--
+-- @
+-- 'restrict' '<<<' 'nullTrue' -< ...
+-- @
+nullTrue :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
+nullTrue = arr $ matchKoln (val True) id . getKoln
+
+-- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
+-- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @FALSE@.
+--
+-- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
+-- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
+--
+-- @
+-- 'restrict' '<<<' 'nullFalse' -< ...
+-- @
+nullFalse :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
+nullFalse = arr $ matchKoln (val False) id . getKoln
+
+-- | Like Opaleye's 'O.restric', but takes a 'Kol' as input.
+restrict :: GetKol w O.PGBool => O.QueryArr w ()
+restrict = O.restrict <<^ unKol <<^ getKol
+
+-- | Like Opaleye's 'O.leftJoin', but the predicate is expected to
+-- return a @('GetKol' w 'O.PGBool')@.
+leftJoin
+  :: ( PP.Default O.Unpackspec a a
+     , PP.Default O.Unpackspec b b
+     , PP.Default OI.NullMaker b nb
+     , GetKol gkb O.PGBool)
+   => O.Query a -> O.Query b -> ((a, b) -> gkb) -> O.Query (a, nb) -- ^
+leftJoin = leftJoinExplicit PP.def PP.def PP.def
+
+-- | Like Opaleye's 'O.leftJoinExplicit', but the predicate is expected to
+-- return a @('GetKol' w 'O.PGBool')@.
+leftJoinExplicit
+  :: GetKol gkb O.PGBool
+  => O.Unpackspec a a -> O.Unpackspec b b -> OI.NullMaker b nb
+  -> O.Query a -> O.Query b -> ((a, b) -> gkb) -> O.Query (a, nb) -- ^
+leftJoinExplicit ua ub nmb qa qb fil =
+  O.leftJoinExplicit ua ub nmb qa qb (unKol . getKol . fil)
 
 --------------------------------------------------------------------------------
 -- Ordering
 
 -- | Ascending order, no @NULL@s involved.
-asc :: (WrappedColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
-asc f = O.asc (view _UnwrappedColumn . f)
+asc :: (GetKol w b, O.PGOrd b) => (a -> w) -> O.Order a
+asc f = O.asc (unKol . getKol . f)
 
 -- | Ascending order, @NULL@s last.
-ascnl :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
-ascnl f = O.asc (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
+ascnl :: (GetKoln w b, O.PGOrd b) => (a -> w) -> O.Order a
+ascnl f = O.asc (unsafeUnNullableColumn . unKoln . getKoln . f)
 
 -- | Ascending order, @NULL@s first.
-ascnf :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
-ascnf f = O.ascNullsFirst (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
+ascnf :: (GetKoln w b, O.PGOrd b) => (a -> w) -> O.Order a
+ascnf f = O.ascNullsFirst (unsafeUnNullableColumn . unKoln . getKoln . f)
 
 -- | Descending order, no @NULL@s involved.
-desc :: (WrappedColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
-desc f = O.desc (view _UnwrappedColumn . f)
+desc :: (GetKol w b, O.PGOrd b) => (a -> w) -> O.Order a
+desc f = O.desc (unKol . getKol . f)
 
 -- | Descending order, @NULL@s first.
-descnf :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
-descnf f = O.desc (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
+descnf :: (GetKoln w b, O.PGOrd b) => (a -> w) -> O.Order a
+descnf f = O.desc (unsafeUnNullableColumn . unKoln . getKoln . f)
 
 -- | Descending order, @NULL@s last.
-descnl :: (WrappedNullableColumn w b, O.PGOrd b) => (a -> w) -> O.Order a
-descnl f = O.descNullsLast (unsafeUnNullableColumn . view _UnwrappedNullableColumn . f)
+descnl :: (GetKoln w b, O.PGOrd b) => (a -> w) -> O.Order a
+descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . getKoln . f)
 
 --------------------------------------------------------------------------------
-
--- | Like 'Control.Lens.Wrapped', but the "unwrapped" type is expected to be
--- @('O.Column' a))@ where @a@ is 'NotNullable'.
-class NotNullable a => WrappedColumn (w :: *) (a :: *) | w -> a where
-  _UnwrappedColumn :: Iso' w (O.Column a)
-instance NotNullable a => WrappedColumn (O.Column a) a where
-  _UnwrappedColumn = id
-instance WrappedColumn w a => WrappedColumn (Tagged (TC t c) w) a where
-  _UnwrappedColumn = _Wrapped . _UnwrappedColumn
-
---------------------------------------------------------------------------------
-
--- | Like 'Control.Lens.Wrapped', but the "unwrapped" type is expected to be
--- @('O.Column' ('O.Nullable' a))@.
-class NotNullable a => WrappedNullableColumn (w :: *) (a :: *) | w -> a where
-  _UnwrappedNullableColumn :: Iso' w (NullableColumn a)
-instance NotNullable a => WrappedNullableColumn (NullableColumn a) a where
-  _UnwrappedNullableColumn = id
--- | TODO: Remove this instance once Opaleye removes 'O.Nullable'.
-instance NotNullable a => WrappedNullableColumn (O.Column (O.Nullable a)) a where
-  _UnwrappedNullableColumn = iso NullableColumn unNullableColumn
-instance WrappedNullableColumn w a => WrappedNullableColumn (Tagged (TC t c) w) a where
-  _UnwrappedNullableColumn = _Wrapped . _UnwrappedNullableColumn
-
--- | Like 'O.isNull', but also works with the return type of
--- @('view' ('col' ('C' :: 'C' "foo"))@
-isNull :: WrappedNullableColumn w a => w -> O.Column O.PGBool
-isNull = O.isNull . unNullableColumn . view _UnwrappedNullableColumn
-
--- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@ or compatible
--- (see 'WrappedNullableColumn') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
--- converted to @TRUE@.
---
--- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
--- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
---
--- @
--- 'O.restrict' '<<<' 'nullTrue'' -< ...
--- @
-nullTrue' :: Arrow f => WrappedNullableColumn w O.PGBool => f w (O.Column O.PGBool)
-nullTrue' = arr $ fromNullableColumn (O.pgBool True) . view _UnwrappedNullableColumn
-
--- | Like 'nullTrue'', but constrained to @('NullableColumn' 'O.PGBool')@ to help type inference.
-nullTrue :: Arrow arr => NullableColumn O.PGBool `arr` O.Column O.PGBool
-nullTrue = nullTrue'
-
--- | Flatten @('O.Column' ('O.Nullable' 'O.PGBool'))@ or compatible
--- (see 'WrappedNullableColumn') to @('O.Column' 'O.PGBool')@. An outer @NULL@ is
--- converted to @False@.
---
--- This can be used as a function or as a 'O.QueryArr', whatever works best for you.
--- The 'O.QueryArr' support is often convenient when working with 'O.restrict':
---
--- @
--- 'O.restrict' '<<<' 'nullFalse'' -< ...
--- @
-nullFalse' :: Arrow arr => WrappedNullableColumn w O.PGBool => w `arr` O.Column O.PGBool
-nullFalse' = arr $ fromNullableColumn (O.pgBool False) . view _UnwrappedNullableColumn
-
--- | Like 'nullFalse'', but constrained to @('NullableColumn' 'O.PGBool')@ to help type inference.
-nullFalse :: Arrow arr => NullableColumn O.PGBool `arr` O.Column O.PGBool
-nullFalse = nullFalse'
-
---------------------------------------------------------------------------------
-
--- | A generalization of product profunctor adaptors such as 'PP.p1', 'PP.p4', etc.
---
--- The functional dependencies make type inference easier, but also forbid some
--- otherwise acceptable instances. See the instance for 'Tagged' for example.
-class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
-  ppa :: l -> p ra rb
 
 ppaUnTagged :: P.Profunctor p => p a b -> p (Tagged ta a) (Tagged tb b)
 ppaUnTagged = P.dimap unTagged Tagged
 {-# INLINE ppaUnTagged #-}
 
-ppaTagged :: P.Profunctor p => Tagged tpab (p a b) -> p (Tagged ta a) (Tagged tb b)
-ppaTagged = ppaUnTagged . unTagged
-{-# INLINE ppaTagged #-}
-
--- | Due to the functional dependencies in 'ProductProfunctorAdaptor', this instance is not as
--- polymorphic as it could be in @t@. Use 'ppaTagged' instead for a fully polymorphic version.
-instance P.Profunctor p => ProductProfunctorAdaptor p (Tagged t (p a b)) (Tagged t a) (Tagged t b) where
-  ppa = ppaTagged
-  {-# INLINE ppa #-}
+-- | A generalization of product profunctor adaptors such as 'PP.p1', 'PP.p4', etc.
+--
+-- The functional dependencies make type inference easier, but also forbid some
+-- otherwise acceptable instances. 
+class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
+  ppa :: l -> p ra rb
 
 -- | 'HList' of length 0.
 instance PP.ProductProfunctor p => ProductProfunctorAdaptor p (HList '[]) (HList '[]) (HList '[]) where
@@ -1122,18 +1016,229 @@ instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x
   hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
   {-# INLINE hDistributeProxy #-}
 
---------------------------------------------------------------------------------
+---
 
 unRecord :: HL.Record xs -> HList xs
 unRecord = \(HL.Record x) -> x
 {-# INLINE unRecord #-}
 
 --------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 -- Belongs in Opaleye
+
+unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
+unsafeUnNullableColumn = O.unsafeCoerceColumn
 
 pgFloat4 :: Float -> O.Column O.PGFloat4
 pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
 
 pgFloat8 :: Float -> O.Column O.PGFloat8
 pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Support for overloaded unary operators working on Kol or Koln
+
+class Fk1 a b fa fb xa xb | fa -> a, fb -> b, xa -> a, xb -> b, xa fa fb -> xb where
+  -- | Generalize the argument and return type of the given function
+  -- so that it works for as many combinations of @('Kol' x)@, @('Koln' x)@,
+  -- @('Tagged' ('TC' t c) ('Kol' x))@ or @('Tagged' ('TC' t c) ('Koln' x))@ as
+  -- possible.
+  fk1 :: (fa -> fb) -> (xa -> xb)
+
+-- Note: possibly some of these instances could be generalized, but it's hard
+-- to keep track of them, so I write all the possible combinations explicitely.
+
+-- | kk -> kk
+instance Fk1 a b (Kol a) (Kol b) (Kol a) (Kol b) where fk1 f ka = f ka
+-- | kk -> nn
+instance Fk1 a b (Kol a) (Kol b) (Koln a) (Koln b) where fk1 f na = bindKoln na (mkKoln . f)
+-- | kk -> tx
+instance Fk1 a b (Kol a) (Kol b) xa xb => Fk1 a b (Kol a) (Kol b) (Tagged (TC t c) xa) xb where fk1 f (Tagged xa) = fk1 f xa
+-- | kn -> kn
+instance Fk1 a b (Kol a) (Koln b) (Kol a) (Koln b) where fk1 f ka = f ka
+-- | kn -> nn
+instance Fk1 a b (Kol a) (Koln b) (Koln a) (Koln b) where fk1 f na = bindKoln na f
+-- | kn -> tn
+instance Fk1 a b (Kol a) (Koln b) xa (Koln b) => Fk1 a b (Kol a) (Koln b) (Tagged (TC t c) xa) (Koln b) where fk1 f (Tagged xa) = fk1 f xa
+-- | nk -> kk
+instance Fk1 a b (Koln a) (Kol b) (Kol a) (Kol b) where fk1 f ka = f (mkKoln ka)
+-- | nk -> nk
+instance Fk1 a b (Koln a) (Kol b) (Koln a) (Kol b) where fk1 f na = f na
+-- | nk -> tk
+instance Fk1 a b (Koln a) (Kol b) xa (Kol b) => Fk1 a b (Koln a) (Kol b) (Tagged (TC t c) xa) (Kol b) where fk1 f (Tagged xa) = fk1 f xa
+-- | nn -> kn
+instance Fk1 a b (Koln a) (Koln b) (Kol a) (Koln b) where fk1 f ka = f (mkKoln ka)
+-- | nn -> nn
+instance Fk1 a b (Koln a) (Koln b) (Koln a) (Koln b) where fk1 f na = f na
+-- | nn -> tn
+instance Fk1 a b (Koln a) (Koln b) xa (Koln b) => Fk1 a b (Koln a) (Koln b) (Tagged (TC t c) xa) (Koln b) where fk1 f (Tagged xa) = fk1 f xa
+
+--------------------------------------------------------------------------------
+-- Support for overloaded binary operators working on Kol or Koln
+
+-- | Generalize the arguments and return type of the given function
+-- so that it works for as many combinations of @('Kol' x)@, @('Koln' x)@,
+-- @('Tagged' ('TC' t c) ('Kol' x))@ or @('Tagged' ('TC' t c) ('Koln' x))@ as
+-- possible.
+--
+-- If the two arguments are of @('Tagged' ('TC' t c))@, then a
+-- 'Comparable' constraint will be required on them.
+class Fk2 a b c fa fb fc xa xb xc | fa -> a, fb -> b, fc -> c, xa -> a, xb -> b, xc -> c, xa xb fa fb fc -> xc where
+  fk2 :: (fa -> fb -> fc) -> (xa -> xb -> xc)
+
+-- Note: possibly some of these instances could be generalized, but it's hard
+-- to keep track of them, so I write all the possible combinations explicitely.
+
+-- | kkk -> kkk
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f ka kb
+-- | kkk -> knn
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (mkKoln . f ka)
+-- | kkk -> ktx
+instance (Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) xb xc) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | kkk -> nkn
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (mkKoln . flip f kb)
+-- | kkk -> nnn
+instance Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (\ka -> bindKoln nb (mkKoln . f ka))
+-- | kkk -> ntn
+instance (Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) xb (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | kkk -> tkx
+instance (Fk2 a b c (Kol a) (Kol b) (Kol c) xa (Kol b) xc) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) xc  where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | kkk -> tnk
+instance (Fk2 a b c (Kol a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | kkk -> ttx
+instance (Fk2 a b c (Kol a) (Kol b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | kkn -> kkn
+instance Fk2 a b c (Kol a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f ka kb
+-- | kkn -> knn
+instance Fk2 a b c (Kol a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (f ka)
+-- | kkn -> ktn
+instance (Fk2 a b c (Kol a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | kkn -> nkn
+instance Fk2 a b c (Kol a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (flip f kb)
+-- | kkn -> nnn
+instance Fk2 a b c (Kol a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (\ka -> bindKoln nb (f ka))
+-- | kkn -> ntn
+instance (Fk2 a b c (Kol a) (Kol b) (Koln c) (Koln a) xb (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | kkn -> tkn
+instance (Fk2 a b c (Kol a) (Kol b) (Koln c) xa (Kol b) (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c) where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | kkn -> tnn
+instance (Fk2 a b c (Kol a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | kkn -> ttn
+instance (Fk2 a b c (Kol a) (Kol b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | knk -> kkk
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f ka (mkKoln kb)
+-- | knk -> knk
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where fk2 f ka nb = f ka nb
+-- | knk -> ktk
+instance (Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | knk -> nkn
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (mkKoln . flip f (mkKoln kb))
+-- | knk -> nnn
+instance Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (mkKoln . flip f nb)
+-- | knk -> ntn
+instance (Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) xb (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | knk -> tkx
+instance (Fk2 a b c (Kol a) (Koln b) (Kol c) xa (Kol b) xc) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) xc  where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | knk -> tnx
+instance (Fk2 a b c (Kol a) (Koln b) (Kol c) xa (Koln b) (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | knk -> ttx
+instance (Fk2 a b c (Kol a) (Koln b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | knn -> kkn
+instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f ka (mkKoln kb)
+-- | knn -> knn
+instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = f ka nb
+-- | knn -> ktn
+instance (Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | knn -> nkn
+instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = bindKoln na (flip f (mkKoln kb))
+-- | knn -> nnn
+instance Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln na (flip f nb)
+-- | knn -> ntn
+instance (Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | knn -> tkn
+instance (Fk2 a b c (Kol a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c) where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | knn -> tnn
+instance (Fk2 a b c (Kol a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | knn -> ttn
+instance (Fk2 a b c (Kol a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | nkk -> kkk
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f (mkKoln ka) kb
+-- | nkk -> knn
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (mkKoln . f (mkKoln ka))
+-- | nkk -> ktx
+instance (Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) xb xc) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | nkk -> nkk
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Kol b) (Kol c) where fk2 f na kb = f na kb
+-- | nkk -> nnn
+instance Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln nb (mkKoln . f na)
+-- | nkk -> ntx
+instance (Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) xb xc) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) xc where fk2 f na (Tagged xb) = fk2 f na xb
+-- | nkk -> tkk
+instance (Fk2 a b c (Koln a) (Kol b) (Kol c) xa (Kol b) xc) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) xc  where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | nkk -> tnn
+instance (Fk2 a b c (Koln a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | nkk -> ttx
+instance (Fk2 a b c (Koln a) (Kol b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | nkn -> kkn
+instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f (mkKoln ka) kb
+-- | nkn -> knn
+instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = bindKoln nb (f (mkKoln ka))
+-- | nkn -> ktn
+instance (Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | nkn -> nkn
+instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = f na kb
+-- | nkn -> nnn
+instance Fk2 a b c (Koln a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = bindKoln nb (f na)
+-- | nkn -> ntn
+instance (Fk2 a b c (Koln a) (Kol b) (Koln c) (Koln a) xb (Koln c)) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | nkn -> tkn
+instance (Fk2 a b c (Koln a) (Kol b) (Koln c) xa (Kol b) (Koln c)) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c) where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | nkn -> tnn
+instance (Fk2 a b c (Koln a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | nkn -> ttn
+instance (Fk2 a b c (Koln a) (Kol b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | nnk -> kkk
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where fk2 f ka kb = f (mkKoln ka) (mkKoln kb)
+-- | nnk -> knk
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where fk2 f ka nb = f (mkKoln ka) nb
+-- | nnk -> ktk
+instance (Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | nnk -> nkk
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) (Kol b) (Kol c) where fk2 f na kb = f na (mkKoln kb)
+-- | nnk -> nnk
+instance Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) (Koln b) (Kol c) where fk2 f na nb = f na nb
+-- | nnk -> ntk
+instance (Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) xb (Kol c)) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Kol c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | nnk -> tkk
+instance (Fk2 a b c (Koln a) (Koln b) (Kol c) xa (Kol b) (Kol c)) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) (Kol c)  where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | nnk -> tnk
+instance (Fk2 a b c (Koln a) (Koln b) (Kol c) xa (Koln b) (Kol c)) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Kol c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | nnk -> ttk
+instance (Fk2 a b c (Koln a) (Koln b) (Kol c) xa xb (Kol c), Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Kol c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
+
+-- | nnn -> kkn
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where fk2 f ka kb = f (mkKoln ka) (mkKoln kb)
+-- | nnn -> knn
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where fk2 f ka nb = f (mkKoln ka) nb
+-- | nnn -> ktn
+instance (Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f ka (Tagged xb) = fk2 f ka xb
+-- | nnn -> nkn
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where fk2 f na kb = f na (mkKoln kb)
+-- | nnn -> nnn
+instance Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where fk2 f na nb = f na nb
+-- | nnn -> ntn
+instance (Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where fk2 f na (Tagged xb) = fk2 f na xb
+-- | nnn -> tkn
+instance (Fk2 a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c)  where fk2 f (Tagged xa) kb = fk2 f xa kb
+-- | nnk -> tnn
+instance (Fk2 a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
+-- | nnn -> ttn
+instance (Fk2 a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
 

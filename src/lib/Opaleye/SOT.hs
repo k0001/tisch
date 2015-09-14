@@ -28,29 +28,45 @@ module Opaleye.SOT
  , update'
  , update
 
-   -- * Columns
- , toPgTC
- , toPgTCN
-   -- ** Querying
- , eq'
+   -- * Kol
+ , Kol
+ , val
+ , mkKol
+ , unKol
+ , liftKol
+ , liftKol2
+
+   -- * Koln
+ , NotNullable
+ , Koln
+ , mkKoln
+ , unKoln
+ , matchKoln
+ , nul
+ , isNull
+ , bindKoln
+ , liftKoln
+ , liftKoln2
+
+   -- * Executing
+ , runUpdate
+
+   -- * Querying
+ , leftJoin
+ , leftJoinExplicit
+ , restrict
+ , nullFalse
+ , nullTrue
  , eq
- , eqn
- , lt'
  , lt
- , ltn
- , ou'
  , ou
- , oun
- , et'
  , et
- , etn
-   -- ** Selecting
+   -- * Selecting
  , col
  , cola
- , coln
-   -- ** Modifying
+   -- * Modifying
  , colav
-   -- ** Ordering
+   -- * Ordering
  , asc
  , ascnf
  , ascnl
@@ -58,23 +74,9 @@ module Opaleye.SOT
  , descnf
  , descnl
 
-   -- * Nullable columns
- , NullableColumn
- , NotNullable
- , toNullableColumn
- , fromNullableColumn
- , bindNullableColumn
- , nullc
- , toPgColumnN
- , isNull
- , nullTrue
- , nullTrue'
- , nullFalse
- , nullFalse'
-
    -- * Types
  , Comparable
- , ToPgColumn(..)
+ , ToColumn(..)
  , Col(..)
  , C(..)
  , T(..)

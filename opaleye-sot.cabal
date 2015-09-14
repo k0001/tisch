@@ -39,6 +39,7 @@ library
     , profunctors 
     , singletons >=1.1 && <1.2
     , text
+    , transformers >=0.4 && <0.5
     , time
     , uuid
   ghc-options: -Wall -O0
