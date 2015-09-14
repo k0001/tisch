@@ -70,6 +70,11 @@ newtype Kol a = UnsafeKol (O.Column a)
   -- ^ Build safely using 'kol'.
 
 class MkKol a x where
+  -- |
+  -- @
+  -- 'kol' :: 'NotNullable' a => 'O.Column' a -> 'Kol' a
+  -- 'kol' :: 'ToColumn' pg hs => hs -> 'Kol' a
+  -- @
   kol :: x -> Kol a
 instance NotNullable a => MkKol a (O.Column a) where
   kol = UnsafeKol
@@ -122,6 +127,13 @@ newtype Koln a = UnsafeKoln (O.Column (O.Nullable a))
   -- ^ Build safely using 'koln'.
 
 class MkKoln a x where
+  -- |
+  -- @
+  -- 'koln' :: 'Kol' a -> 'Koln' a
+  -- 'koln' :: 'NotNullable' a => 'O.Column' ('O.Nullable' a) -> 'Koln' a
+  -- 'koln' :: 'NotNullable' a => 'O.Column' a -> 'Koln' a
+  -- 'koln' :: 'ToColumn' pg hs => hs -> 'Koln' a
+  -- @
   koln :: x -> Koln a
 instance MkKoln a (Kol a) where
   koln = UnsafeKoln . O.toNullable . unKol
@@ -647,7 +659,7 @@ tisch _ = tisch'
 -- return a @('GetKol' w 'O.PGBool')@.
 runUpdate
   :: (MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
-  => O.Table pgw pgr -> (pgr -> pgw) -> (pgr -> gkb) -> m Int64 -- ^
+  => O.Table w r -> (r -> w) -> (r -> gkb) -> m Int64 -- ^
 runUpdate t upd fil = ask >>= \conn -> liftIO $ do
    O.runUpdate conn t upd (unKol . getKol . fil)
 
