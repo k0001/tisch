@@ -61,7 +61,7 @@ type family NotNullable (x :: *) :: Constraint where
 
 -- | Like @('O.Column' a)@, but guaranteed to be not-'O.Nullable'.
 --
--- Build using 'mkKol', view using 'unKol'.
+-- Build using 'mkKol' or 'val', view using 'unKol'.
 --
 -- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
 -- we drift a bit appart from Opaleye, but hopefully not for a long time.
@@ -103,7 +103,7 @@ instance
 -- | Like @('O.Column' @('O.Nullable' a))@, but @a@ is guaranteed to
 -- be not-'O.Nullable'.
 --
--- Build safely using 'mkKoln', view using 'unKoln'.
+-- Build safely using 'mkKoln' or 'valn', view using 'unKoln'.
 --
 -- We do not use 'O.Column ('O.Nullable' a)', but instead we use
 -- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
@@ -618,17 +618,13 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 type TischTable (t :: *) = O.Table (PgW t) (PgR t)
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-tisch' :: Tisch t => TischTable t
-tisch' = go where -- to hide the "forall" from the haddocks
-   go :: forall t. Tisch t => TischTable t
-   go = O.TableWithSchema
-     (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
-     (GHC.symbolVal (Proxy :: Proxy (TableName t)))
-     (ppaUnTagged $ ppa $ HL.Record
-        (HL.hMapL (HCol_Props :: HCol_Props t)
-        (hDistributeProxy (Proxy :: Proxy (Cols t)))))
-   {-# INLINE go #-}
-{-# INLINE tisch' #-}
+tisch' :: forall t. Tisch t => TischTable t
+tisch' = O.TableWithSchema
+   (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
+   (GHC.symbolVal (Proxy :: Proxy (TableName t)))
+   (ppaUnTagged $ ppa $ HL.Record
+      (HL.hMapL (HCol_Props :: HCol_Props t)
+      (hDistributeProxy (Proxy :: Proxy (Cols t)))))
 
 -- | Like 'tisch'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
@@ -731,26 +727,12 @@ col prx = cola prx . _Unwrapped
 -- 'unHsR'.
 --
 -- Mnemonic: The COLumn's A.
-cola :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
+cola :: forall t c xs xs' a a'
+     .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
      -> Lens (Rec t xs) (Rec t xs') a a'
-cola = go where -- just to hide the "forall" from the haddocks
-  go
-    :: forall t c xs xs' a a'. HL.HLensCxt (TC t c) HL.Record xs xs' a a'
-    => C c -> Lens (Rec t xs) (Rec t xs') a a'
-  go = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
-  {-# INLINE go #-}
+cola = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 {-# INLINE cola #-}
-
-
--- | Like 'cola', but just a 'Setter' that takes constant 'ToColumn' values.
---
--- Mnemonic: the COLumn's A constant Value.
-colav
-  :: (HL.HLensCxt (TC t c) HL.Record xs xs' (Kol a) (Kol a'), ToColumn a' hs)
-  => C c -> Setter (Rec t xs) (Rec t xs') (Kol a) hs
-colav c = cola c . sets (\f ca -> val (f ca))
-{-# INLINE colav #-}
 
 --------------------------------------------------------------------------------
 -- Unary operations on columns
@@ -792,7 +774,7 @@ no = fk1 (liftKol O.not)
 eq :: forall x a b c. Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c => a -> b -> c
 eq = fk2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 
--- | Like Opaleye's @('O..==')@, but can accept more arguments than just 'O.Column' (see 'eq').
+-- | Like Opaleye's @('O..=<')@, but can accept more arguments than just 'O.Column' (see 'eq').
 lt :: forall x a b c. (O.PGOrd x, Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c) => a -> b -> c
 lt = fk2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
 
@@ -807,7 +789,6 @@ ou = fk2 (liftKol2 (O..||) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
 --
 -- "et" means "and" in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.and'. N'est-ce pas?
--- et' :: IFunK2 (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
 et :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
 et = fk2 (liftKol2 (O..&&) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
 

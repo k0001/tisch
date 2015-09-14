@@ -57,6 +57,7 @@ module Opaleye.SOT
  , restrict
  , nullFalse
  , nullTrue
+ , no
  , eq
  , lt
  , ou
@@ -64,8 +65,6 @@ module Opaleye.SOT
    -- * Selecting
  , col
  , cola
-   -- * Modifying
- , colav
    -- * Ordering
  , asc
  , ascnf
