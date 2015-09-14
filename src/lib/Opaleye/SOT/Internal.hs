@@ -61,7 +61,7 @@ type family NotNullable (x :: *) :: Constraint where
 
 -- | Like @('O.Column' a)@, but guaranteed to be not-'O.Nullable'.
 --
--- Build using 'mkKol' or 'val', view using 'unKol'.
+-- Build using 'mkKol', view using 'unKol'.
 --
 -- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
 -- we drift a bit appart from Opaleye, but hopefully not for a long time.
@@ -69,8 +69,12 @@ type family NotNullable (x :: *) :: Constraint where
 newtype Kol a = UnsafeKol (O.Column a) 
   -- ^ Build safely using 'mkKol'.
 
-mkKol :: NotNullable a => O.Column a -> Kol a
-mkKol = UnsafeKol
+class MkKol a x where
+  mkKol :: x -> Kol a
+instance NotNullable a => MkKol a (O.Column a) where
+  mkKol = UnsafeKol
+instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKol pg hs where
+  mkKol = UnsafeKol . (toColumn :: hs -> O.Column pg)
 
 unKol :: Kol a -> O.Column a
 unKol (UnsafeKol ca) = ca
@@ -85,15 +89,17 @@ instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b)
          ) => PP.Default p (Kol a) (O.Column b) where
   def = P.lmap unKol PP.def
 
-instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
-         ) => PP.Default p (O.Column a) (Kol b) where
-  def = P.rmap mkKol PP.def
+instance forall p a b.
+    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
+    ) => PP.Default p (O.Column a) (Kol b) where
+  def = P.rmap mkKol (PP.def :: p (O.Column a) (O.Column b))
 
-instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
-         ) => PP.Default p (Kol a) (Kol b) where
-  def = P.dimap unKol mkKol PP.def
+instance forall p a b.
+    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
+    ) => PP.Default p (Kol a) (Kol b) where
+  def = P.dimap unKol mkKol (PP.def :: p (O.Column a) (O.Column b))
 
-instance 
+instance
     ( PP.Default O.QueryRunner (O.Column a) b
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
@@ -103,7 +109,7 @@ instance
 -- | Like @('O.Column' @('O.Nullable' a))@, but @a@ is guaranteed to
 -- be not-'O.Nullable'.
 --
--- Build safely using 'mkKoln' or 'valn', view using 'unKoln'.
+-- Build safely using 'mkKoln', view using 'unKoln'.
 --
 -- We do not use 'O.Column ('O.Nullable' a)', but instead we use
 -- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
@@ -125,6 +131,9 @@ instance NotNullable a => MkKoln a (O.Column (O.Nullable a)) where
 -- | Overlapped.
 instance {-# OVERLAPPABLE #-} NotNullable a => MkKoln a (O.Column a) where
   mkKoln = mkKoln . O.toNullable
+instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKoln pg hs where
+  mkKoln = mkKoln . (mkKol :: hs -> Kol pg)
+
 
 unKoln :: Koln a -> O.Column (O.Nullable a)
 unKoln (UnsafeKoln cna) = cna
@@ -492,13 +501,13 @@ data HPgWfromHsIField = HPgWfromHsIField
 instance HL.ApplyAB HPgWfromHsIField x x where
   applyAB _ = id
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
-  applyAB _ = val
+  applyAB _ = mkKol
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (Kol pg)) where
-  applyAB _ = fmap val
+  applyAB _ = fmap mkKol
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
-  applyAB _ = maybe nul valn
+  applyAB _ = maybe nul mkKoln
 instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (Koln pg)) where
-  applyAB _ = fmap (maybe nul valn)
+  applyAB _ = fmap (maybe nul mkKoln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
 toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
@@ -658,16 +667,6 @@ instance (Tisch t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
 
--- | Convert a constant Haskell value to a 'Kol'.
-val :: forall pg hs. ToColumn pg hs => hs -> Kol pg
-val = mkKol . toColumn
-{-# INLINE val #-}
-
--- | Convert a constant Haskell value to a 'Koln'.
-valn :: forall pg hs. ToColumn pg hs => hs -> Koln pg
-valn = mkKoln . (val :: hs -> Kol pg)
-{-# INLINE valn #-}
-
 -- | Convert a Haskell value to a PostgreSQL 'O.Column' value.
 -- Think of 'O.pgString', 'O.pgInt4', 'O.pgStrictText', etc.
 --
@@ -820,7 +819,7 @@ isNull = UnsafeKol . O.isNull . unKoln . getKoln
 -- 'restrict' '<<<' 'nullTrue' -< ...
 -- @
 nullTrue :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
-nullTrue = arr $ matchKoln (val True) id . getKoln
+nullTrue = arr $ matchKoln (mkKol True) id . getKoln
 
 -- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
 -- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @FALSE@.
@@ -832,7 +831,7 @@ nullTrue = arr $ matchKoln (val True) id . getKoln
 -- 'restrict' '<<<' 'nullFalse' -< ...
 -- @
 nullFalse :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
-nullFalse = arr $ matchKoln (val False) id . getKoln
+nullFalse = arr $ matchKoln (mkKol False) id . getKoln
 
 -- | Like Opaleye's 'O.restric', but takes a 'Kol' as input.
 restrict :: GetKol w O.PGBool => O.QueryArr w ()

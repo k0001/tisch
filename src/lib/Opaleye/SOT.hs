@@ -30,7 +30,6 @@ module Opaleye.SOT
 
    -- * Kol
  , Kol
- , val
  , mkKol
  , unKol
  , liftKol
