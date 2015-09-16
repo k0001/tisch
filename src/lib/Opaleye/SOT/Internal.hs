@@ -743,17 +743,6 @@ instance (Tisch t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
 
--- | Convert a Haskell value to a PostgreSQL 'Kol' value. 'Konstant' is our
--- conterpart to Opaleye's own 'O.Constant'.
---
-class NotNullable pg => Konstant (hs :: *) (pg :: *) where
-  konstant :: hs -> Kol pg
-  default konstant :: (Wrapped hs, Konstant (Unwrapped hs) pg) => hs -> Kol pg
-  konstant = konstant . view _Wrapped'
-  {-# INLINE konstant #-}
-
---------------------------------------------------------------------------------
-
 -- | Lens to the value of a column.
 --
 -- Mnemonic: the COLumn.
