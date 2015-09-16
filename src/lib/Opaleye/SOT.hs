@@ -57,11 +57,11 @@ module Opaleye.SOT
  , restrict
  , nullFalse
  , nullTrue
- , no
- , eq
- , lt
- , ou
- , et
+ , no, Ino
+ , eq, Ieq
+ , lt, Ilt
+ , ou, Iou
+ , et, Iet
    -- * Selecting
  , col
  , cola

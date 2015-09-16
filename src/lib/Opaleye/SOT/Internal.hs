@@ -769,17 +769,21 @@ cola = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 --------------------------------------------------------------------------------
 -- Unary operations on columns
 
+-- | Constraint on arguments to 'no'.
+type Ino a b = Fk1 O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b 
 -- | Polymorphic Opaleye's 'O.not'. See 'eq' for the type of arguments this
 -- function can take.
 --
 -- “No” means “not” in English, Spanish, and Italian, and it is a great name
 -- because it doesn't clash with 'Prelude.not'.
-no :: Fk1 O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b => a -> b
+no :: Ino a b => a -> b
 no = fk1 (liftKol O.not)
 
 --------------------------------------------------------------------------------
 -- Binary operations on columns
 
+-- | Constraints on arguments to 'eq'
+type Ieq x a b c = Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c 
 -- | Polymorphic Opaleye's @('O..==')@.
 --
 -- @
@@ -803,30 +807,34 @@ no = fk1 (liftKol O.not)
 -- 'eq' :: 'Comparable' t1 c1 t2 c2
 --    => 'Tagged' ('TC' t1 c1) a -> 'Tagged' ('TC' t2 c2) b -> 'Koln' 'O.PGBool'
 -- @
-eq :: forall x a b c. Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c => a -> b -> c
+eq :: forall x a b c. Ieq x a b c => a -> b -> c
 eq = fk2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 
+-- | Constraint on arguments to 'lt'
+type Ilt x a b c = (O.PGOrd x, Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
 -- | Like Opaleye's @('O..=<')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
 -- Mnemonic: Less Than.
-lt :: forall x a b c. (O.PGOrd x, Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c) => a -> b -> c
+lt :: forall x a b c. Ilt x a b c => a -> b -> c
 lt = fk2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
 
-type Fk2_ou a b c = Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
-
+-- | Constraint on arguments to 'ou'
+type Iou a b c = Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
 -- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
 -- “Ou” means "or" in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.or'. N'est-ce pas?
-ou :: Fk2_ou a b c => a -> b -> c
+ou :: Iou a b c => a -> b -> c
 ou = fk2 (liftKol2 (O..||))
 
+-- | Constraint on arguments to 'et'
+type Iet a b c = Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
 -- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
 -- “Et” means “and” in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.and'. N'est-ce pas?
-et :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
-et = fk2 (liftKol2 (O..&&) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
+et :: Iet a b c => a -> b -> c
+et = fk2 (liftKol2 (O..&&))
 
 --------------------------------------------------------------------------------
 
