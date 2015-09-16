@@ -187,7 +187,7 @@ class ToKoln hs pg where
   -- 'koln' :: 'Kol' a -> 'Koln' a
   -- 'koln' :: 'NotNullable' a => 'O.Column' ('O.Nullable' a) -> 'Koln' a
   -- 'koln' :: 'ToKol' hs pg => hs -> 'Koln' pg
-  -- 'koln' :: 'ToKol' hs pg => Maybe hs -> 'Koln' pg -- @NULL@ if 'Nothing'
+  -- 'koln' :: 'ToKol' hs pg => 'Maybe' hs -> 'Koln' pg -- @NULL@ if 'Nothing'
   -- @
   koln :: hs -> Koln pg
 instance NotNullable pg => ToKoln (O.Column (O.Nullable pg)) pg where
