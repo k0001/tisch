@@ -752,15 +752,6 @@ class NotNullable pg => Konstant (hs :: *) (pg :: *) where
   konstant = konstant . view _Wrapped'
   {-# INLINE konstant #-}
 
--- Belongs in Opaleye.
-
--- | Orphan.
-instance O.QueryRunnerColumnDefault O.PGJson Data.Aeson.Value where
-  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
--- | Orphan.
-instance O.QueryRunnerColumnDefault O.PGJsonb Data.Aeson.Value where
-  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
-
 --------------------------------------------------------------------------------
 
 -- | Lens to the value of a column.
