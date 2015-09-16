@@ -69,18 +69,6 @@ type family NotNullable (x :: *) :: Constraint where
 newtype Kol a = UnsafeKol (O.Column a) 
   -- ^ Build safely using 'kol'.
 
-class MkKol a x where
-  -- |
-  -- @
-  -- 'kol' :: 'NotNullable' a => 'O.Column' a -> 'Kol' a
-  -- 'kol' :: 'ToColumn' pg hs => hs -> 'Kol' a
-  -- @
-  kol :: x -> Kol a
-instance NotNullable a => MkKol a (O.Column a) where
-  kol = UnsafeKol
-instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKol pg hs where
-  kol = UnsafeKol . (toColumn :: hs -> O.Column pg)
-
 unKol :: Kol a -> O.Column a
 unKol (UnsafeKol ca) = ca
 
@@ -109,14 +97,77 @@ instance
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
 
+-- | Build a 'Kol'.
+--
+-- You need to provide an instance for every Haskell type you plan to
+-- convert to its PostgreSQL representation as 'Kol'. 
+--
+-- A a default implementation of 'kol' is available for 'Wrapped'
+-- instances.
+--
+-- Notice that some of the instances here overlap in purpose with
+-- 'O.Constant'. Technicaly, we don't really need to repeat those instances
+-- here: we could just rely on 'O.Constant'. However, as of today,
+-- 'O.Constant' provides some undesired support which we deliberately
+-- want to avoid here. Namely, we don't want to support converting 'Int'
+-- to 'O.PGInt4'. As soon as that is fixed upstream, we'll go back to
+-- relying on 'O.Constant'. See
+-- https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
+class ToKol hs pg where
+  -- | Build a 'Kol'. Appart from the constant Haskell values you would
+  -- expect to work with 'O.Constant', you can use this method to
+  -- convert an Opaleye 'O.Column' to a 'Kol'.
+  --
+  -- @
+  -- 'kol' :: 'NotNullable' a => 'O.Column' a -> 'Kol' a
+  -- @
+  --
+  -- A a default implementation of 'kol' is available for 'Wrapped'
+  -- instances.
+  kol :: hs -> Kol pg
+  default kol :: (Wrapped hs, ToKol (Unwrapped hs) pg) => hs -> Kol pg
+  kol = kol . view _Wrapped'
+  {-# INLINE kol #-}
+
+instance NotNullable pg => ToKol (O.Column pg) pg where
+  kol = UnsafeKol 
+  {-# INLINE kol#-}
+
+instance ToKol hs pg => ToKol (Tagged t hs) pg
+instance ToKol [Char] O.PGText where kol = kol . O.pgString
+instance ToKol Char O.PGText where kol = kol . (:[])
+instance ToKol Bool O.PGBool where kol = kol . O.pgBool
+-- | Note: Portability wise, it's best to be explicit about the size, that's why
+-- there is no instance for 'Int'
+instance ToKol Int32 O.PGInt4 where kol = kol . O.pgInt4 . fromIntegral
+-- | Note: Portability wise, it's best to be explicit about the size, that's why
+-- there is no instance for 'Int'
+instance ToKol Int64 O.PGInt8 where kol = kol . O.pgInt8
+instance ToKol Float O.PGFloat4 where kol = kol . pgFloat4
+instance ToKol Float O.PGFloat8 where kol = kol . pgFloat8
+instance ToKol Double O.PGFloat8 where kol = kol . O.pgDouble
+instance ToKol Data.Text.Text O.PGText where kol = kol . O.pgStrictText
+instance ToKol Data.Text.Lazy.Text O.PGText where kol = kol . O.pgLazyText
+instance ToKol Data.ByteString.ByteString O.PGBytea where kol = kol . O.pgStrictByteString
+instance ToKol Data.ByteString.Lazy.ByteString O.PGBytea where kol = kol . O.pgLazyByteString
+instance ToKol Data.Time.UTCTime O.PGTimestamptz where kol = kol . O.pgUTCTime
+instance ToKol Data.Time.LocalTime O.PGTimestamp where kol = kol . O.pgLocalTime
+instance ToKol Data.Time.TimeOfDay O.PGTime where kol = kol . O.pgTimeOfDay
+instance ToKol Data.Time.Day O.PGDate where kol = kol . O.pgDay
+instance ToKol Data.UUID.UUID O.PGUuid where kol = kol . O.pgUUID
+instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = kol . O.pgCiStrictText
+instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = kol . O.pgCiLazyText
+instance ToKol Data.Aeson.Value O.PGJson where kol = kol . O.pgLazyJSON . Data.Aeson.encode
+instance ToKol Data.Aeson.Value O.PGJsonb where kol = kol . O.pgLazyJSONB . Data.Aeson.encode
+
 ---
 
--- | Like @('O.Column' @('O.Nullable' a))@, but @a@ is guaranteed to
+-- | Like @('O.Column' @('O.Nullable' a))@, but the @a@ is guaranteed to
 -- be not-'O.Nullable'.
 --
 -- Build safely using 'koln', view using 'unKoln'.
 --
--- We do not use 'O.Column ('O.Nullable' a)', but instead we use
+-- We do not use @('O.Column ('O.Nullable' a))@, but instead we use
 -- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
 -- hopefully not for- a long time.
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
@@ -126,25 +177,31 @@ instance
 newtype Koln a = UnsafeKoln (O.Column (O.Nullable a))
   -- ^ Build safely using 'koln'.
 
-class MkKoln a x where
-  -- |
+unKoln :: Koln a -> O.Column (O.Nullable a)
+unKoln (UnsafeKoln cna) = cna
+
+class ToKoln hs pg where
+  -- | Build a 'Koln'.
+  --
   -- @
   -- 'koln' :: 'Kol' a -> 'Koln' a
   -- 'koln' :: 'NotNullable' a => 'O.Column' ('O.Nullable' a) -> 'Koln' a
-  -- 'koln' :: 'NotNullable' a => 'O.Column' a -> 'Koln' a
-  -- 'koln' :: 'ToColumn' pg hs => hs -> 'Koln' a
+  -- 'koln' :: 'ToKol' hs pg => hs -> 'Koln' pg
+  -- 'koln' :: 'ToKol' hs pg => Maybe hs -> 'Koln' pg -- @NULL@ if 'Nothing'
   -- @
-  koln :: x -> Koln a
-instance MkKoln a (Kol a) where
-  koln = UnsafeKoln . O.toNullable . unKol
-instance NotNullable a => MkKoln a (O.Column (O.Nullable a)) where
+  koln :: hs -> Koln pg
+instance NotNullable pg => ToKoln (O.Column (O.Nullable pg)) pg where
   koln = UnsafeKoln
-instance {-# OVERLAPPABLE #-} NotNullable a => MkKoln a (O.Column a) where
-  koln = koln . O.toNullable
-instance {-# OVERLAPPABLE #-} forall pg hs. ToColumn pg hs => MkKoln pg hs where
+  {-# INLINE koln #-}
+instance ToKoln (Kol pg) pg where
+  koln = UnsafeKoln . O.toNullable . unKol
+  {-# INLINE koln #-}
+instance forall hs pg. (ToKol hs pg, NotNullable pg) => ToKoln (Maybe hs) pg where
+  koln = maybe nul (koln . (kol :: hs -> Kol pg))
+  {-# INLINE koln #-}
+instance {-# OVERLAPPABLE #-} forall hs pg. (ToKol hs pg, NotNullable pg) => ToKoln hs pg where
   koln = koln . (kol :: hs -> Kol pg)
-unKoln :: Koln a -> O.Column (O.Nullable a)
-unKoln (UnsafeKoln cna) = cna
+  {-# INLINE koln #-}
 
 -- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
 nul :: NotNullable a => Koln a
@@ -519,13 +576,13 @@ mkHsI k = Tagged
 data HPgWfromHsIField = HPgWfromHsIField
 instance HL.ApplyAB HPgWfromHsIField x x where
   applyAB _ = id
-instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
+instance ToKol hs pg => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
   applyAB _ = kol
-instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (Kol pg)) where
+instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (Kol pg)) where
   applyAB _ = fmap kol
-instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
+instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
   applyAB _ = maybe nul koln
-instance ToColumn pg hs => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (Koln pg)) where
+instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (Koln pg)) where
   applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
@@ -686,46 +743,23 @@ instance (Tisch t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
 
--- | Convert a Haskell value to a PostgreSQL 'O.Column' value.
--- Think of 'O.pgString', 'O.pgInt4', 'O.pgStrictText', etc.
+-- | Convert a Haskell value to a PostgreSQL 'Kol' value. 'Konstant' is our
+-- conterpart to Opaleye's own 'O.Constant'.
 --
--- You probably won't ever need to call 'toColumn' explicity, yet you need to
--- provide an instance for every Haskell type you plan to convert to its
--- PostgreSQL representation. Quite likely, you will be using 'toPgTC' though.
---
--- A a default implementation of 'toColumn' is available for 'Wrapped' types
-class NotNullable pg => ToColumn (pg :: *) (hs :: *) where
-  toColumn :: hs -> O.Column pg
-  default toColumn :: (Wrapped hs, ToColumn pg (Unwrapped hs)) => hs -> O.Column pg
-  toColumn = toColumn . view _Wrapped'
-  {-# INLINE toColumn #-}
+class NotNullable pg => Konstant (hs :: *) (pg :: *) where
+  konstant :: hs -> Kol pg
+  default konstant :: (Wrapped hs, Konstant (Unwrapped hs) pg) => hs -> Kol pg
+  konstant = konstant . view _Wrapped'
+  {-# INLINE konstant #-}
 
-instance ToColumn pg hs => ToColumn pg (Tagged t hs)
-instance ToColumn O.PGText [Char] where toColumn = O.pgString
-instance ToColumn O.PGText Char where toColumn = toColumn . (:[])
-instance ToColumn O.PGBool Bool where toColumn = O.pgBool
--- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
--- Use 'Int32', 'Int64', etc. explicitely.
-instance ToColumn O.PGInt4 Int32 where toColumn = O.pgInt4 . fromIntegral
--- | Note: Portability wise, it's a /terrible/ idea to have an 'Int' instance instead.
--- Use 'Int32', 'Int64', etc. explicitely.
-instance ToColumn O.PGInt8 Int64 where toColumn = O.pgInt8
-instance ToColumn O.PGFloat4 Float where toColumn = pgFloat4
-instance ToColumn O.PGFloat8 Float where toColumn = pgFloat8
-instance ToColumn O.PGFloat8 Double where toColumn = O.pgDouble
-instance ToColumn O.PGText Data.Text.Text where toColumn = O.pgStrictText
-instance ToColumn O.PGText Data.Text.Lazy.Text where toColumn = O.pgLazyText
-instance ToColumn O.PGBytea Data.ByteString.ByteString where toColumn = O.pgStrictByteString
-instance ToColumn O.PGBytea Data.ByteString.Lazy.ByteString where toColumn = O.pgLazyByteString
-instance ToColumn O.PGTimestamptz Data.Time.UTCTime where toColumn = O.pgUTCTime
-instance ToColumn O.PGTimestamp Data.Time.LocalTime where toColumn = O.pgLocalTime
-instance ToColumn O.PGTime Data.Time.TimeOfDay where toColumn = O.pgTimeOfDay
-instance ToColumn O.PGDate Data.Time.Day where toColumn = O.pgDay
-instance ToColumn O.PGUuid Data.UUID.UUID where toColumn = O.pgUUID
-instance ToColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Text) where toColumn = O.pgCiStrictText
-instance ToColumn O.PGCitext (Data.CaseInsensitive.CI Data.Text.Lazy.Text) where toColumn = O.pgCiLazyText
-instance ToColumn O.PGJson Data.Aeson.Value where toColumn = O.pgLazyJSON . Data.Aeson.encode
-instance ToColumn O.PGJsonb Data.Aeson.Value where toColumn = O.pgLazyJSONB . Data.Aeson.encode
+-- Belongs in Opaleye.
+
+-- | Orphan.
+instance O.QueryRunnerColumnDefault O.PGJson Data.Aeson.Value where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+-- | Orphan.
+instance O.QueryRunnerColumnDefault O.PGJsonb Data.Aeson.Value where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
 
 --------------------------------------------------------------------------------
 
@@ -798,12 +832,14 @@ eq = fk2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 lt :: forall x a b c. (O.PGOrd x, Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c) => a -> b -> c
 lt = fk2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
 
+type Fk2_ou a b c = Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
+
 -- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --
 -- “Ou” means "or" in French, and it is a great name because it doesn't overlap
 -- with 'Prelude.or'. N'est-ce pas?
-ou :: Fk2 O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c => a -> b -> c
-ou = fk2 (liftKol2 (O..||) :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool)
+ou :: Fk2_ou a b c => a -> b -> c
+ou = fk2 (liftKol2 (O..||))
 
 -- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column' (see 'eq').
 --

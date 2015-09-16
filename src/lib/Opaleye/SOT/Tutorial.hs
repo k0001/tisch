@@ -89,7 +89,7 @@ import           Prelude hiding (id)
 
 newtype DepartmentId = DepartmentId { unDepartmentId :: Int32 }
 instance Wrapped DepartmentId where { type Unwrapped DepartmentId = Int32; _Wrapped' = iso unDepartmentId DepartmentId }
-instance ToColumn O.PGInt4 DepartmentId
+instance ToKol DepartmentId O.PGInt4
 
 data TDepartment = TDepartment
 instance Tisch TDepartment where
@@ -104,7 +104,7 @@ instance Tisch TDepartment where
 
 newtype BranchId = BranchId { unBranchId :: Int32 }
 instance Wrapped BranchId where { type Unwrapped BranchId = Int32; _Wrapped' = iso unBranchId BranchId }
-instance ToColumn O.PGInt4 BranchId
+instance ToKol BranchId O.PGInt4
 
 data TBranch = TBranch
 instance Tisch TBranch where
@@ -123,7 +123,7 @@ instance Tisch TBranch where
 
 newtype EmployeeId = EmployeeId { unEmployeeId :: Int32 }
 instance Wrapped EmployeeId where { type Unwrapped EmployeeId = Int32; _Wrapped' = iso unEmployeeId EmployeeId }
-instance ToColumn O.PGInt4 EmployeeId
+instance ToKol EmployeeId O.PGInt4
 
 data TEmployee = TEmployee
 instance Tisch TEmployee where
@@ -145,7 +145,7 @@ instance Tisch TEmployee where
 
 newtype ProductTypeId = ProductTypeId { unProductTypeId :: String }
 instance Wrapped ProductTypeId where { type Unwrapped ProductTypeId = String; _Wrapped' = iso unProductTypeId ProductTypeId }
-instance ToColumn O.PGText ProductTypeId
+instance ToKol ProductTypeId O.PGText
 
 data TProductType = TProductType
 instance Tisch TProductType where
@@ -160,7 +160,7 @@ instance Tisch TProductType where
 
 newtype ProductId = ProductId { unProductId :: String }
 instance Wrapped ProductId where { type Unwrapped ProductId = String; _Wrapped' = iso unProductId ProductId }
-instance ToColumn O.PGText ProductId
+instance ToKol ProductId O.PGText
 
 data TProduct = TProduct
 instance Tisch TProduct where
@@ -178,7 +178,7 @@ instance Tisch TProduct where
 
 newtype CustomerId = CustomerId { unCustomerId :: Int32 }
 instance Wrapped CustomerId where { type Unwrapped CustomerId = Int32; _Wrapped' = iso unCustomerId CustomerId }
-instance ToColumn O.PGInt4 CustomerId
+instance ToKol CustomerId O.PGInt4 
 
 data CustomerType
    = CustomerType_I
@@ -190,7 +190,7 @@ _CustomerType_Char = prism'
   (\case { CustomerType_I -> 'I'; CustomerType_B -> 'B' })
   (\case { 'I' -> Just CustomerType_I; 'B' -> Just CustomerType_B; _ -> Nothing })
 
-instance ToColumn O.PGText CustomerType where toColumn = toColumn . review _CustomerType_Char
+instance ToKol CustomerType O.PGText where kol = kol . review _CustomerType_Char
 
 data TCustomer = TCustomer
 instance Tisch TCustomer where
@@ -223,7 +223,7 @@ instance Tisch TIndividual where
 
 newtype BizStateId = BizStateId { unBizStateId :: String }
 instance Wrapped BizStateId where { type Unwrapped BizStateId = String; _Wrapped' = iso unBizStateId BizStateId }
-instance ToColumn O.PGText BizStateId
+instance ToKol BizStateId O.PGText
 
 data TBusiness = TBusiness
 instance Tisch TBusiness where
@@ -240,7 +240,7 @@ instance Tisch TBusiness where
 
 newtype OfficerId = OfficerId { unOfficerId :: Int32 }
 instance Wrapped OfficerId where { type Unwrapped OfficerId = Int32; _Wrapped' = iso unOfficerId OfficerId }
-instance ToColumn O.PGInt4 OfficerId
+instance ToKol OfficerId O.PGInt4 
 
 data TOfficer = TOfficer
 instance Tisch TOfficer where
@@ -260,7 +260,7 @@ instance Tisch TOfficer where
 
 newtype AccountId = AccountId { unAccountId :: Int32 }
 instance Wrapped AccountId where { type Unwrapped AccountId = Int32; _Wrapped' = iso unAccountId AccountId }
-instance ToColumn O.PGInt4 AccountId
+instance ToKol AccountId O.PGInt4
 
 data AccountStatus
    = AccountStatus_Active
@@ -278,7 +278,7 @@ _AccountStatus_String = prism'
          "FROZEN" -> Just AccountStatus_Frozen
          _ -> Nothing)
 
-instance ToColumn O.PGText AccountStatus where toColumn = toColumn . review _AccountStatus_String
+instance ToKol AccountStatus O.PGText where kol = kol . review _AccountStatus_String
 
 data TAccount = TAccount
 instance Tisch TAccount where
@@ -302,8 +302,7 @@ instance Tisch TAccount where
 
 newtype TransactionId = TransactionId { unTransactionId :: Int32 }
 instance Wrapped TransactionId where { type Unwrapped TransactionId = Int32; _Wrapped' = iso unTransactionId TransactionId }
-instance ToColumn O.PGInt4 TransactionId
-
+instance ToKol TransactionId O.PGInt4
 
 data TransactionType
    = TransactionType_Debit
@@ -318,7 +317,7 @@ _TransactionType_String = prism'
          "CDT" -> Just TransactionType_Credit
          _ -> Nothing)
 
-instance ToColumn O.PGText TransactionType where toColumn = toColumn . review _TransactionType_String
+instance ToKol TransactionType O.PGText where kol = kol . review _TransactionType_String
 
 data TTransaction = TTransaction
 instance Tisch TTransaction where

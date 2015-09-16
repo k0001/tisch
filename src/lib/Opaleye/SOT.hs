@@ -30,16 +30,16 @@ module Opaleye.SOT
 
    -- * Kol
  , Kol
- , kol
  , unKol
+ , ToKol(..)
  , liftKol
  , liftKol2
 
    -- * Koln
  , NotNullable
  , Koln
- , koln
  , unKoln
+ , koln
  , matchKoln
  , nul
  , isNull
@@ -75,7 +75,6 @@ module Opaleye.SOT
 
    -- * Types
  , Comparable
- , ToColumn(..)
  , Col(..)
  , C(..)
  , T(..)
