@@ -498,7 +498,8 @@ class ITisch t => Tisch (t :: *) where
 --
 -- Notice that you are not required to provide instances of this class if working
 -- with @'HsR' t@ is sufficient for you, or if you already have a function
--- @('HsR' t -> a)@ at hand.
+-- @('HsR' t -> a)@ at hand. Nevertheless, readability wise, it can be useful to
+-- have a single overloaded function used to decode each @('HsR' t)@.
 class Tisch t => UnHsR t (a :: *) where
   -- | Convert an Opaleye-compatible Haskell representation of @a@ to @a@.
   --
@@ -514,11 +515,17 @@ class Tisch t => UnHsR t (a :: *) where
   -- consider using 'unHsR' instead.
   unHsR' :: HsR t -> Either Ex.SomeException a
 
--- | Like 'unHsR'', except it takes @t@ explicitely for the times when
--- it can't be inferred.
+-- | Like 'unHsR'', except it takes @t@ explicitely for the times when it
+-- can't be inferred.
 unHsR :: UnHsR t a => t -> HsR t -> Either Ex.SomeException a
 unHsR _ = unHsR'
 {-# INLINE unHsR #-}
+
+-- | Like 'unHsR'', except it takes both @t@ and @a@ explicitely for the times
+-- when they can't be inferred.
+unHsR_ :: UnHsR t a => t -> Proxy a -> HsR t -> Either Ex.SomeException a
+unHsR_ _ _ = unHsR'
+{-# INLINE unHsR_ #-}
 
 --------------------------------------------------------------------------------
 

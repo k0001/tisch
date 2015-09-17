@@ -10,6 +10,7 @@ module Opaleye.SOT
    Tisch(..)
  , UnHsR(..)
  , unHsR
+ , unHsR_
  , ToHsI(..)
  , toHsI
  , mkHsI
