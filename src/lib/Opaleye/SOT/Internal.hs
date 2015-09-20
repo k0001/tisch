@@ -66,7 +66,7 @@ type family NotNullable (x :: *) :: Constraint where
 -- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
 -- we drift a bit appart from Opaleye, but hopefully not for a long time.
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
-newtype Kol a = UnsafeKol (O.Column a) 
+newtype Kol a = UnsafeKol (O.Column a)
   -- ^ Build safely using 'kol'.
 
 unKol :: Kol a -> O.Column a
@@ -100,7 +100,7 @@ instance
 -- | Build a 'Kol'.
 --
 -- You need to provide an instance for every Haskell type you plan to
--- convert to its PostgreSQL representation as 'Kol'. 
+-- convert to its PostgreSQL representation as 'Kol'.
 --
 -- A a default implementation of 'kol' is available for 'Wrapped'
 -- instances.
@@ -130,7 +130,7 @@ class ToKol hs pg where
   {-# INLINE kol #-}
 
 instance NotNullable pg => ToKol (O.Column pg) pg where
-  kol = UnsafeKol 
+  kol = UnsafeKol
   {-# INLINE kol#-}
 
 instance ToKol hs pg => ToKol (Tagged t hs) pg
@@ -484,12 +484,27 @@ class ITisch t => Tisch (t :: *) where
   -- PostgreSQL's default schema name).
   type SchemaName t :: GHC.Symbol
   type SchemaName t = "public"
-
   -- | Table name.
   type TableName t :: GHC.Symbol
-
   -- | Columns in this table. See the documentation for 'Col'.
   type Cols t :: [Col GHC.Symbol WD RN * *]
+  -- | Sometimes you know the type @t@ but you need a value of that type,
+  -- for example, for giving it as an argument to `toHsI`. You can use
+  -- @('tisch' :: t)@ where you would otherwise use the uneasy
+  -- @('undefined' :: t)@.
+  --
+  -- Remember that we recommend implementing that @t@ is something like:
+  --
+  -- @
+  -- -- | Tag for the users table (just an example).
+  -- data TUser = TUser
+  -- @
+  --
+  -- Then, you can set @('tisch' = TUser)@.
+  --
+  -- TODO: Figure out how to have a default definition for this without
+  -- needing to rely on 'GHC.Generics'.
+  tisch :: t
 
 --------------------------------------------------------------------------------
 
@@ -710,18 +725,18 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 type TischTable (t :: *) = O.Table (PgW t) (PgR t)
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-tisch' :: forall t. Tisch t => TischTable t
-tisch' = O.TableWithSchema
+table' :: forall t. Tisch t => TischTable t
+table' = O.TableWithSchema
    (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
    (GHC.symbolVal (Proxy :: Proxy (TableName t)))
    (ppaUnTagged $ ppa $ HL.Record
       (HL.hMapL (HCol_Props :: HCol_Props t)
       (hDistributeProxy (Proxy :: Proxy (Cols t)))))
 
--- | Like 'tisch'', but takes @t@ explicitly to help the compiler when it
+-- | Like 'table'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-tisch :: Tisch t => t -> TischTable t
-tisch _ = tisch'
+table :: Tisch t => t -> TischTable t
+table _ = table'
 
 --------------------------------------------------------------------------------
 -- RunXXX functions
@@ -777,7 +792,7 @@ cola = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 -- Unary operations on columns
 
 -- | Constraint on arguments to 'no'.
-type Ino a b = Fk1 O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b 
+type Ino a b = Fk1 O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b
 -- | Polymorphic Opaleye's 'O.not'. See 'eq' for the type of arguments this
 -- function can take.
 --
@@ -790,7 +805,7 @@ no = fk1 (liftKol O.not)
 -- Binary operations on columns
 
 -- | Constraints on arguments to 'eq'
-type Ieq x a b c = Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c 
+type Ieq x a b c = Fk2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c
 -- | Polymorphic Opaleye's @('O..==')@.
 --
 -- @
@@ -944,7 +959,7 @@ ppaUnTagged = P.dimap unTagged Tagged
 -- | A generalization of product profunctor adaptors such as 'PP.p1', 'PP.p4', etc.
 --
 -- The functional dependencies make type inference easier, but also forbid some
--- otherwise acceptable instances. 
+-- otherwise acceptable instances.
 class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
   ppa :: l -> p ra rb
 
@@ -1273,4 +1288,3 @@ instance (Fk2 a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Fk2 a b c
 instance (Fk2 a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where fk2 f (Tagged xa) nb = fk2 f xa nb
 -- | nnn -> ttn
 instance (Fk2 a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Fk2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where fk2 f (Tagged xa) (Tagged xb) = fk2 f xa xb
-

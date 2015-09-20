@@ -33,6 +33,7 @@ data TestW = TestW Bool (Maybe Bool) (Maybe Bool) (Maybe (Maybe Int64))
 
 -- | Internal. See "Opaleye.SOT.Internal.TTest".
 instance Tisch TTest where
+  tisch = TTest
   type SchemaName TTest = "s"
   type TableName TTest = "t"
   type Cols TTest = [ 'Col "c1" 'W 'R O.PGBool Bool
@@ -69,19 +70,19 @@ types = seq x () where
   x = ()
 
 -- | Internal. See "Opaleye.SOT.Internal.TTest".
-instance Comparable TTest "c1" TTest "c3" 
+instance Comparable TTest "c1" TTest "c3"
 
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
-   t1 <- O.queryTable tisch' -< ()
-   t2 <- O.queryTable tisch' -< ()
+   t1 <- O.queryTable table' -< ()
+   t2 <- O.queryTable table' -< ()
    restrict -< eq
       (view (col (C::C "c1")) t1)
       (view (col (C::C "c1")) t2)
    (t3, t4n) <- leftJoin
-      (O.queryTable (tisch TTest))
-      (O.queryTable (tisch TTest))
-      (\(t3, t4) -> eq -- requires instance Comparable TTest "c1" TTest "c3" O.PGBool 
+      (O.queryTable (table TTest))
+      (O.queryTable (table TTest))
+      (\(t3, t4) -> eq -- requires instance Comparable TTest "c1" TTest "c3" O.PGBool
          (view (col (C::C "c1")) t3)
          (view (col (C::C "c3")) t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
@@ -103,7 +104,7 @@ outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
-update1 = runReaderT $ runUpdate tisch' update' fil 
+update1 = runReaderT $ runUpdate table' update' fil
   where fil :: PgR TTest -> Kol O.PGBool
         fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
 

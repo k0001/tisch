@@ -19,8 +19,8 @@ module Opaleye.SOT
 
    -- * Working with 'Tisch'
  , TischTable
- , tisch'
- , tisch
+ , table'
+ , table
  , HsR
  , HsI
  , PgR
