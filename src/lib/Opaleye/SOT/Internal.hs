@@ -59,13 +59,18 @@ type family NotNullable (x :: *) :: Constraint where
   NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
   NotNullable x = ()
 
--- | Like @('O.Column' a)@, but guaranteed to be not-'O.Nullable'.
+-- | Like Opaleye's @('O.Column' a)@, but guaranteed to be not 'O.Nullable'.
+-- If you need to have a 'O.Nullable' column type, use 'Koln' instead.
 --
 -- Build using 'kol', view using 'unKol'.
 --
 -- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
 -- we drift a bit appart from Opaleye, but hopefully not for a long time.
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+--
+-- /Notice that 'Kol' is very different from 'Col': 'Col' is used to describe/
+-- /the properties of a column at compile time. 'Kol' is used at runtime/
+-- /for manipulating with values stored in columns./
 newtype Kol a = UnsafeKol (O.Column a)
   -- ^ Build safely using 'kol'.
 
@@ -185,18 +190,22 @@ instance ToKol Data.Aeson.Value O.PGJsonb where kol = kol . O.pgLazyJSONB . Data
 
 ---
 
--- | Like @('O.Column' @('O.Nullable' a))@, but the @a@ is guaranteed to
+-- | Like @('O.Column' ('O.Nullable' a))@, but the @a@ is guaranteed to
 -- be not-'O.Nullable'.
 --
 -- Build safely using 'koln', view using 'unKoln'.
 --
--- We do not use @('O.Column ('O.Nullable' a))@, but instead we use
+-- We do not use @('O.Column' ('O.Nullable' a))@, but instead we use
 -- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
--- hopefully not for- a long time.
+-- hopefully not for a long time.
 -- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 --
 -- Think of @('Koln' a)@ as @('Maybe' a)@, where
 -- @('Nothing' == 'nul')@ and @('Just' a == 'O.Column' a)@.
+--
+-- /Notice that 'Koln' is very different from 'Col': 'Col' is used to describe/
+-- /the properties of a column at compile time. 'Koln' is used at runtime/
+-- /for manipulating with values stored in columns./
 newtype Koln a = UnsafeKoln (O.Column (O.Nullable a))
   -- ^ Build safely using 'koln'.
 
@@ -322,7 +331,7 @@ data WD = W  -- ^ Write a specific value.
 
 --------------------------------------------------------------------------------
 
--- | Column properties.
+-- | Column description.
 --
 -- This is only used as a promoted datatype expected to have kind
 -- @'Col' 'GHC.Symbol' 'WD' 'RN' * *@.
@@ -340,6 +349,10 @@ data WD = W  -- ^ Write a specific value.
 --   queries. Hint: don't use something like @'Maybe' 'Bool'@ here if you
 --   want to indicate that this is an optional 'Bool' column. Instead, use
 --   'Int' here and 'RN' in the @rn@ field.
+--
+-- /Notice that 'Col' is very different from 'Kol' and 'Koln': 'Kol' and 'Koln'/
+-- /are used at runtime for manipulating values stored in columns, 'Col' is used/
+-- /to describe the properties of a column at compile time./
 data Col name wd rn pgType hsType
    = Col name wd rn pgType hsType
 
