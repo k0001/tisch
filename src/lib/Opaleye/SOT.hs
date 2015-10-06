@@ -83,7 +83,7 @@ module Opaleye.SOT
  , RN(..)
  , WD(..)
 
-   -- * Column type details
+   -- ** Individual columns
  , Col_ByName
  , Col_Name
  , Col_PgRType
@@ -91,6 +91,14 @@ module Opaleye.SOT
  , Col_PgWType
  , Col_HsRType
  , Col_HsIType
+
+   -- ** Set of columns
+ , Rec
+ , Cols_HsR
+ , Cols_HsI
+ , Cols_PgR
+ , Cols_PgRN
+ , Cols_PgW
  ) where
 
 import           Opaleye.SOT.Internal

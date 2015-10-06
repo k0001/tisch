@@ -1,10 +1,12 @@
+-- This module is kept here so that it can be typechecked when
+-- running the test suite.
+
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 {- | @opaleye-sot@ is a different API for the core @opaleye@
 infraestructure with the following goals in mind:
@@ -54,7 +56,7 @@ infraestructure with the following goals in mind:
   with a better example SQL. Also, this example code doesn't belong in
   this module, probably.
 -}
-module Opaleye.SOT.Tutorial
+module Tutorial
   ( TDepartment(..)
   , TBranch(..)
   , TEmployee(..)

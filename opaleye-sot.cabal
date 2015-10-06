@@ -20,9 +20,7 @@ library
   default-language: Haskell2010
   exposed-modules:
       Opaleye.SOT
-      Opaleye.SOT.Tutorial
       Opaleye.SOT.Internal
-      Opaleye.SOT.Internal.Test
   build-depends:
       -- NOTE: The dependencies without specific version ranges are transitional
       aeson
@@ -34,12 +32,29 @@ library
     , lens >=4.12 && <4.13
     , mtl >=2.2 && <2.3
     , opaleye >=0.4 && <0.5
-    , postgresql-simple 
-    , product-profunctors 
-    , profunctors 
+    , postgresql-simple
+    , product-profunctors
+    , profunctors
     , singletons >=1.1 && <1.2
     , text
     , transformers >=0.4 && <0.5
     , time
     , uuid
-  ghc-options: -Wall -O0
+  ghc-options: -Wall -O
+
+test-suite tests
+  hs-source-dirs: tests
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules: Tutorial
+  ghc-options: -Wall -rtsopts -O0
+  build-depends:
+      base
+    , HList
+    , lens
+    , mtl
+    , opaleye
+    , opaleye-sot
+    , postgresql-simple
+    , time

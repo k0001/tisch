@@ -11,7 +11,7 @@
 -- while compiling the library.
 --
 -- You might learn a thing or two reading the source code.
-module Opaleye.SOT.Internal.Test where
+module Main where
 
 import           Control.Arrow
 import           Control.Lens
@@ -21,7 +21,14 @@ import           Data.Int
 import qualified Database.PostgreSQL.Simple as Pg
 import qualified Opaleye as O
 
-import           Opaleye.SOT.Internal
+import           Opaleye.SOT
+
+import           Tutorial () -- Just for typechecking
+
+--------------------------------------------------------------------------------
+
+main :: IO ()
+main = pure () -- nothing to do here, the tests run in the type checker.
 
 --------------------------------------------------------------------------------
 -- TTest
@@ -31,7 +38,6 @@ data TTest = TTest
 data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
 data TestW = TestW Bool (Maybe Bool) (Maybe Bool) (Maybe (Maybe Int64))
 
--- | Internal. See "Opaleye.SOT.Internal.TTest".
 instance Tisch TTest where
   tisch = TTest
   type SchemaName TTest = "s"
@@ -69,7 +75,6 @@ types = seq x () where
        ) => ()
   x = ()
 
--- | Internal. See "Opaleye.SOT.Internal.TTest".
 instance Comparable TTest "c1" TTest "c3"
 
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
@@ -110,8 +115,4 @@ update1 = runReaderT $ runUpdate table' update' fil
 
 outQuery1 :: Pg.Connection
           -> IO [(HsR TTest, HsR TTest, HsR TTest, Maybe (HsR TTest))]
-outQuery1 conn = do
-  O.runQuery conn query1
---   xs :: [(HsR TTest, HsR TTest, HsR TTest, HsRN TTest)]
---      <- O.runQuery conn query1
---   return $ xs <&> \(a,b,c,d) -> (a,b,c, mayHsR d)
+outQuery1 conn = O.runQuery conn query1
