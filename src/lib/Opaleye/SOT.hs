@@ -1,10 +1,14 @@
 -- | For a better experience, it is recommended that you import this module
--- unqualified. It overrides some exports of "Opaleye" module. Import as follows:
+-- unqualified as follows:
 --
 -- @
 -- import           Opaleye.SOT
 -- import qualified Opaleye as O
 -- @
+--
+-- This module overrides some of the names exported by the "Opaleye".
+--
+-- This module doesn't export any infix operator.
 module Opaleye.SOT
  ( -- * Defining a 'Tisch'
    Tisch(..)
@@ -33,7 +37,7 @@ module Opaleye.SOT
  , Kol
  , unKol
  , ToKol(..)
- , liftKol
+ , liftKol1
  , liftKol2
 
    -- * Koln
@@ -46,7 +50,7 @@ module Opaleye.SOT
  , isNull
  , altKoln
  , bindKoln
- , liftKoln
+ , liftKoln1
  , liftKoln2
 
    -- * Executing
@@ -56,13 +60,13 @@ module Opaleye.SOT
  , leftJoin
  , leftJoinExplicit
  , restrict
- , nullFalse
  , nullTrue
- , no, Ino
- , eq, Ieq
- , lt, Ilt
- , ou, Iou
- , et, Iet
+ , nullFalse
+ , no, Op_no
+ , eq, Op_eq
+ , lt, Op_lt
+ , ou, Op_ou
+ , et, Op_et
    -- * Selecting
  , col
  , cola
