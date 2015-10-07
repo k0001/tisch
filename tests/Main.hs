@@ -36,7 +36,7 @@ main = pure () -- nothing to do here, the tests run in the type checker.
 data TTest = TTest
 
 data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
-data TestW = TestW Bool (Maybe Bool) (Maybe Bool) (Maybe (Maybe Int64))
+data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
 
 instance Tisch TTest where
   tisch = TTest

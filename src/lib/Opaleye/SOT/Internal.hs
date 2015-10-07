@@ -1,7 +1,11 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -18,11 +22,16 @@
 -- | This is an internal module. You are not encouraged to use it directly.
 module Opaleye.SOT.Internal where
 
+import           Control.Applicative
 import           Control.Arrow
 import           Control.Monad.Reader (MonadReader, ask)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Lens
 import qualified Control.Exception as Ex
+import           Control.Monad (MonadPlus(..))
+import           Control.Monad.Fix (MonadFix(..))
+import           Data.Data (Data)
+import           Data.Typeable (Typeable)
 import qualified Data.Aeson
 import qualified Data.ByteString
 import qualified Data.ByteString.Lazy
@@ -42,6 +51,7 @@ import           Data.Singletons
 import qualified Data.Promotion.Prelude.List as List (Map)
 import qualified Database.PostgreSQL.Simple as Pg
 import           GHC.Exts (Constraint)
+import           GHC.Generics (Generic)
 import           GHC.Float (float2Double)
 import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
@@ -327,7 +337,60 @@ data RN = R  -- ^ Read plain value.
 
 -- | Whether to write a specific value or possibly @DEFAULT@.
 data WD = W  -- ^ Write a specific value.
-        | WD -- ^ Possibly write @DEFAULT@.
+        | WD -- ^ Possibly write @DEFAULT@. See 'WDef'.
+--- | Whether to write @DEFAULT@ or a specific value when writing to a column.
+
+--------------------------------------------------------------------------------
+
+-- | Whether to write a @DEFAUT@ value or a specific value into a database column.
+--
+-- 'WDef' is isomorphic to 'Maybe'. It exists mainly to avoid accidentally
+-- mixing the two of them together.
+data WDef a
+  = WDef   -- ^ Write @DEFAULT@.
+  | WVal a -- ^ Write the specified value.
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable,
+            Data, Generic, Typeable)
+
+-- | Case analysis for 'WDef'.
+--
+-- Like 'maybe', evaluates to the first argument if 'WDef',
+-- otherwise applies the given function to the @a@ in 'WVal'.
+wdef :: b -> (a -> b) -> WDef a -> b
+wdef b f = \w -> case w of { WDef -> b; WVal a -> f a }
+{-# INLINE wdef #-}
+
+instance Applicative WDef where
+  pure = WVal
+  {-# INLINE pure #-}
+  (<*>) (WVal f) (WVal a) = WVal (f a)
+  (<*>) _        _        = WDef
+  {-# INLINE (<*>) #-}
+
+instance Alternative WDef where
+  empty = WDef
+  {-# INLINE empty #-}
+  (<|>) WDef wb = wb
+  (<|>) wa   _  = wa
+  {-# INLINE (<|>) #-}
+
+instance Monad WDef where
+  return = pure
+  {-# INLINE return #-}
+  (>>=) (WVal a) k = k a
+  (>>=) _        _ = WDef
+  {-# INLINE (>>=) #-}
+
+instance MonadPlus WDef where
+  mzero = empty
+  {-# INLINE mzero #-}
+  mplus = (<|>)
+  {-# INLINE mplus #-}
+
+instance MonadFix WDef where
+  mfix f = let a = f (unWVal a) in a
+    where unWVal (WVal x) = x
+          unWVal WDef     = error "mfix WDef: WDef"
 
 --------------------------------------------------------------------------------
 
@@ -372,7 +435,7 @@ type family Col_PgRNType (col :: Col GHC.Symbol WD RN * *) :: * where
 
 type family Col_PgWType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgWType ('Col n 'W  r p h) = Col_PgRType ('Col n 'W r p h)
-  Col_PgWType ('Col n 'WD r p h) = Maybe (Col_PgRType ('Col n 'WD r p h))
+  Col_PgWType ('Col n 'WD r p h) = WDef (Col_PgRType ('Col n 'WD r p h))
 
 type family Col_HsRType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_HsRType ('Col n w 'R  p h) = h
@@ -380,7 +443,7 @@ type family Col_HsRType (col :: Col GHC.Symbol WD RN * *) :: * where
 
 type family Col_HsIType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_HsIType ('Col n 'W  r p h) = Col_HsRType ('Col n 'W r p h)
-  Col_HsIType ('Col n 'WD r p h) = Maybe (Col_HsRType ('Col n 'WD r p h))
+  Col_HsIType ('Col n 'WD r p h) = WDef (Col_HsRType ('Col n 'WD r p h))
 
 ---
 
@@ -426,7 +489,7 @@ data Col_PgRNSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 
 -- | Type of the 'HL.Record' columns when inserting or updating a row. Also,
--- payload for @('PgI' t)@.
+-- payload for @('PgW' t)@.
 type Cols_PgW (t :: *) = List.Map (Col_PgWSym1 t) (Cols t)
 type family Col_PgW (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgW t ('Col n w r p h) = Tagged (TC t n) (Col_PgWType ('Col n w r p h))
@@ -661,11 +724,11 @@ instance HL.ApplyAB HPgWfromHsIField x x where
   applyAB _ = id
 instance ToKol hs pg => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
   applyAB _ = kol
-instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Maybe (Kol pg)) where
+instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (WDef hs) (WDef (Kol pg)) where
   applyAB _ = fmap kol
 instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
   applyAB _ = maybe nul koln
-instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe (Maybe hs)) (Maybe (Koln pg)) where
+instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (WDef (Maybe hs)) (WDef (Koln pg)) where
   applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
@@ -698,10 +761,10 @@ toPgW _ = toPgW'
 data HPgWfromPgRField = HPgWfromPgRField
 instance HL.ApplyAB HPgWfromPgRField x x where
   applyAB _ = id
-instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Kol pg) (Maybe (Kol pg)) where
-  applyAB _ = Just
-instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (Maybe (Koln pg)) where
-  applyAB _ = Just
+instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
+  applyAB _ = WVal
+instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
+  applyAB _ = WVal
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
 -- to a @('PgW' t)@ that can be used in a 'runUpdate'-like operation.
@@ -725,12 +788,12 @@ colProps_wrn :: NotNullable a => String -> O.TableProperties (Koln a) (Koln a)
 colProps_wrn = P.dimap (unsafeUnNullableColumn . unKoln) koln . O.required
 
 -- | Column properties: Write (optional default), Read (not nullable).
-colProps_wdr :: NotNullable a => String -> O.TableProperties (Maybe (Kol a)) (Kol a)
-colProps_wdr = P.dimap (fmap unKol) kol . O.optional
+colProps_wdr :: NotNullable a => String -> O.TableProperties (WDef (Kol a)) (Kol a)
+colProps_wdr = P.dimap (wdef Nothing Just . fmap unKol) kol . O.optional
 
 -- | Column properties: Write (optional default), Read (nullable).
-colProps_wdrn :: NotNullable a => String -> O.TableProperties (Maybe (Koln a)) (Koln a)
-colProps_wdrn = P.dimap (fmap unKoln) koln . O.optional
+colProps_wdrn :: NotNullable a => String -> O.TableProperties (WDef (Koln a)) (Koln a)
+colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) koln . O.optional
 
 --------------------------------------------------------------------------------
 

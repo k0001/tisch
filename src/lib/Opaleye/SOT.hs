@@ -78,6 +78,10 @@ module Opaleye.SOT
  , descnf
  , descnl
 
+   -- * WDef
+ , WDef(WDef, WVal)
+ , wdef
+
    -- * Types
  , Comparable
  , Col(..)
