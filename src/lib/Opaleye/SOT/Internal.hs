@@ -254,7 +254,7 @@ nul = UnsafeKoln O.null
 -- | Like 'maybe'. Case analysis for 'Koln'.
 --
 -- If @('Koln' a)@ is @NULL@, then evaluate to the first argument,
--- otherwise it applies the given function to @('Kol' a)@.
+-- otherwise it applies the given function to the underlying @('Kol' a)@.
 matchKoln :: Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
 matchKoln kb0 f kna = UnsafeKol $
   O.matchNullable (unKol kb0) (unKol . f . UnsafeKol) (unKoln kna)

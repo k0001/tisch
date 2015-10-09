@@ -46,7 +46,6 @@ module Opaleye.SOT
  , unKoln
  , koln
  , matchKoln
- , nul
  , isNull
  , mapKoln
  , bindKoln
