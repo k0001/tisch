@@ -62,12 +62,34 @@ import qualified Opaleye.Internal.Join as OI
 
 -------------------------------------------------------------------------------
 
-
 -- | Horrible hack to workaround the current represenation for nullable columns.
 -- See 'Koln'.
 type family NotNullable (x :: *) :: Constraint where
   NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
   NotNullable x = ()
+
+-- | Only instances of 'PGType' can be arguments to 'Kol' or 'Koln'
+class NotNullable x => PGType x
+instance PGType O.PGBool
+instance PGType O.PGDate
+instance PGType O.PGFloat4
+instance PGType O.PGFloat8
+instance PGType O.PGInt8
+instance PGType O.PGInt4
+instance PGType O.PGInt2
+instance PGType O.PGNumeric
+instance PGType O.PGText
+instance PGType O.PGTime
+instance PGType O.PGTimestamp
+instance PGType O.PGTimestamptz
+instance PGType O.PGUuid
+instance PGType O.PGCitext
+instance PGType O.PGBytea
+instance PGType O.PGJson
+instance PGType O.PGJsonb
+-- TODO: instance PGType (PGArray a)
+
+-------------------------------------------------------------------------------
 
 -- | Like Opaleye's @('O.Column' a)@, but guaranteed to be not 'O.Nullable'.
 -- If you need to have a 'O.Nullable' column type, use 'Koln' instead.
@@ -92,7 +114,7 @@ unKol (UnsafeKol ca) = ca
 --
 -- /Hint/: You can further compose the result of this function with 'op1'
 -- to widen the range of accepted argument types.
-liftKol1 :: NotNullable b => (O.Column a -> O.Column b) -> (Kol a -> Kol b)
+liftKol1 :: PGType b => (O.Column a -> O.Column b) -> (Kol a -> Kol b)
 liftKol1 f = \ka -> kol (f (unKol ka))
 
 -- | Converts a binary function on Opaleye's 'O.Column's to an binary
@@ -101,7 +123,7 @@ liftKol1 f = \ka -> kol (f (unKol ka))
 -- /Hint/: You can further compose the result of this function with 'op2'
 -- to widen the range of accepted argument types.
 liftKol2
-  :: NotNullable c
+  :: PGType c
   => (O.Column a -> O.Column b -> O.Column c)
   -> (Kol a -> Kol b -> Kol c)
 liftKol2 f = \ka kb -> kol (f (unKol ka) (unKol kb))
@@ -111,12 +133,12 @@ instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b)
   def = P.lmap unKol PP.def
 
 instance forall p a b.
-    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
+    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), PGType b
     ) => PP.Default p (O.Column a) (Kol b) where
   def = P.rmap kol (PP.def :: p (O.Column a) (O.Column b))
 
 instance forall p a b.
-    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), NotNullable b
+    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), PGType b
     ) => PP.Default p (Kol a) (Kol b) where
   def = P.dimap unKol kol (PP.def :: p (O.Column a) (O.Column b))
 
@@ -157,7 +179,7 @@ class ToKol hs pg where
   -- Some example simplified types:
   --
   -- @
-  -- 'kol' :: 'NotNullable' a => 'O.Column' a -> 'Kol' a
+  -- 'kol' :: 'PGType' a => 'O.Column' a -> 'Kol' a
   -- 'kol' :: 'Bool' -> 'Kol' 'O.PGBool'
   -- 'kol' :: 'Int32' -> 'Kol' 'O.PGInt4'
   -- @
@@ -167,7 +189,7 @@ class ToKol hs pg where
   {-# INLINE kol #-}
 
 -- | Compatibility with Opaleye's 'O.Column'.
-instance NotNullable pg => ToKol (O.Column pg) pg where
+instance PGType pg => ToKol (O.Column pg) pg where
   kol = UnsafeKol
   {-# INLINE kol#-}
 
@@ -227,28 +249,28 @@ class ToKoln hs pg where
   --
   -- @
   -- 'koln' :: 'Kol' a -> 'Koln' a
-  -- 'koln' :: 'NotNullable' a => 'O.Column' ('O.Nullable' a) -> 'Koln' a
+  -- 'koln' :: 'PGType' a => 'O.Column' ('O.Nullable' a) -> 'Koln' a
   -- 'koln' :: 'ToKol' hs pg => hs -> 'Koln' pg
   -- 'koln' :: 'ToKol' hs pg => 'Maybe' hs -> 'Koln' pg -- @NULL@ if 'Nothing'
   -- @
   koln :: hs -> Koln pg
 -- | Compatibility with Opaleye's 'O.Column'.
-instance NotNullable pg => ToKoln (O.Column (O.Nullable pg)) pg where
+instance PGType pg => ToKoln (O.Column (O.Nullable pg)) pg where
   koln = UnsafeKoln
   {-# INLINE koln #-}
 instance ToKoln (Kol pg) pg where
   koln = UnsafeKoln . O.toNullable . unKol
   {-# INLINE koln #-}
 -- | Converted to @NULL@ if 'Nothing'.
-instance forall hs pg. (ToKol hs pg, NotNullable pg) => ToKoln (Maybe hs) pg where
+instance forall hs pg. (ToKol hs pg, PGType pg) => ToKoln (Maybe hs) pg where
   koln = maybe nul (koln . (kol :: hs -> Kol pg))
   {-# INLINE koln #-}
-instance {-# OVERLAPPABLE #-} forall hs pg. (ToKol hs pg, NotNullable pg) => ToKoln hs pg where
+instance {-# OVERLAPPABLE #-} forall hs pg. (ToKol hs pg, PGType pg) => ToKoln hs pg where
   koln = koln . (kol :: hs -> Kol pg)
   {-# INLINE koln #-}
 
 -- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
-nul :: NotNullable a => Koln a
+nul :: PGType a => Koln a
 nul = UnsafeKoln O.null
 
 -- | Like 'maybe'. Case analysis for 'Koln'.
@@ -288,7 +310,7 @@ altKoln kna0 kna1 = UnsafeKoln $
 -- /Hint/: You can further compose the result of this function with 'op1'
 -- to widen the range of accepted argument types.
 liftKoln1
-  :: NotNullable b
+  :: PGType b
   => (O.Column (O.Nullable a) -> O.Column (O.Nullable b))
   -> (Koln a -> Koln b) -- ^
 liftKoln1 f = \kna -> koln (f (unKoln kna))
@@ -299,7 +321,7 @@ liftKoln1 f = \kna -> koln (f (unKoln kna))
 -- /Hint/: You can further compose the result of this function with 'op2'
 -- to widen the range of accepted argument types.
 liftKoln2
-  :: NotNullable c
+  :: PGType c
   => (O.Column (O.Nullable a)
       -> O.Column (O.Nullable b)
       -> O.Column (O.Nullable c))
@@ -308,7 +330,7 @@ liftKoln2 f = \kna knb -> koln (f (unKoln kna) (unKoln knb))
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-} forall p x a.
-    ( P.Profunctor p, NotNullable a
+    ( P.Profunctor p, PGType a
     , PP.Default p x (O.Column (O.Nullable a))
     ) => PP.Default p x (Koln a) where
   def = P.rmap koln (PP.def :: p x (O.Column (O.Nullable a)))
@@ -323,7 +345,7 @@ instance {-# OVERLAPPABLE #-}
   {-# INLINE def #-}
 
 instance
-    ( P.Profunctor p, NotNullable b
+    ( P.Profunctor p, PGType b
     , PP.Default p (O.Column (O.Nullable a)) (O.Column (O.Nullable b))
     ) => PP.Default p (Koln a) (Koln b) where
   def = P.dimap unKoln koln (PP.def :: p (O.Column (O.Nullable a)) (O.Column (O.Nullable b)))
@@ -331,7 +353,7 @@ instance
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-}
-    ( O.QueryRunnerColumnDefault pg hs, NotNullable pg
+    ( O.QueryRunnerColumnDefault pg hs, PGType pg
     ) => O.QueryRunnerColumnDefault pg (Maybe hs) where
   queryRunnerColumnDefault = OI.QueryRunnerColumn u (fmap (fmap (fmap Just)) fp)
     where OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
@@ -731,11 +753,11 @@ instance HL.ApplyAB HPgWfromHsIField x x where
   applyAB _ = id
 instance ToKol hs pg => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
   applyAB _ = kol
-instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (WDef hs) (WDef (Kol pg)) where
+instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (WDef hs) (WDef (Kol pg)) where
   applyAB _ = fmap kol
-instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
+instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
   applyAB _ = maybe nul koln
-instance (ToKol hs pg, NotNullable pg) => HL.ApplyAB HPgWfromHsIField (WDef (Maybe hs)) (WDef (Koln pg)) where
+instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (WDef (Maybe hs)) (WDef (Koln pg)) where
   applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
@@ -768,9 +790,9 @@ toPgW _ = toPgW'
 data HPgWfromPgRField = HPgWfromPgRField
 instance HL.ApplyAB HPgWfromPgRField x x where
   applyAB _ = id
-instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
+instance PGType pg => HL.ApplyAB HPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
   applyAB _ = WVal
-instance NotNullable pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
+instance PGType pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
   applyAB _ = WVal
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
@@ -787,19 +809,19 @@ update _ = update'
 --------------------------------------------------------------------------------
 
 -- | Column properties: Write (no default), Read (not nullable).
-colProps_wr :: NotNullable a => String -> O.TableProperties (Kol a) (Kol a)
+colProps_wr :: PGType a => String -> O.TableProperties (Kol a) (Kol a)
 colProps_wr = P.dimap unKol kol . O.required
 
 -- | Column properties: Write (no default), Read (nullable).
-colProps_wrn :: NotNullable a => String -> O.TableProperties (Koln a) (Koln a)
+colProps_wrn :: PGType a => String -> O.TableProperties (Koln a) (Koln a)
 colProps_wrn = P.dimap (unsafeUnNullableColumn . unKoln) koln . O.required
 
 -- | Column properties: Write (optional default), Read (not nullable).
-colProps_wdr :: NotNullable a => String -> O.TableProperties (WDef (Kol a)) (Kol a)
+colProps_wdr :: PGType a => String -> O.TableProperties (WDef (Kol a)) (Kol a)
 colProps_wdr = P.dimap (wdef Nothing Just . fmap unKol) kol . O.optional
 
 -- | Column properties: Write (optional default), Read (nullable).
-colProps_wdrn :: NotNullable a => String -> O.TableProperties (WDef (Koln a)) (Koln a)
+colProps_wdrn :: PGType a => String -> O.TableProperties (WDef (Koln a)) (Koln a)
 colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) koln . O.optional
 
 --------------------------------------------------------------------------------
@@ -819,19 +841,19 @@ class ICol_Props (col :: Col GHC.Symbol WD RN * *) where
   colProps :: Tisch t => Proxy t -> Proxy col -> Col_Props t col
 
 -- | 'colProps' is equivalent 'colProps_wr'.
-instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'W 'R p h) where
+instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'W 'R p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wr (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wrn'.
-instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'W 'RN p h) where
+instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'W 'RN p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wrn (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdr'.
-instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'WD 'R p h) where
+instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD 'R p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wdr (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdrn'.
-instance forall n p h. (GHC.KnownSymbol n, NotNullable p) => ICol_Props ('Col n 'WD 'RN p h) where
+instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD 'RN p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wdrn (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 
