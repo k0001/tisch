@@ -84,6 +84,7 @@ module Opaleye.SOT
 
    -- * Types
  , Comparable
+ , PGType
  , Col(..)
  , C(..)
  , T(..)
