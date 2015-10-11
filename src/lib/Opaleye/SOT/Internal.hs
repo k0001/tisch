@@ -69,7 +69,7 @@ type family NotNullable (x :: *) :: Constraint where
   NotNullable x = ()
 
 -- | Only instances of 'PGType' can be arguments to 'Kol' or 'Koln'
-class NotNullable x => PGType x
+class NotNullable x => PGType (x :: *)
 instance PGType O.PGBool
 instance PGType O.PGDate
 instance PGType O.PGFloat4
@@ -455,6 +455,11 @@ type family Col_Name (col :: Col GHC.Symbol WD RN * *) :: GHC.Symbol where
 data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) GHC.Symbol)
 type instance Apply Col_NameSym0 col = Col_Name col
 
+type family Col_PgType (col :: Col GHC.Symbol WD RN * *) :: * where
+  Col_PgType ('Col n w r p h) = p
+data Col_PgTypeSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+type instance Apply Col_PgTypeSym0 col = Col_PgType col
+
 type family Col_PgRType (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgRType ('Col n w 'R  p h) = Kol p
   Col_PgRType ('Col n w 'RN p h) = Koln p
@@ -586,6 +591,7 @@ type PgW (t :: *) = Rec t (Cols_PgW t)
 type ITisch t
   = ( GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
+    , All PGType (List.Map Col_PgTypeSym0 (Cols t))
     , HDistributeProxy (Cols t)
     , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
     , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
