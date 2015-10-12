@@ -59,6 +59,7 @@ import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
 import qualified Opaleye.Internal.PGTypes as OI
 import qualified Opaleye.Internal.RunQuery as OI
 import qualified Opaleye.Internal.Join as OI
+import qualified Opaleye.Internal.TableMaker as OI
 
 -------------------------------------------------------------------------------
 
@@ -482,12 +483,12 @@ type family Col_HsIType (col :: Col GHC.Symbol WD RN * *) :: * where
 ---
 
 -- | Lookup a column in @'Tisch' t@ by its name.
-type Col_ByName (t :: *) (c :: GHC.Symbol) = Col_ByName' c (Cols t)
+type Col_ByName t (c :: GHC.Symbol) = Col_ByName' c (Cols t)
 type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Col GHC.Symbol WD RN * * where
   Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
   Col_ByName' n ('Col n' w r p h ': xs) = Col_ByName' n xs
 
-type HasColName (t :: *) (c :: GHC.Symbol) =  HasColName' c (Cols t)
+type HasColName t (c :: GHC.Symbol) =  HasColName' c (Cols t)
 type family HasColName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Constraint where
   HasColName' n ('Col n  w r p h ': xs) = ()
   HasColName' n ('Col n' w r p h ': xs) = HasColName' n xs
@@ -495,50 +496,50 @@ type family HasColName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]
 ---
 
 -- | Payload for @('HsR' t)@
-type Cols_HsR (t :: *) = List.Map (Col_HsRFieldSym1 t) (Cols t)
-type Col_HsRField (t :: *) (col :: Col GHC.Symbol WD RN * *)
+type Cols_HsR t = List.Map (Col_HsRFieldSym1 t) (Cols t)
+type Col_HsRField t (col :: Col GHC.Symbol WD RN * *)
   = Tagged (TC t (Col_Name col)) (Col_HsRType col)
-data Col_HsRFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_HsRFieldSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
 
 -- | Payload for @('HsI' t)@
-type Cols_HsI (t :: *) = List.Map (Col_HsIFieldSym1 t) (Cols t)
-type Col_HsIField (t :: *) (col :: Col GHC.Symbol WD RN * *)
+type Cols_HsI t = List.Map (Col_HsIFieldSym1 t) (Cols t)
+type Col_HsIField t (col :: Col GHC.Symbol WD RN * *)
   = Tagged (TC t (Col_Name col)) (Col_HsIType col)
-data Col_HsIFieldSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_HsIFieldSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsIFieldSym1 t) col = Col_HsIField t col
 
 -- | Payload for @('PgR' t)@
-type Cols_PgR (t :: *) = List.Map (Col_PgRSym1 t) (Cols t)
-type family Col_PgR (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+type Cols_PgR t = List.Map (Col_PgRSym1 t) (Cols t)
+type family Col_PgR t (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgR t ('Col n w r p h) = Tagged (TC t n) (Col_PgRType ('Col n w r p h))
-data Col_PgRSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_PgRSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
 
 -- | Payload for @('PgRN' t)@
-type Cols_PgRN (t :: *) = List.Map (Col_PgRNSym1 t) (Cols t)
-type family Col_PgRN (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+type Cols_PgRN t = List.Map (Col_PgRNSym1 t) (Cols t)
+type family Col_PgRN t (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgRN t ('Col n w r p h) = Tagged (TC t n) (Col_PgRNType ('Col n w r p h))
-data Col_PgRNSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_PgRNSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 
 -- | Type of the 'HL.Record' columns when inserting or updating a row. Also,
 -- payload for @('PgW' t)@.
-type Cols_PgW (t :: *) = List.Map (Col_PgWSym1 t) (Cols t)
-type family Col_PgW (t :: *) (col :: Col GHC.Symbol WD RN * *) :: * where
+type Cols_PgW t = List.Map (Col_PgWSym1 t) (Cols t)
+type family Col_PgW t (col :: Col GHC.Symbol WD RN * *) :: * where
   Col_PgW t ('Col n w r p h) = Tagged (TC t n) (Col_PgWType ('Col n w r p h))
-data Col_PgWSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_PgWSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
 --------------------------------------------------------------------------------
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- table in a specific schema.
-data Tisch t => T (t :: *) = T
+data Tisch t => T (t :: k) = T
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in a specific table in a specific schema.
-data Tisch t => TC (t :: *) (c :: GHC.Symbol) = TC
+data Tisch t => TC (t :: k) (c :: GHC.Symbol) = TC
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
@@ -547,7 +548,7 @@ data C (c :: GHC.Symbol) = C
 --------------------------------------------------------------------------------
 
 -- | All the representation of @t@ used within @opaleye-sot@ are @('Rec' t)@.
-type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
+type Rec t xs = Tagged (T t) (HL.Record xs)
 
 -- | Expected output type for 'O.runQuery' on a @('PgR' t)@.
 --
@@ -555,7 +556,7 @@ type Rec (t :: *) xs = Tagged (T t) (HL.Record xs)
 -- of a 'O.leftJoin', you will need to use @('Maybe' ('PgR' t))@.
 --
 -- Mnemonic: Haskell Read.
-type HsR (t :: *) = Rec t (Cols_HsR t)
+type HsR t = Rec t (Cols_HsR t)
 
 -- | Output type of 'toHsI', used when inserting a new row to the table.
 --
@@ -563,24 +564,24 @@ type HsR (t :: *) = Rec t (Cols_HsR t)
 -- your own Haskell representation for a to-be-inserted @t@ and @('PgW' t)@.
 --
 -- Mnemonic: Haskell Insert.
-type HsI (t :: *) = Rec t (Cols_HsI t)
+type HsI t = Rec t (Cols_HsI t)
 
 -- | Output type of @'O.queryTable' ('tisch' t)@.
 --
 -- Mnemonic: PostGresql Read.
-type PgR (t :: *) = Rec t (Cols_PgR t)
+type PgR t = Rec t (Cols_PgR t)
 
 -- | Like @('PgRN' t)@ but every field is 'Koln', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
-type PgRN (t :: *) = Rec t (Cols_PgRN t)
+type PgRN t = Rec t (Cols_PgRN t)
 
 -- | Representation of @('ToHsI' t)@ as 'Kols'. To be used when
 -- writing to the database.
 --
 -- Mnemonic: PostGresql Write.
-type PgW (t :: *) = Rec t (Cols_PgW t)
+type PgW t = Rec t (Cols_PgW t)
 
 --------------------------------------------------------------------------------
 
@@ -612,6 +613,7 @@ type ITisch t
     , HL.SameLength (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
     , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
+    , PP.Default OI.ColumnMaker (PgR t) (PgR t)
     )
 
 -- | Tisch means table in german.
@@ -621,18 +623,12 @@ type ITisch t
 -- used when writing Opaleye queries.
 --
 -- The @t@ type is only used as a tag for the purposes of uniquely identifying
--- this 'Tisch'. We recommend that for each 'Tisch' you define a tag with a
--- single constructor like the following:
---
--- @
--- -- | Tag for the users table (just an example).
--- data TUser = TUser
--- @
---
--- Why? Because that way the 'TUser' type can be used as the 'Tisch' tag,
--- and the @TUser@ term constructor can be used as a type proxy for tools such
--- as 'tisch' or 'unHsR'.
-class ITisch t => Tisch (t :: *) where
+-- this 'Tisch'.
+class ITisch t => Tisch (t :: k) where
+  -- | Some kind of unique identifier used for telling appart the database where
+  -- this table exists from other databases, so as to avoid accidentally mixing
+  -- tables from different databases in queries.
+  type Database t :: k
   -- | PostgreSQL schema name where to find the table (defaults to @"public"@,
   -- PostgreSQL's default schema name).
   type SchemaName t :: GHC.Symbol
@@ -641,23 +637,6 @@ class ITisch t => Tisch (t :: *) where
   type TableName t :: GHC.Symbol
   -- | Columns in this table. See the documentation for 'Col'.
   type Cols t :: [Col GHC.Symbol WD RN * *]
-  -- | Sometimes you know the type @t@ but you need a value of that type,
-  -- for example, for giving it as an argument to `toHsI`. You can use
-  -- @('tisch' :: t)@ where you would otherwise use the uneasy
-  -- @('undefined' :: t)@.
-  --
-  -- Remember that we recommend implementing that @t@ is something like:
-  --
-  -- @
-  -- -- | Tag for the users table (just an example).
-  -- data TUser = TUser
-  -- @
-  --
-  -- Then, you can set @('tisch' = TUser)@.
-  --
-  -- TODO: Figure out how to have a default definition for this without
-  -- needing to rely on 'GHC.Generics'.
-  tisch :: t
 
 --------------------------------------------------------------------------------
 
@@ -685,13 +664,13 @@ class Tisch t => UnHsR t (a :: *) where
 
 -- | Like 'unHsR'', except it takes @t@ explicitely for the times when it
 -- can't be inferred.
-unHsR :: UnHsR t a => t -> HsR t -> Either Ex.SomeException a
+unHsR :: UnHsR t a => T t -> HsR t -> Either Ex.SomeException a
 unHsR _ = unHsR'
 {-# INLINE unHsR #-}
 
 -- | Like 'unHsR'', except it takes both @t@ and @a@ explicitely for the times
 -- when they can't be inferred.
-unHsR_ :: UnHsR t a => t -> Proxy a -> HsR t -> Either Ex.SomeException a
+unHsR_ :: UnHsR t a => T t -> Proxy a -> HsR t -> Either Ex.SomeException a
 unHsR_ _ _ = unHsR'
 {-# INLINE unHsR_ #-}
 
@@ -725,7 +704,7 @@ class Tisch t => ToHsI t (a :: *) where
 
 -- | Like 'toHsI'', except it takes @t@ explicitely for the times when
 -- it can't be inferred.
-toHsI :: ToHsI t a => t -> a -> HsI t
+toHsI :: ToHsI t a => T t -> a -> HsI t
 toHsI _ = toHsI'
 {-# INLINE toHsI #-}
 
@@ -772,7 +751,7 @@ toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromHsIField . HL.recor
 {-# INLINE toPgW_fromHsI' #-}
 
 -- | Like 'toPgW_fromHsI'', but takes an explicit @t@.
-toPgW_fromHsI :: Tisch t => t -> HsI t -> PgW t
+toPgW_fromHsI :: Tisch t => T t -> HsI t -> PgW t
 toPgW_fromHsI _ = toPgW_fromHsI'
 {-# INLINE toPgW_fromHsI #-}
 
@@ -785,7 +764,7 @@ toPgW' = toPgW_fromHsI' . toHsI'
 {-# INLINE toPgW' #-}
 
 -- | Like 'toPgW'', but takes an explicit @t@.
-toPgW :: ToHsI t a => t -> a -> PgW t
+toPgW :: ToHsI t a => T t -> a -> PgW t
 toPgW _ = toPgW'
 {-# INLINE toPgW #-}
 
@@ -808,7 +787,7 @@ update' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromPgRField . HL.recordValues
 {-# INLINE update' #-}
 
 -- | Like 'update'', but takes an explicit @t@ for when it can't be inferred.
-update :: Tisch t => t -> PgR t -> PgW t
+update :: Tisch t => T t -> PgR t -> PgW t
 update _ = update'
 {-# INLINE update #-}
 
@@ -833,12 +812,12 @@ colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) koln . O.optional
 --------------------------------------------------------------------------------
 
 -- | 'O.TableProperties' for all the columns in 'Tisch' @t@.
-type Cols_Props (t :: *) = List.Map (Col_PropsSym1 t) (Cols t)
+type Cols_Props t = List.Map (Col_PropsSym1 t) (Cols t)
 
 -- | 'O.TableProperties' for a single column in 'Tisch' @t@.
-type Col_Props (t :: *) (col :: Col GHC.Symbol WD RN * *)
+type Col_Props t (col :: Col GHC.Symbol WD RN * *)
   = O.TableProperties (Col_PgW t col) (Col_PgR t col)
-data Col_PropsSym1 (t :: *) (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_PropsSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PropsSym1 t) col = Col_Props t col
 data Col_PropsSym0 (col :: TyFun t (TyFun (Col GHC.Symbol WD RN * *) * -> *))
 type instance Apply Col_PropsSym0 t = Col_PropsSym1 t
@@ -864,7 +843,7 @@ instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD '
   {-# INLINE colProps #-}
 
 -- | Use with 'HL.ApplyAB' to apply 'colProps' to each element of an 'HList'.
-data HCol_Props (t :: *) = HCol_Props
+data HCol_Props t = HCol_Props
 
 instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
   . ( Tisch t
@@ -881,7 +860,7 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 --------------------------------------------------------------------------------
 
 -- | Opaleye 'O.Table' for a 'Tisch'.
-type TischTable (t :: *) = O.Table (PgW t) (PgR t)
+type TischTable t = O.Table (PgW t) (PgR t)
 
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
 table' :: forall t. Tisch t => TischTable t
@@ -894,8 +873,17 @@ table' = O.TableWithSchema
 
 -- | Like 'table'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-table :: Tisch t => t -> TischTable t
+table :: Tisch t => T t -> TischTable t
 table _ = table'
+
+-- | Like Opaleye's 'O.queryTable', but for a 'Tisch'.
+queryTable' :: Tisch t => O.Query (PgR t)
+queryTable' = O.queryTable table'
+
+-- | Like 'queryTable'', but takes @t@ explicitly to help the compiler when it
+-- can't infer @t@.
+queryTable :: Tisch t => T t -> O.Query (PgR t)
+queryTable _ = queryTable'
 
 --------------------------------------------------------------------------------
 -- RunXXX functions
@@ -913,6 +901,7 @@ runUpdate t upd fil = ask >>= \conn -> liftIO $ do
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
 class ( Tisch t1, Tisch t2, HasColName t1 c1, HasColName t2 c2
+      , Database t1 ~ Database t2
       ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) where
   _ComparableL :: Iso (Tagged (TC t1 c1) a) (Tagged (TC t2 c2) a) a a
   _ComparableL = _Wrapped

@@ -25,6 +25,8 @@ module Opaleye.SOT
  , TischTable
  , table'
  , table
+ , queryTable'
+ , queryTable
  , HsR
  , HsI
  , PgR

@@ -33,13 +33,11 @@ main = pure () -- nothing to do here, the tests run in the type checker.
 --------------------------------------------------------------------------------
 -- TTest
 
-data TTest = TTest
+data DbTest
 
-data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
-data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
-
+data TTest
 instance Tisch TTest where
-  tisch = TTest
+  type Database TTest = DbTest
   type SchemaName TTest = "s"
   type TableName TTest = "t"
   type Cols TTest = [ 'Col "c1" 'W 'R O.PGBool Bool
@@ -47,6 +45,7 @@ instance Tisch TTest where
                     , 'Col "c3" 'WD 'R O.PGBool Bool
                     , 'Col "c4" 'WD 'RN O.PGInt8 Int64 ]
 
+data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
 instance UnHsR TTest TestR where
   unHsR' = \r -> return $ TestR
      (r ^. cola (C::C "c1"))
@@ -54,6 +53,7 @@ instance UnHsR TTest TestR where
      (r ^. cola (C::C "c3"))
      (r ^. cola (C::C "c4"))
 
+data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
 instance ToHsI TTest TestW where
   toHsI' (TestW c1 c2 c3 c4) = mkHsI $ \set_ -> HL.hBuild
      (set_ (C::C "c1") c1)
@@ -79,14 +79,14 @@ instance Comparable TTest "c1" TTest "c3"
 
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
-   t1 <- O.queryTable table' -< ()
-   t2 <- O.queryTable table' -< ()
+   t1 <- queryTable' -< ()
+   t2 <- queryTable' -< ()
    restrict -< eq
       (view (col (C::C "c1")) t1)
       (view (col (C::C "c1")) t2)
    (t3, t4n) <- leftJoin
-      (O.queryTable (table TTest))
-      (O.queryTable (table TTest))
+      (queryTable (T::T TTest))
+      (queryTable (T::T TTest))
       (\(t3, t4) -> eq -- requires instance Comparable TTest "c1" TTest "c3" O.PGBool
          (view (col (C::C "c1")) t3)
          (view (col (C::C "c3")) t4)) -< ()
