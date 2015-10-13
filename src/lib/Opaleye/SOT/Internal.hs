@@ -628,7 +628,10 @@ class ITisch t => Tisch (t :: k) where
   -- | Some kind of unique identifier used for telling appart the database where
   -- this table exists from other databases, so as to avoid accidentally mixing
   -- tables from different databases in queries.
-  type Database t :: k
+  --
+  -- /Implementation detail/: By restricting @'Database' t@ to @*@ we simplify
+  -- the implementation of 'Comparable'.
+  type Database t :: *
   -- | PostgreSQL schema name where to find the table (defaults to @"public"@,
   -- PostgreSQL's default schema name).
   type SchemaName t :: GHC.Symbol
@@ -902,7 +905,7 @@ runUpdate t upd fil = ask >>= \conn -> liftIO $ do
 -- able to compare (e.g., using 'eq').
 class ( Tisch t1, Tisch t2, HasColName t1 c1, HasColName t2 c2
       , Database t1 ~ Database t2
-      ) => Comparable (t1 :: *) (c1 :: GHC.Symbol) (t2 :: *) (c2 :: GHC.Symbol) where
+      ) => Comparable t1 c1 t2 c2 where
   _ComparableL :: Iso (Tagged (TC t1 c1) a) (Tagged (TC t2 c2) a) a a
   _ComparableL = _Wrapped
   _ComparableR :: Iso (Tagged (TC t2 c2) a) (Tagged (TC t1 c1) a) a a
