@@ -624,13 +624,13 @@ type ITisch t
 --
 -- The @t@ type is only used as a tag for the purposes of uniquely identifying
 -- this 'Tisch'.
+
+-- Implementation detail: By restricting @'Database' t@ to @*@ we simplify
+-- the implementation of 'Comparable'.
 class ITisch t => Tisch (t :: k) where
   -- | Some kind of unique identifier used for telling appart the database where
   -- this table exists from other databases, so as to avoid accidentally mixing
   -- tables from different databases in queries.
-  --
-  -- /Implementation detail/: By restricting @'Database' t@ to @*@ we simplify
-  -- the implementation of 'Comparable'.
   type Database t :: *
   -- | PostgreSQL schema name where to find the table (defaults to @"public"@,
   -- PostgreSQL's default schema name).
