@@ -22,11 +22,10 @@ module Opaleye.SOT
  , toPgW
 
    -- * Working with 'Tisch'
- , TischTable
  , table'
  , table
- , queryTable'
- , queryTable
+ , queryTisch'
+ , queryTisch
  , HsR
  , HsI
  , PgR

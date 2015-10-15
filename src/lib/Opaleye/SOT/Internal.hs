@@ -566,7 +566,7 @@ type HsR t = Rec t (Cols_HsR t)
 -- Mnemonic: Haskell Insert.
 type HsI t = Rec t (Cols_HsI t)
 
--- | Output type of @'O.queryTable' ('tisch' t)@.
+-- | Output type of @'queryTisch' ('T' t)@.
 --
 -- Mnemonic: PostGresql Read.
 type PgR t = Rec t (Cols_PgR t)
@@ -862,11 +862,8 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 
 --------------------------------------------------------------------------------
 
--- | Opaleye 'O.Table' for a 'Tisch'.
-type TischTable t = O.Table (PgW t) (PgR t)
-
 -- | Build the Opaleye 'O.Table' for a 'Tisch'.
-table' :: forall t. Tisch t => TischTable t
+table' :: forall t. Tisch t => O.Table (PgW t) (PgR t)
 table' = O.TableWithSchema
    (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
    (GHC.symbolVal (Proxy :: Proxy (TableName t)))
@@ -876,17 +873,17 @@ table' = O.TableWithSchema
 
 -- | Like 'table'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-table :: Tisch t => T t -> TischTable t
+table :: Tisch t => T t -> O.Table (PgW t) (PgR t)
 table _ = table'
 
 -- | Like Opaleye's 'O.queryTable', but for a 'Tisch'.
-queryTable' :: Tisch t => O.Query (PgR t)
-queryTable' = O.queryTable table'
+queryTisch' :: Tisch t => O.Query (PgR t)
+queryTisch' = O.queryTable table'
 
--- | Like 'queryTable'', but takes @t@ explicitly to help the compiler when it
+-- | Like 'queryTisch'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-queryTable :: Tisch t => T t -> O.Query (PgR t)
-queryTable _ = queryTable'
+queryTisch :: Tisch t => T t -> O.Query (PgR t)
+queryTisch _ = queryTisch'
 
 --------------------------------------------------------------------------------
 -- RunXXX functions
@@ -1520,5 +1517,5 @@ instance (Op2 a b c (Koln a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Op2 a b 
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c)  where op2 f (Tagged xa) kb = op2 f xa kb
 -- | nnk -> tnn
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | nnn -> ttn
+
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb

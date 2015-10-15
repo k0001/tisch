@@ -79,14 +79,14 @@ instance Comparable TTest "c1" TTest "c3"
 
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
-   t1 <- queryTable' -< ()
-   t2 <- queryTable' -< ()
+   t1 <- queryTisch' -< ()
+   t2 <- queryTisch' -< ()
    restrict -< eq
       (view (col (C::C "c1")) t1)
       (view (col (C::C "c1")) t2)
    (t3, t4n) <- leftJoin
-      (queryTable (T::T TTest))
-      (queryTable (T::T TTest))
+      (queryTisch (T::T TTest))
+      (queryTisch (T::T TTest))
       (\(t3, t4) -> eq -- requires instance Comparable TTest "c1" TTest "c3" O.PGBool
          (view (col (C::C "c1")) t3)
          (view (col (C::C "c3")) t4)) -< ()

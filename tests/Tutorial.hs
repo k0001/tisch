@@ -369,10 +369,10 @@ q_TAccount_asc_multi :: O.Query (PgR TAccount)
 q_TAccount_asc_multi =
   O.orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
                      (asc   (view (col (C::C "product_cd")))))
-            (queryTable') -- Here: table' == table TAccount, inferred.
+            (queryTisch') -- Here: table' == table TAccount, inferred.
 q_TEmployee_1 :: O.Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
-  e <- queryTable' -< () -- Here: table' == table TEmployee, inferred.
+  e <- queryTisch' -< () -- Here: table' == table TEmployee, inferred.
   restrict -< isNull (e ^. col (C::C "end_date"))
   restrict <<< nullFalse -< ou
      (lt (koln (Time.fromGregorian 2003 1 1))
@@ -383,8 +383,8 @@ q_TEmployee_1 = proc () -> do
 
 q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
-  e <- queryTable' -< () -- inferred
-  d <- queryTable' -< () -- inferred
+  e <- queryTisch' -< () -- inferred
+  d <- queryTisch' -< () -- inferred
   restrict <<< nullFalse -< eq
      (e ^. col (C::C "department_id")) -- tnc
      (d ^. col (C::C "department_id")) -- tc
@@ -398,8 +398,8 @@ instance Comparable TEmployee "department_id" TDepartment "department_id"
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
   leftJoin
-   (queryTable (T::T TAccount))    -- Can't be inferred.
-   (queryTable (T::T TIndividual)) -- Can't be inferred.
+   (queryTisch (T::T TAccount))    -- Can't be inferred.
+   (queryTisch (T::T TIndividual)) -- Can't be inferred.
    (\(a,i) -> eq (a ^. col (C::C "customer_id"))
                  (i ^. col (C::C "customer_id")))
 
