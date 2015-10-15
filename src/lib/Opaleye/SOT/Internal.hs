@@ -705,6 +705,11 @@ class Tisch t => ToHsI t (a :: *) where
   -- representation altogether.
   toHsI' :: a -> HsI t
 
+-- | OVERLAPPABLE. Identity.
+instance {-# OVERLAPPABLE #-} (Tisch t, HsI t ~ a) => ToHsI t a where
+  toHsI' = id
+  {-# INLINE toHsI' #-}
+
 -- | Like 'toHsI'', except it takes @t@ explicitely for the times when
 -- it can't be inferred.
 toHsI :: ToHsI t a => T t -> a -> HsI t
@@ -727,9 +732,9 @@ mkHsI
   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
   -> HsI t -- ^
 mkHsI k = Tagged
-      $ HL.Record
-      $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
-      $ k (const Tagged)
+        $ HL.Record
+        $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
+        $ k (const Tagged)
 {-# INLINE mkHsI #-}
 
 --------------------------------------------------------------------------------
