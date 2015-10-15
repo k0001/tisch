@@ -895,11 +895,34 @@ queryTisch _ = queryTisch'
 
 -- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
 -- return a @('GetKol' w 'O.PGBool')@.
+--
+-- It is recommended that you use 'runUpdateTisch' if you are trying to update
+-- a table that is an instance of 'Tisch'. The result is the same, but the
+-- this function might be less convenient to us.
 runUpdate
   :: (MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
   => O.Table w r -> (r -> w) -> (r -> gkb) -> m Int64 -- ^
 runUpdate t upd fil = ask >>= \conn -> liftIO $ do
    O.runUpdate conn t upd (unKol . getKol . fil)
+
+-- | Like 'runUpdate', but specifically designed to work well with 'Tisch'.
+runUpdateTisch'
+  :: (Tisch t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+  => (PgW t -> PgW t) -- ^ Upgrade current values to new values.
+  -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
+  -> m Int64          -- ^ Number of updated rows.
+runUpdateTisch' = go where -- we hide the 'forall' from the type signature
+  go :: forall t m gkb
+     .  (Tisch t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+     => (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64
+  go = runUpdateTisch (T::T t)
+
+-- | Like 'runUpdateTisch'', but takes @t@ explicitely for the times when
+-- it can't be inferred.
+runUpdateTisch
+  :: (Tisch t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+  => T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64 -- ^
+runUpdateTisch t upd = runUpdate (table t) (upd . update')
 
 --------------------------------------------------------------------------------
 

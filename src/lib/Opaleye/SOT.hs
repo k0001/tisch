@@ -56,6 +56,8 @@ module Opaleye.SOT
 
    -- * Executing
  , runUpdate
+ , runUpdateTisch'
+ , runUpdateTisch
 
    -- * Querying
  , leftJoin
