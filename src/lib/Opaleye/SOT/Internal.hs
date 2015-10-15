@@ -962,7 +962,7 @@ no = op1 (liftKol1 O.not)
 -- Given as @a@ and @b@ any combination of @('Kol' x)@, @('Koln' x)@ or their
 -- respective wrappings in @('Tagged' ('TC' t c))@, get @c@ as result, which
 -- will be @('Koln' 'O.PGBool')@ if there was a @('Koln' x)@ among the given
--- arguments, otherwise it will be @('Kol' x)@.
+-- arguments, otherwise it will be @('Kol' 'O.PGBool')@.
 --
 -- This type synonym is exported for two reasons:
 --
