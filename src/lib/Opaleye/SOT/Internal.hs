@@ -937,7 +937,7 @@ class
   , Col_PgType (Col_ByName t1 c1) ~ Col_PgType (Col_ByName t2 c2)
   ) => Comparable t1 c1 t2 c2
 
--- | Trivial. Same table, same column, same value.
+-- | Trivial. Same database, same table, same column.
 instance (Tisch t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
