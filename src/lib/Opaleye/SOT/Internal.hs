@@ -928,13 +928,14 @@ runUpdateTisch t upd = runUpdate (table t) (upd . update')
 
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
-class ( Tisch t1, Tisch t2, HasColName t1 c1, HasColName t2 c2
-      , Database t1 ~ Database t2
-      ) => Comparable t1 c1 t2 c2 where
-  _ComparableL :: Iso (Tagged (TC t1 c1) a) (Tagged (TC t2 c2) a) a a
-  _ComparableL = _Wrapped
-  _ComparableR :: Iso (Tagged (TC t2 c2) a) (Tagged (TC t1 c1) a) a a
-  _ComparableR = _Wrapped
+class
+  ( Tisch t1
+  , Tisch t2
+  , HasColName t1 c1
+  , HasColName t2 c2
+  , Database t1 ~ Database t2
+  , Col_PgType (Col_ByName t1 c1) ~ Col_PgType (Col_ByName t2 c2)
+  ) => Comparable t1 c1 t2 c2
 
 -- | Trivial. Same table, same column, same value.
 instance (Tisch t, HasColName t c) => Comparable t c t c
@@ -1547,3 +1548,12 @@ instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2 a b c
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+
+--------------------------------------------------------------------------------
+-- Missing stuff in Opaleye
+
+-- | Orphan. 'Opaleye.SOT.Internal'.
+--
+-- See https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
+instance O.QueryRunnerColumnDefault O.PGInt4 Int32 where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn

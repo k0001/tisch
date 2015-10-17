@@ -341,7 +341,7 @@ instance Tisch TTransaction where
   type SchemaName TTransaction = "public"
   type TableName TTransaction = "transaction"
   type Cols TTransaction =
-    [ 'Col "txn_id" 'WD 'R O.PGInt4 TransactionId
+   '[ 'Col "txn_id" 'WD 'R O.PGInt4 TransactionId
     , 'Col "txn_date" 'W 'R O.PGTimestamp LocalTime
     , 'Col "account_id" 'W 'R O.PGInt4 AccountId
     , 'Col "txn_type_cd" 'W 'RN O.PGText TransactionType
