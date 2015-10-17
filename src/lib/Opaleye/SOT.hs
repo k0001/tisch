@@ -111,6 +111,10 @@ module Opaleye.SOT
  , Cols_PgR
  , Cols_PgRN
  , Cols_PgW
+
+   -- * Miscellaneous
+ , op1
+ , op2
  ) where
 
 import           Opaleye.SOT.Internal

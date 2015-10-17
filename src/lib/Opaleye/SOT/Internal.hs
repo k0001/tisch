@@ -1546,7 +1546,7 @@ instance (Op2 a b c (Koln a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Op2 a b 
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c)  where op2 f (Tagged xa) kb = op2 f xa kb
 -- | nnk -> tnn
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
-
+-- | nnn -> ttn
 instance (Op2 a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2 a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 --------------------------------------------------------------------------------
