@@ -35,7 +35,7 @@ library
     , postgresql-simple
     , product-profunctors
     , profunctors
-    , singletons >=1.1 && <1.2
+    , singletons >=1.1 && <2.1
     , text
     , transformers >=0.4 && <0.5
     , time
