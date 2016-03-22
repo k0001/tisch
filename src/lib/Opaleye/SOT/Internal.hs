@@ -42,8 +42,9 @@ import qualified Data.Time
 import qualified Data.UUID
 import           Data.Int
 import           Data.Proxy (Proxy(..))
-import           Data.HList (Tagged(Tagged, unTagged), HList(HCons, HNil))
-import qualified Data.HList as HL
+import           Data.Tagged (Tagged(Tagged, unTagged))
+import           Opaleye.SOT.Internal.HList (HList(HNil, HCons))
+import qualified Opaleye.SOT.Internal.HList as HL
 import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product as PP
 import qualified Data.Profunctor.Product.Default as PP
@@ -593,25 +594,10 @@ type ITisch t
   = ( GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
     , All PGType (List.Map Col_PgTypeSym0 (Cols t))
-    , HDistributeProxy (Cols t)
-    , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
-    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
-    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
-    , HL.HMapAux HList HPgWfromHsIField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.HMapAux HList HPgWfromPgRField (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.HRLabelSet (Cols_HsR t)
-    , HL.HRLabelSet (Cols_HsI t)
-    , HL.HRLabelSet (Cols_PgR t)
-    , HL.HRLabelSet (Cols_PgRN t)
-    , HL.HRLabelSet (Cols_PgW t)
-    , HL.RecordValues (Cols_HsR t)
-    , HL.RecordValues (Cols_HsI t)
-    , HL.RecordValues (Cols_PgR t)
-    , HL.RecordValues (Cols_PgRN t)
-    , HL.RecordValues (Cols_PgW t)
-    , HL.SameLength (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.SameLength (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
+    , HL.HDistributeProxy (Cols t)
+    , HL.HMap HList (HCol_Props t) (List.Map HL.ProxySym0 (Cols t)) (Cols_Props t)
+    , HL.HMapRecordValues HPgWfromPgRField (Cols_PgR t) (Cols_PgW t)
+    , HL.HMapRecordValues HPgWfromHsIField (Cols_HsI t) (Cols_PgW t)
     , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
     , PP.Default OI.ColumnMaker (PgR t) (PgR t)
     )
@@ -724,18 +710,18 @@ toHsI _ = toHsI'
 --     (set_ ('C' :: 'C' "age") age)
 -- @
 
--- TODO: see if it is posisble to pack 'hsi' and 'HL.hBuild' into
--- a single thing.
-mkHsI
-  :: forall t xs
-  .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
-  => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
-  -> HsI t -- ^
-mkHsI k = Tagged
-        $ HL.Record
-        $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
-        $ k (const Tagged)
-{-# INLINE mkHsI #-}
+-- -- TODO: see if it is posisble to pack 'hsi' and 'HL.hBuild' into
+-- -- a single thing.
+-- mkHsI
+--   :: forall t xs
+--   .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
+--   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
+--   -> HsI t -- ^
+-- mkHsI k = Tagged
+--         $ HL.Record
+--         $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
+--         $ k (const Tagged)
+-- {-# INLINE mkHsI #-}
 
 --------------------------------------------------------------------------------
 
@@ -755,7 +741,7 @@ instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (WDef (Maybe hs
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
 toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
-toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromHsIField . HL.recordValues . unTagged
+toPgW_fromHsI' = Tagged . HL.hMapRecordValues HPgWfromHsIField . unTagged
 {-# INLINE toPgW_fromHsI' #-}
 
 -- | Like 'toPgW_fromHsI'', but takes an explicit @t@.
@@ -791,7 +777,7 @@ instance PGType pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (WDef (Koln pg)) whe
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
 -- to a @('PgW' t)@ that can be used in a 'runUpdate'-like operation.
 update' :: Tisch t => PgR t -> PgW t
-update' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromPgRField . HL.recordValues . unTagged
+update' = Tagged . HL.hMapRecordValues HPgWfromPgRField . unTagged
 {-# INLINE update' #-}
 
 -- | Like 'update'', but takes an explicit @t@ for when it can't be inferred.
@@ -873,8 +859,8 @@ table' = O.TableWithSchema
    (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
    (GHC.symbolVal (Proxy :: Proxy (TableName t)))
    (ppaUnTagged $ ppa $ HL.Record
-      (HL.hMapL (HCol_Props :: HCol_Props t)
-      (hDistributeProxy (Proxy :: Proxy (Cols t)))))
+      (HL.hMap (HCol_Props :: HCol_Props t)
+      (HL.hDistributeProxy (Proxy :: Proxy (Cols t)))))
 
 -- | Like 'table'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
@@ -1222,7 +1208,7 @@ instance
 instance
     ( ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
     ) => ProductProfunctorAdaptor p (HL.Record pabs) (HL.Record as) (HL.Record bs) where
-  ppa = P.dimap unRecord HL.Record . ppa . unRecord
+  ppa = P.dimap HL.unRecord HL.Record . ppa . HL.unRecord
   {-# INLINE ppa #-}
 
 --------------------------------------------------------------------------------
@@ -1248,7 +1234,7 @@ instance
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HL.Record as) (HL.Record bs) where
-  def = P.dimap unRecord HL.Record PP.def
+  def = P.dimap HL.unRecord HL.Record PP.def
   {-# INLINE def #-}
 
 -- Maybes on the rhs
@@ -1280,7 +1266,7 @@ instance
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (Maybe (HList bs))
     ) => PP.Default p (HL.Record as) (Maybe (HL.Record bs)) where
-  def = P.dimap unRecord (fmap HL.Record) PP.def
+  def = P.dimap HL.unRecord (fmap HL.Record) PP.def
   {-# INLINE def #-}
 
 --------------------------------------------------------------------------------
@@ -1292,25 +1278,6 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c (x ': xs) = (c x, All c xs)
 
 ---
-
--- | Defunctionalized 'Proxy'. To be used with 'Apply'.
-data ProxySym0 (a :: TyFun k *)
-type instance Apply ProxySym0 a = Proxy a
-
-class HDistributeProxy (xs :: [k]) where
-  hDistributeProxy :: Proxy xs -> HList (List.Map ProxySym0 xs)
-instance HDistributeProxy ('[] :: [k]) where
-  hDistributeProxy _ = HNil
-  {-# INLINE hDistributeProxy #-}
-instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x ': xs) where
-  hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
-  {-# INLINE hDistributeProxy #-}
-
----
-
-unRecord :: HL.Record xs -> HList xs
-unRecord = \(HL.Record x) -> x
-{-# INLINE unRecord #-}
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------

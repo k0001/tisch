@@ -17,7 +17,7 @@ module Opaleye.SOT
  , unHsR_
  , ToHsI(..)
  , toHsI
- , mkHsI
+ -- , mkHsI
  , toPgW'
  , toPgW
 
