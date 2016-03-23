@@ -482,7 +482,7 @@ type family Col_HsIType (col :: Col GHC.Symbol WD RN * *) :: * where
 
 ---
 
--- | Lookup a column in @'Tisch' t@ by its name.
+-- | Lookup a column in @'Tabla' t@ by its name.
 type Col_ByName t (c :: GHC.Symbol) = Col_ByName' c (Cols t)
 type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Col GHC.Symbol WD RN * * where
   Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
@@ -535,11 +535,11 @@ type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- table in a specific schema.
-data Tisch t => T (t :: k) = T
+data Tabla t => T (t :: k) = T
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in a specific table in a specific schema.
-data Tisch t => TC (t :: k) (c :: GHC.Symbol) = TC
+data Tabla t => TC (t :: k) (c :: GHC.Symbol) = TC
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
@@ -566,7 +566,7 @@ type HsR t = Rec t (Cols_HsR t)
 -- Mnemonic: Haskell Insert.
 type HsI t = Rec t (Cols_HsI t)
 
--- | Output type of @'queryTisch' ('T' t)@.
+-- | Output type of @'queryTabla' ('T' t)@.
 --
 -- Mnemonic: PostGresql Read.
 type PgR t = Rec t (Cols_PgR t)
@@ -585,11 +585,11 @@ type PgW t = Rec t (Cols_PgW t)
 
 --------------------------------------------------------------------------------
 
--- | All these constraints need to be satisfied by tools that work with 'Tisch'.
--- It's easier to just write all the constraints once here and make 'ITisch' a
--- superclass of 'Tisch'. Moreover, they enforce some sanity constraints on our
--- 'Tisch' so that we can get early compile time errors.
-type ITisch t
+-- | All these constraints need to be satisfied by tools that work with 'Tabla'.
+-- It's easier to just write all the constraints once here and make 'ITabla' a
+-- superclass of 'Tabla'. Moreover, they enforce some sanity constraints on our
+-- 'Tabla' so that we can get early compile time errors.
+type ITabla t
   = ( GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
     , All PGType (List.Map Col_PgTypeSym0 (Cols t))
@@ -616,18 +616,18 @@ type ITisch t
     , PP.Default OI.ColumnMaker (PgR t) (PgR t)
     )
 
--- | Tisch means table in german.
+-- | Tabla means table in spanish.
 --
 -- An instance of this class can uniquely describe a PostgreSQL table and
 -- how to convert back and forth between it and its Haskell representation
 -- used when writing Opaleye queries.
 --
 -- The @t@ type is only used as a tag for the purposes of uniquely identifying
--- this 'Tisch'.
+-- this 'Tabla'.
 
 -- Implementation detail: By restricting @'Database' t@ to @*@ we simplify
 -- the implementation of 'Comparable'.
-class ITisch t => Tisch (t :: k) where
+class ITabla t => Tabla (t :: k) where
   -- | Some kind of unique identifier used for telling appart the database where
   -- this table exists from other databases, so as to avoid accidentally mixing
   -- tables from different databases in queries.
@@ -650,7 +650,7 @@ class ITisch t => Tisch (t :: k) where
 -- with @'HsR' t@ is sufficient for you, or if you already have a function
 -- @('HsR' t -> a)@ at hand. Nevertheless, readability wise, it can be useful to
 -- have a single overloaded function used to decode each @('HsR' t)@.
-class Tisch t => UnHsR t (a :: *) where
+class Tabla t => UnHsR t (a :: *) where
   -- | Convert an Opaleye-compatible Haskell representation of @a@ to @a@.
   --
   -- For your convenience, you are encouraged to use 'cola', but you may also use
@@ -684,7 +684,7 @@ unHsR_ _ _ = unHsR'
 -- Notice that you are not required to provide instances of this class if working
 -- with @'HsI' t@ is sufficient for you, or if you already have a function
 -- @(a -> 'HsI' t)@ at hand.
-class Tisch t => ToHsI t (a :: *) where
+class Tabla t => ToHsI t (a :: *) where
   -- | Convert an @a@ to an Opaleye-compatible Haskell representation
   -- to be used when inserting a new row to this table.
   --
@@ -706,7 +706,7 @@ class Tisch t => ToHsI t (a :: *) where
   toHsI' :: a -> HsI t
 
 -- | OVERLAPPABLE. Identity.
-instance {-# OVERLAPPABLE #-} (Tisch t, HsI t ~ a) => ToHsI t a where
+instance {-# OVERLAPPABLE #-} (Tabla t, HsI t ~ a) => ToHsI t a where
   toHsI' = id
   {-# INLINE toHsI' #-}
 
@@ -728,7 +728,7 @@ toHsI _ = toHsI'
 -- a single thing.
 mkHsI
   :: forall t xs
-  .  (Tisch t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
+  .  (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
   => ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
   -> HsI t -- ^
 mkHsI k = Tagged
@@ -754,12 +754,12 @@ instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (WDef (Maybe hs
   applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
-toPgW_fromHsI' :: Tisch t => HsI t -> PgW t
+toPgW_fromHsI' :: Tabla t => HsI t -> PgW t
 toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromHsIField . HL.recordValues . unTagged
 {-# INLINE toPgW_fromHsI' #-}
 
 -- | Like 'toPgW_fromHsI'', but takes an explicit @t@.
-toPgW_fromHsI :: Tisch t => T t -> HsI t -> PgW t
+toPgW_fromHsI :: Tabla t => T t -> HsI t -> PgW t
 toPgW_fromHsI _ = toPgW_fromHsI'
 {-# INLINE toPgW_fromHsI #-}
 
@@ -790,12 +790,12 @@ instance PGType pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (WDef (Koln pg)) whe
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
 -- to a @('PgW' t)@ that can be used in a 'runUpdate'-like operation.
-update' :: Tisch t => PgR t -> PgW t
+update' :: Tabla t => PgR t -> PgW t
 update' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromPgRField . HL.recordValues . unTagged
 {-# INLINE update' #-}
 
 -- | Like 'update'', but takes an explicit @t@ for when it can't be inferred.
-update :: Tisch t => T t -> PgR t -> PgW t
+update :: Tabla t => T t -> PgR t -> PgW t
 update _ = update'
 {-# INLINE update #-}
 
@@ -819,10 +819,10 @@ colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) koln . O.optional
 
 --------------------------------------------------------------------------------
 
--- | 'O.TableProperties' for all the columns in 'Tisch' @t@.
+-- | 'O.TableProperties' for all the columns in 'Tabla' @t@.
 type Cols_Props t = List.Map (Col_PropsSym1 t) (Cols t)
 
--- | 'O.TableProperties' for a single column in 'Tisch' @t@.
+-- | 'O.TableProperties' for a single column in 'Tabla' @t@.
 type Col_Props t (col :: Col GHC.Symbol WD RN * *)
   = O.TableProperties (Col_PgW t col) (Col_PgR t col)
 data Col_PropsSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
@@ -831,7 +831,7 @@ data Col_PropsSym0 (col :: TyFun t (TyFun (Col GHC.Symbol WD RN * *) * -> *))
 type instance Apply Col_PropsSym0 t = Col_PropsSym1 t
 
 class ICol_Props (col :: Col GHC.Symbol WD RN * *) where
-  colProps :: Tisch t => Proxy t -> Proxy col -> Col_Props t col
+  colProps :: Tabla t => Proxy t -> Proxy col -> Col_Props t col
 
 -- | 'colProps' is equivalent 'colProps_wr'.
 instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'W 'R p h) where
@@ -854,7 +854,7 @@ instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD '
 data HCol_Props t = HCol_Props
 
 instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
-  . ( Tisch t
+  . ( Tabla t
     , GHC.KnownSymbol n
     , ICol_Props col
     , pcol ~ Proxy col
@@ -867,8 +867,8 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
 
 --------------------------------------------------------------------------------
 
--- | Build the Opaleye 'O.Table' for a 'Tisch'.
-table' :: forall t. Tisch t => O.Table (PgW t) (PgR t)
+-- | Build the Opaleye 'O.Table' for a 'Tabla'.
+table' :: forall t. Tabla t => O.Table (PgW t) (PgR t)
 table' = O.TableWithSchema
    (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
    (GHC.symbolVal (Proxy :: Proxy (TableName t)))
@@ -878,17 +878,17 @@ table' = O.TableWithSchema
 
 -- | Like 'table'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-table :: Tisch t => T t -> O.Table (PgW t) (PgR t)
+table :: Tabla t => T t -> O.Table (PgW t) (PgR t)
 table _ = table'
 
--- | Like Opaleye's 'O.queryTable', but for a 'Tisch'.
-queryTisch' :: Tisch t => O.Query (PgR t)
-queryTisch' = O.queryTable table'
+-- | Like Opaleye's 'O.queryTable', but for a 'Tabla'.
+queryTabla' :: Tabla t => O.Query (PgR t)
+queryTabla' = O.queryTable table'
 
--- | Like 'queryTisch'', but takes @t@ explicitly to help the compiler when it
+-- | Like 'queryTabla'', but takes @t@ explicitly to help the compiler when it
 -- can't infer @t@.
-queryTisch :: Tisch t => T t -> O.Query (PgR t)
-queryTisch _ = queryTisch'
+queryTabla :: Tabla t => T t -> O.Query (PgR t)
+queryTabla _ = queryTabla'
 
 --------------------------------------------------------------------------------
 -- RunXXX functions
@@ -896,8 +896,8 @@ queryTisch _ = queryTisch'
 -- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
 -- return a @('GetKol' w 'O.PGBool')@.
 --
--- It is recommended that you use 'runUpdateTisch' if you are trying to update
--- a table that is an instance of 'Tisch'. The result is the same, but the
+-- It is recommended that you use 'runUpdateTabla' if you are trying to update
+-- a table that is an instance of 'Tabla'. The result is the same, but the
 -- this function might be less convenient to us.
 runUpdate
   :: (MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
@@ -905,32 +905,32 @@ runUpdate
 runUpdate t upd fil = ask >>= \conn -> liftIO $ do
    O.runUpdate conn t upd (unKol . getKol . fil)
 
--- | Like 'runUpdate', but specifically designed to work well with 'Tisch'.
-runUpdateTisch'
-  :: (Tisch t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+-- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
+runUpdateTabla'
+  :: (Tabla t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
   => (PgW t -> PgW t) -- ^ Upgrade current values to new values.
   -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
   -> m Int64          -- ^ Number of updated rows.
-runUpdateTisch' = go where -- we hide the 'forall' from the type signature
+runUpdateTabla' = go where -- we hide the 'forall' from the type signature
   go :: forall t m gkb
-     .  (Tisch t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+     .  (Tabla t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
      => (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64
-  go = runUpdateTisch (T::T t)
+  go = runUpdateTabla (T::T t)
 
--- | Like 'runUpdateTisch'', but takes @t@ explicitely for the times when
+-- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
 -- it can't be inferred.
-runUpdateTisch
-  :: (Tisch t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
+runUpdateTabla
+  :: (Tabla t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
   => T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64 -- ^
-runUpdateTisch t upd = runUpdate (table t) (upd . update')
+runUpdateTabla t upd = runUpdate (table t) (upd . update')
 
 --------------------------------------------------------------------------------
 
 -- | Provide 'Comparable' instances for every two columns that you want to be
 -- able to compare (e.g., using 'eq').
 class
-  ( Tisch t1
-  , Tisch t2
+  ( Tabla t1
+  , Tabla t2
   , HasColName t1 c1
   , HasColName t2 c2
   , Database t1 ~ Database t2
@@ -938,7 +938,7 @@ class
   ) => Comparable t1 c1 t2 c2
 
 -- | Trivial. Same database, same table, same column.
-instance (Tisch t, HasColName t c) => Comparable t c t c
+instance (Tabla t, HasColName t c) => Comparable t c t c
 
 --------------------------------------------------------------------------------
 
@@ -1023,7 +1023,7 @@ type Op_eq x a b c = Op2 x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c
 --
 -- Any of the above combinations with the arguments fliped is accepted too.
 -- Additionally, a 'Comparable' constraint will be required if you try to
--- compare two 'Tisch'-aware columns directly; that is, a 'Kol' or a 'Koln'
+-- compare two 'Tabla'-aware columns directly; that is, a 'Kol' or a 'Koln'
 -- wrapped in a @('TC' t c)@, such as those obtained with @('view' '.' 'col')@:
 --
 -- Simplified type signature just so that you get an idea:

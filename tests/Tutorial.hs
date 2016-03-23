@@ -98,7 +98,7 @@ instance Wrapped DepartmentId where { type Unwrapped DepartmentId = Int32; _Wrap
 instance ToKol DepartmentId O.PGInt4
 
 data TDepartment
-instance Tisch TDepartment where
+instance Tabla TDepartment where
   type Database TDepartment = Db1
   type SchemaName TDepartment = "public"
   type TableName TDepartment = "department"
@@ -114,7 +114,7 @@ instance Wrapped BranchId where { type Unwrapped BranchId = Int32; _Wrapped' = i
 instance ToKol BranchId O.PGInt4
 
 data TBranch
-instance Tisch TBranch where
+instance Tabla TBranch where
   type Database TBranch = Db1
   type SchemaName TBranch = "public"
   type TableName TBranch = "branch"
@@ -134,7 +134,7 @@ instance Wrapped EmployeeId where { type Unwrapped EmployeeId = Int32; _Wrapped'
 instance ToKol EmployeeId O.PGInt4
 
 data TEmployee
-instance Tisch TEmployee where
+instance Tabla TEmployee where
   type Database TEmployee = Db1
   type SchemaName TEmployee = "public"
   type TableName TEmployee = "employee"
@@ -157,7 +157,7 @@ instance Wrapped ProductTypeId where { type Unwrapped ProductTypeId = String; _W
 instance ToKol ProductTypeId O.PGText
 
 data TProductType
-instance Tisch TProductType where
+instance Tabla TProductType where
   type Database TProductType = Db1
   type SchemaName TProductType = "public"
   type TableName TProductType = "product_type"
@@ -173,7 +173,7 @@ instance Wrapped ProductId where { type Unwrapped ProductId = String; _Wrapped' 
 instance ToKol ProductId O.PGText
 
 data TProduct
-instance Tisch TProduct where
+instance Tabla TProduct where
   type Database TProduct = Db1
   type SchemaName TProduct = "public"
   type TableName TProduct = "product"
@@ -204,7 +204,7 @@ _CustomerType_Char = prism'
 instance ToKol CustomerType O.PGText where kol = kol . review _CustomerType_Char
 
 data TCustomer
-instance Tisch TCustomer where
+instance Tabla TCustomer where
   type Database TCustomer = Db1
   type SchemaName TCustomer = "public"
   type TableName TCustomer = "customer"
@@ -221,7 +221,7 @@ instance Tisch TCustomer where
 ---
 
 data TIndividual
-instance Tisch TIndividual where
+instance Tabla TIndividual where
   type Database TIndividual = Db1
   type SchemaName TIndividual = "public"
   type TableName TIndividual = "individual"
@@ -239,7 +239,7 @@ instance Wrapped BizStateId where { type Unwrapped BizStateId = String; _Wrapped
 instance ToKol BizStateId O.PGText
 
 data TBusiness
-instance Tisch TBusiness where
+instance Tabla TBusiness where
   type Database TBusiness = Db1
   type SchemaName TBusiness = "public"
   type TableName TBusiness = "business"
@@ -257,7 +257,7 @@ instance Wrapped OfficerId where { type Unwrapped OfficerId = Int32; _Wrapped' =
 instance ToKol OfficerId O.PGInt4
 
 data TOfficer
-instance Tisch TOfficer where
+instance Tabla TOfficer where
   type Database TOfficer = Db1
   type SchemaName TOfficer = "public"
   type TableName TOfficer = "officer"
@@ -296,7 +296,7 @@ _AccountStatus_String = prism'
 instance ToKol AccountStatus O.PGText where kol = kol . review _AccountStatus_String
 
 data TAccount
-instance Tisch TAccount where
+instance Tabla TAccount where
   type Database TAccount = Db1
   type SchemaName TAccount = "public"
   type TableName TAccount = "account"
@@ -336,7 +336,7 @@ _TransactionType_String = prism'
 instance ToKol TransactionType O.PGText where kol = kol . review _TransactionType_String
 
 data TTransaction
-instance Tisch TTransaction where
+instance Tabla TTransaction where
   type Database TTransaction = Db1
   type SchemaName TTransaction = "public"
   type TableName TTransaction = "transaction"
@@ -369,10 +369,10 @@ q_TAccount_asc_multi :: O.Query (PgR TAccount)
 q_TAccount_asc_multi =
   O.orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
                      (asc   (view (col (C::C "product_cd")))))
-            (queryTisch') -- Here: table' == table TAccount, inferred.
+            (queryTabla') -- Here: table' == table TAccount, inferred.
 q_TEmployee_1 :: O.Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
-  e <- queryTisch' -< () -- Here: table' == table TEmployee, inferred.
+  e <- queryTabla' -< () -- Here: table' == table TEmployee, inferred.
   restrict -< isNull (e ^. col (C::C "end_date"))
   restrict <<< nullFalse -< ou
      (lt (koln (Time.fromGregorian 2003 1 1))
@@ -383,8 +383,8 @@ q_TEmployee_1 = proc () -> do
 
 q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
-  e <- queryTisch' -< () -- inferred
-  d <- queryTisch' -< () -- inferred
+  e <- queryTabla' -< () -- inferred
+  d <- queryTabla' -< () -- inferred
   restrict <<< nullFalse -< eq
      (e ^. col (C::C "department_id")) -- tnc
      (d ^. col (C::C "department_id")) -- tc
@@ -398,8 +398,8 @@ instance Comparable TEmployee "department_id" TDepartment "department_id"
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
   leftJoin
-   (queryTisch (T::T TAccount))    -- Can't be inferred.
-   (queryTisch (T::T TIndividual)) -- Can't be inferred.
+   (queryTabla (T::T TAccount))    -- Can't be inferred.
+   (queryTabla (T::T TIndividual)) -- Can't be inferred.
    (\(a,i) -> eq (a ^. col (C::C "customer_id"))
                  (i ^. col (C::C "customer_id")))
 

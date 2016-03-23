@@ -10,8 +10,8 @@
 --
 -- This module doesn't export any infix operator.
 module Opaleye.SOT
- ( -- * Defining a 'Tisch'
-   Tisch(..)
+ ( -- * Defining a 'Tabla'
+   Tabla(..)
  , UnHsR(..)
  , unHsR
  , unHsR_
@@ -21,11 +21,11 @@ module Opaleye.SOT
  , toPgW'
  , toPgW
 
-   -- * Working with 'Tisch'
+   -- * Working with 'Tabla'
  , table'
  , table
- , queryTisch'
- , queryTisch
+ , queryTabla'
+ , queryTabla
  , HsR
  , HsI
  , PgR
@@ -56,8 +56,8 @@ module Opaleye.SOT
 
    -- * Executing
  , runUpdate
- , runUpdateTisch'
- , runUpdateTisch
+ , runUpdateTabla'
+ , runUpdateTabla
 
    -- * Querying
  , leftJoin
