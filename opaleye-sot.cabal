@@ -29,7 +29,7 @@ library
     , case-insensitive
     , exceptions >=0.8 && <0.9
     , HList >=0.4 && <0.5
-    , lens >=4.12 && <4.13
+    , lens >=4.12 && <4.14
     , mtl >=2.2 && <2.3
     , opaleye >=0.4 && <0.5
     , postgresql-simple
