@@ -15,7 +15,6 @@ module Main where
 
 import           Control.Arrow
 import           Control.Lens
-import           Control.Monad.Reader (runReaderT)
 import qualified Data.HList as HL
 import           Data.Int
 import qualified Database.PostgreSQL.Simple as Pg
@@ -109,7 +108,7 @@ outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
 update1 :: Pg.Connection -> IO Int64
-update1 = runReaderT $ runUpdate table' update' fil
+update1 conn = runUpdate conn table' update' fil
   where fil :: PgR TTest -> Kol O.PGBool
         fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
 

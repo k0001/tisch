@@ -21,6 +21,7 @@ library
   exposed-modules:
       Opaleye.SOT
       Opaleye.SOT.Run
+      Opaleye.SOT.Extra
       Opaleye.SOT.Internal
   build-depends:
       -- NOTE: The dependencies without specific version ranges are transitional
