@@ -55,9 +55,9 @@ module Opaleye.SOT
  , liftKoln2
 
    -- * Executing
- , runUpdate
- , runUpdateTabla'
- , runUpdateTabla
+   --
+   -- Please see the "Opaleye.SOT.Run" module for documentation.
+ , module Opaleye.SOT.Run
 
    -- * Querying
  , leftJoin
@@ -118,3 +118,4 @@ module Opaleye.SOT
  ) where
 
 import           Opaleye.SOT.Internal
+import           Opaleye.SOT.Run

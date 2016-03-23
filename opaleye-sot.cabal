@@ -20,6 +20,7 @@ library
   default-language: Haskell2010
   exposed-modules:
       Opaleye.SOT
+      Opaleye.SOT.Run
       Opaleye.SOT.Internal
   build-depends:
       -- NOTE: The dependencies without specific version ranges are transitional

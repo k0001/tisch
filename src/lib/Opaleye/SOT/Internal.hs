@@ -24,8 +24,6 @@ module Opaleye.SOT.Internal where
 
 import           Control.Applicative
 import           Control.Arrow
-import           Control.Monad.Reader (MonadReader, ask)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Lens
 import qualified Control.Exception as Ex
 import           Control.Monad (MonadPlus(..))
@@ -49,7 +47,6 @@ import qualified Data.Profunctor.Product as PP
 import qualified Data.Profunctor.Product.Default as PP
 import           Data.Singletons
 import qualified Data.Promotion.Prelude.List as List (Map)
-import qualified Database.PostgreSQL.Simple as Pg
 import           GHC.Exts (Constraint)
 import           GHC.Generics (Generic)
 import           GHC.Float (float2Double)
@@ -572,7 +569,7 @@ type HsI t = Rec t (Cols_HsI t)
 type PgR t = Rec t (Cols_PgR t)
 
 -- | Like @('PgRN' t)@ but every field is 'Koln', as in the
--- output type of the right hand side of a 'O.leftJoin' with @'(tisch' t)@.
+-- output type of the right hand side of a 'O.leftJoin' with @'('table' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
 type PgRN t = Rec t (Cols_PgRN t)
@@ -594,24 +591,17 @@ type ITabla t
     , GHC.KnownSymbol (TableName t)
     , All PGType (List.Map Col_PgTypeSym0 (Cols t))
     , HDistributeProxy (Cols t)
-    , HL.HMapAux HList (HCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
-    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_HsR t)) (Cols_HsR t)
-    , HL.HMapAux HList HL.TaggedFn (HL.RecordValuesR (Cols_PgW t)) (Cols_PgW t)
-    , HL.HMapAux HList HPgWfromHsIField (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.HMapAux HList HPgWfromPgRField (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
+    , HL.HMapAux HList (FnCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
+    , HL.HMapAux HList (HL.HFmap FnPgWfromHsIField) (Cols_HsI t) (Cols_PgW t)
+    , HL.HMapAux HList (HL.HFmap FnPgWfromPgRField) (Cols_PgR t) (Cols_PgW t)
     , HL.HRLabelSet (Cols_HsR t)
     , HL.HRLabelSet (Cols_HsI t)
     , HL.HRLabelSet (Cols_PgR t)
     , HL.HRLabelSet (Cols_PgRN t)
     , HL.HRLabelSet (Cols_PgW t)
-    , HL.RecordValues (Cols_HsR t)
-    , HL.RecordValues (Cols_HsI t)
-    , HL.RecordValues (Cols_PgR t)
-    , HL.RecordValues (Cols_PgRN t)
-    , HL.RecordValues (Cols_PgW t)
-    , HL.SameLength (HL.RecordValuesR (Cols_HsI t)) (HL.RecordValuesR (Cols_PgW t))
-    , HL.SameLength (HL.RecordValuesR (Cols_PgR t)) (HL.RecordValuesR (Cols_PgW t))
     , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
+    , HL.SameLength (Cols_HsI t) (Cols_PgW t)
+    , HL.SameLength (Cols_PgR t) (Cols_PgW t)
     , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
     , PP.Default OI.ColumnMaker (PgR t) (PgR t)
     )
@@ -741,21 +731,21 @@ mkHsI k = Tagged
 
 -- | Use with 'HL.ApplyAB' to apply convert a field in a
 -- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
-data HPgWfromHsIField = HPgWfromHsIField
-instance HL.ApplyAB HPgWfromHsIField x x where
+data FnPgWfromHsIField = FnPgWfromHsIField
+instance HL.ApplyAB FnPgWfromHsIField x x where
   applyAB _ = id
-instance ToKol hs pg => HL.ApplyAB HPgWfromHsIField hs (Kol pg) where
+instance ToKol hs pg => HL.ApplyAB FnPgWfromHsIField hs (Kol pg) where
   applyAB _ = kol
-instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (WDef hs) (WDef (Kol pg)) where
+instance (ToKol hs pg, PGType pg) => HL.ApplyAB FnPgWfromHsIField (WDef hs) (WDef (Kol pg)) where
   applyAB _ = fmap kol
-instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (Maybe hs) (Koln pg) where
+instance (ToKol hs pg, PGType pg) => HL.ApplyAB FnPgWfromHsIField (Maybe hs) (Koln pg) where
   applyAB _ = maybe nul koln
-instance (ToKol hs pg, PGType pg) => HL.ApplyAB HPgWfromHsIField (WDef (Maybe hs)) (WDef (Koln pg)) where
+instance (ToKol hs pg, PGType pg) => HL.ApplyAB FnPgWfromHsIField (WDef (Maybe hs)) (WDef (Koln pg)) where
   applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
 toPgW_fromHsI' :: Tabla t => HsI t -> PgW t
-toPgW_fromHsI' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromHsIField . HL.recordValues . unTagged
+toPgW_fromHsI' = Tagged . HL.hMap FnPgWfromHsIField . unTagged
 {-# INLINE toPgW_fromHsI' #-}
 
 -- | Like 'toPgW_fromHsI'', but takes an explicit @t@.
@@ -780,18 +770,19 @@ toPgW _ = toPgW'
 
 -- | Use with 'HL.ApplyAB' to apply convert a field in a
 -- @('HList' ('Cols_PgR' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
-data HPgWfromPgRField = HPgWfromPgRField
-instance HL.ApplyAB HPgWfromPgRField x x where
+data FnPgWfromPgRField = FnPgWfromPgRField
+instance HL.ApplyAB FnPgWfromPgRField x x where
   applyAB _ = id
-instance PGType pg => HL.ApplyAB HPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
+instance PGType pg => HL.ApplyAB FnPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
   applyAB _ = WVal
-instance PGType pg => HL.ApplyAB HPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
+instance PGType pg => HL.ApplyAB FnPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
   applyAB _ = WVal
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
--- to a @('PgW' t)@ that can be used in a 'runUpdate'-like operation.
+-- to a @('PgW' t)@ that can be used in a 'Opaleye.SOT.runUpdate'-like
+-- operation.
 update' :: Tabla t => PgR t -> PgW t
-update' = Tagged . HL.hMapTaggedFn . HL.hMapL HPgWfromPgRField . HL.recordValues . unTagged
+update' = Tagged . HL.hMap FnPgWfromPgRField . unTagged
 {-# INLINE update' #-}
 
 -- | Like 'update'', but takes an explicit @t@ for when it can't be inferred.
@@ -851,7 +842,7 @@ instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD '
   {-# INLINE colProps #-}
 
 -- | Use with 'HL.ApplyAB' to apply 'colProps' to each element of an 'HList'.
-data HCol_Props t = HCol_Props
+data FnCol_Props t = FnCol_Props
 
 instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
   . ( Tabla t
@@ -860,7 +851,7 @@ instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
     , pcol ~ Proxy col
     , col ~ 'Col n w r p h
     , out ~ Col_Props t col
-    ) => HL.ApplyAB (HCol_Props t) pcol out
+    ) => HL.ApplyAB (FnCol_Props t) pcol out
     where
       applyAB _ = colProps (Proxy :: Proxy t)
       {-# INLINE applyAB #-}
@@ -873,7 +864,7 @@ table' = O.TableWithSchema
    (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
    (GHC.symbolVal (Proxy :: Proxy (TableName t)))
    (ppaUnTagged $ ppa $ HL.Record
-      (HL.hMapL (HCol_Props :: HCol_Props t)
+      (HL.hMapL (FnCol_Props :: FnCol_Props t)
       (hDistributeProxy (Proxy :: Proxy (Cols t)))))
 
 -- | Like 'table'', but takes @t@ explicitly to help the compiler when it
@@ -893,36 +884,6 @@ queryTabla _ = queryTabla'
 --------------------------------------------------------------------------------
 -- RunXXX functions
 
--- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
--- return a @('GetKol' w 'O.PGBool')@.
---
--- It is recommended that you use 'runUpdateTabla' if you are trying to update
--- a table that is an instance of 'Tabla'. The result is the same, but the
--- this function might be less convenient to us.
-runUpdate
-  :: (MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
-  => O.Table w r -> (r -> w) -> (r -> gkb) -> m Int64 -- ^
-runUpdate t upd fil = ask >>= \conn -> liftIO $ do
-   O.runUpdate conn t upd (unKol . getKol . fil)
-
--- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
-runUpdateTabla'
-  :: (Tabla t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
-  => (PgW t -> PgW t) -- ^ Upgrade current values to new values.
-  -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
-  -> m Int64          -- ^ Number of updated rows.
-runUpdateTabla' = go where -- we hide the 'forall' from the type signature
-  go :: forall t m gkb
-     .  (Tabla t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
-     => (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64
-  go = runUpdateTabla (T::T t)
-
--- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
--- it can't be inferred.
-runUpdateTabla
-  :: (Tabla t, MonadReader Pg.Connection m, MonadIO m, GetKol gkb O.PGBool)
-  => T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64 -- ^
-runUpdateTabla t upd = runUpdate (table t) (upd . update')
 
 --------------------------------------------------------------------------------
 
@@ -1217,7 +1178,6 @@ instance
     , ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
     ) => ProductProfunctorAdaptor p (HList (p a1 b1 ': pabs)) (HList (a1 ': as)) (HList (b1 ': bs)) where
   ppa = \(HCons pab1 pabs) -> P.dimap (\(HCons x xs) -> (x,xs)) (uncurry HCons) (pab1 PP.***! ppa pabs)
-  {-# INLINABLE ppa #-}
 
 instance
     ( ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
@@ -1242,7 +1202,6 @@ instance
     ( PP.ProductProfunctor p, PP.Default p a1 b1, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HList (a1 ': as)) (HList (b1 ': bs)) where
   def = P.dimap (\(HCons x xs) -> (x,xs)) (uncurry HCons) (PP.def PP.***! PP.def)
-  {-# INLINABLE def #-}
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance
@@ -1274,7 +1233,6 @@ instance
   def = P.dimap (\(HCons a as) -> (a, as))
                 (\(mb, mbs) -> HCons <$> mb <*> mbs)
                 (PP.def PP.***! PP.def)
-  {-# INLINABLE def #-}
 
 -- | Orphan. 'Opaleye.SOT.Internal'.
 instance
@@ -1304,7 +1262,6 @@ instance HDistributeProxy ('[] :: [k]) where
   {-# INLINE hDistributeProxy #-}
 instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x ': xs) where
   hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
-  {-# INLINE hDistributeProxy #-}
 
 ---
 
