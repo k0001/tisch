@@ -25,7 +25,6 @@ module Opaleye.SOT.Run
 
 import           Control.Exception (Exception, SomeException)
 import           Control.Monad.IO.Class
-import           Control.Monad.Reader (MonadReader, ask)
 import           Control.Monad.Catch (MonadThrow, throwM)
 import           Data.Int (Int64)
 import qualified Data.Profunctor.Product.Default as PP
@@ -50,17 +49,16 @@ instance Exception ErrNoRows
 --------------------------------------------------------------------------------
 -- Working with the DB connection
 
-commit :: (MonadIO m, MonadReader Pg.Connection m) => m ()
-commit = (liftIO . Pg.commit) =<< ask
+commit :: (MonadIO m) => Pg.Connection -> m ()
+commit = liftIO . Pg.commit
 
 --------------------------------------------------------------------------------
 
 -- | Query and fetch zero or more resulting rows.
 runQueryMany
- :: (MonadIO m, MonadThrow m, MonadReader Pg.Connection m,
-     PP.Default O.QueryRunner v hs)
- => (hs -> Either SomeException r) -> O.Query v -> m [r] -- ^
-runQueryMany f q = ask >>= \conn -> do
+ :: (MonadIO m, MonadThrow m, PP.Default O.QueryRunner v hs)
+ => (hs -> Either SomeException r) -> O.Query v -> Pg.Connection -> m [r] -- ^
+runQueryMany f q conn = do
   traverse (either throwM return . f) =<< liftIO (O.runQuery conn q)
 
 -- | Query and fetch zero or one resulting row.
@@ -68,11 +66,11 @@ runQueryMany f q = ask >>= \conn -> do
 -- Throws 'ErrTooManyRows' if there is more than one row in the result.
 runQuery1
  :: forall v hs r m
-  . (MonadIO m, MonadThrow m, MonadReader Pg.Connection m,
-     PP.Default O.QueryRunner v hs)
- => (hs -> Either SomeException r) -> O.Query v -> m (Maybe r) -- ^
-runQuery1 f q = do
-    rs <- runQueryMany f q
+  . (MonadIO m, MonadThrow m, PP.Default O.QueryRunner v hs)
+ => (hs -> Either SomeException r) -> O.Query v
+ -> Pg.Connection -> m (Maybe r) -- ^
+runQuery1 f q conn = do
+    rs <- runQueryMany f q conn
     case rs of
       [r] -> return (Just r)
       []  -> return Nothing
@@ -87,11 +85,10 @@ runQuery1 f q = do
 -- 'ErrNoRows' if there is no row in the result.
 runQueryHead
  :: forall v hs r m
-  . (MonadIO m, MonadThrow m, MonadReader Pg.Connection m,
-     PP.Default O.QueryRunner v hs)
- => (hs -> Either SomeException r) -> O.Query v -> m r -- ^
-runQueryHead f q = do
-    rs <- runQueryMany f q
+  . (MonadIO m, MonadThrow m, PP.Default O.QueryRunner v hs)
+ => (hs -> Either SomeException r) -> O.Query v -> Pg.Connection -> m r -- ^
+runQueryHead f q conn = do
+    rs <- runQueryMany f q conn
     case rs of
       [r] -> return r
       []  -> throwM $ ErrNoRows sql
@@ -103,24 +100,21 @@ runQueryHead f q = do
 --------------------------------------------------------------------------------
 
 -- | Insert zero or more rows.
-runInsertMany
-  :: (MonadIO m, MonadReader Pg.Connection m)
-  => O.Table w v -> [w] -> m Int64 -- ^
-runInsertMany t ws = ask >>= \conn -> liftIO (O.runInsertMany conn t ws)
+runInsertMany :: MonadIO m => O.Table w v -> [w] -> Pg.Connection -> m Int64 -- ^
+runInsertMany t ws conn = liftIO (O.runInsertMany conn t ws)
 
 -- | Insert one row.
-runInsert1
-  :: (MonadIO m, MonadReader Pg.Connection m)
-  => O.Table w v -> w -> m Int64 -- ^
+runInsert1 :: MonadIO m => O.Table w v -> w -> Pg.Connection -> m Int64 -- ^
 runInsert1 t w = runInsertMany t [w]
 
 --------------------------------------------------------------------------------
 
 -- | Insert zero or more rows, returning data from the rows actually inserted.
 runInsertReturningMany
-  :: (MonadIO m, MonadReader Pg.Connection m, PP.Default O.QueryRunner v hs)
-  => (hs -> Either SomeException r) -> O.Table w v -> w -> m [r] -- ^
-runInsertReturningMany f t w = ask >>= \conn -> liftIO $ do
+  :: (MonadIO m, PP.Default O.QueryRunner v hs)
+  => (hs -> Either SomeException r) -> O.Table w v -> w
+  -> Pg.Connection -> m [r] -- ^
+runInsertReturningMany f t w conn = liftIO $ do
    traverse (either throwM return . f) =<< O.runInsertReturning conn t w id
 
 -- | Insert 1 row, returning data from the zero or one rows actually inserted.
@@ -128,11 +122,11 @@ runInsertReturningMany f t w = ask >>= \conn -> liftIO $ do
 -- Throws 'ErrTooManyRows' if there is more than one row in the result.
 runInsertReturning1
   :: forall m v hs w r
-   . (MonadIO m, MonadThrow m, MonadReader Pg.Connection m,
-      PP.Default O.QueryRunner v hs)
-  => (hs -> Either SomeException r) -> O.Table w v -> w -> m (Maybe r) -- ^
-runInsertReturning1 f t w = do
-   rs <- runInsertReturningMany f t w
+   . (MonadIO m, MonadThrow m, PP.Default O.QueryRunner v hs)
+  => (hs -> Either SomeException r) -> O.Table w v -> w
+  -> Pg.Connection -> m (Maybe r) -- ^
+runInsertReturning1 f t w conn = do
+   rs <- runInsertReturningMany f t w conn
    case rs of
      [r] -> return (Just r)
      []  -> return Nothing
@@ -147,11 +141,11 @@ runInsertReturning1 f t w = do
 -- 'ErrNoRows' if there is no row in the result.
 runInsertReturningHead
   :: forall m hs w v r
-   . (MonadIO m, MonadThrow m, MonadReader Pg.Connection m,
-      PP.Default O.QueryRunner v hs)
-  => (hs -> Either SomeException r) -> O.Table w v -> w -> m r -- ^
-runInsertReturningHead f t w = do
-   rs <- runInsertReturningMany f t w
+   . (MonadIO m, MonadThrow m, PP.Default O.QueryRunner v hs)
+  => (hs -> Either SomeException r) -> O.Table w v -> w
+  -> Pg.Connection -> m r -- ^
+runInsertReturningHead f t w conn = do
+   rs <- runInsertReturningMany f t w conn
    case rs of
      [r] -> return r
      []  -> throwM $ ErrNoRows sql
@@ -169,23 +163,26 @@ runInsertReturningHead f t w = do
 -- a table that is an instance of 'Tabla'. The result is the same, but the
 -- this function might be less convenient to use.
 runUpdate
-  :: (MonadIO m, MonadReader Pg.Connection m, GetKol gkb O.PGBool)
-  => O.Table w r -> (r -> w) -> (r -> gkb) -> m Int64 -- ^
-runUpdate t upd fil = ask >>= \conn -> liftIO $ do
+  :: (MonadIO m, GetKol gkb O.PGBool)
+  => O.Table w r -> (r -> w) -> (r -> gkb)
+  -> Pg.Connection -> m Int64 -- ^
+runUpdate t upd fil conn = liftIO $ do
     O.runUpdate conn t upd (unKol . getKol . fil)
 
 -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
 runUpdateTabla'
   :: forall t m gkb
-   . (Tabla t, MonadIO m, MonadReader Pg.Connection m, GetKol gkb O.PGBool)
+   . (Tabla t, MonadIO m, GetKol gkb O.PGBool)
   => (PgW t -> PgW t) -- ^ Upgrade current values to new values.
   -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
+  -> Pg.Connection
   -> m Int64          -- ^ Number of updated rows.
 runUpdateTabla' = runUpdateTabla (T::T t)
 
 -- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
 -- it can't be inferred.
 runUpdateTabla
-  :: (Tabla t, MonadIO m, MonadReader Pg.Connection m, GetKol gkb O.PGBool)
-  => T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64 -- ^
+  :: (Tabla t, MonadIO m, GetKol gkb O.PGBool)
+  => T t -> (PgW t -> PgW t) -> (PgR t -> gkb)
+  -> Pg.Connection -> m Int64 -- ^
 runUpdateTabla t upd = runUpdate (table t) (upd . update')
