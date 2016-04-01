@@ -52,7 +52,7 @@ module Opaleye.SOT.Run
   ) -}  where
 
 import           Control.Concurrent.MVar
-import           Control.Monad (void)
+import           Control.Monad (when, void)
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Catch as Cx
 import           Control.Lens
@@ -80,8 +80,7 @@ import           Opaleye.SOT.Internal
 $(singletons [d|
    -- | 'Perm' is only used at the type level to index 'PgConn'.
    data Perm
-     = Close -- ^ Allow closing the connection.
-     | Read -- ^ Allow reading (i.e., @SELECT@)
+     = Read -- ^ Allow reading (i.e., @SELECT@)
      | Write -- ^ Allow writing  (i.e., @INSERT@, @UPDATE@)
      | TransactionBegin
        -- ^ Allow beginning transactions (i.e., @BEGIN@)
@@ -136,8 +135,9 @@ readOrTakePgConn
    . (MonadIO m, SingI ps)
   => ReadOrTake -> PgConn ps -> m Pg.Connection
 readOrTakePgConn rot = \(PgConn mv) -> liftIO $ do
-   let f = case rot of ReadOrTake_Read -> readMVar
-                       ReadOrTake_Take -> takeMVar
+   let f = case rot of
+             ReadOrTake_Read -> readMVar
+             ReadOrTake_Take -> takeMVar
    mx <- f mv
    case mx of
      Nothing -> Cx.throwM ErrPgConnClosed
@@ -163,9 +163,7 @@ putPgConn
   => Pg.Connection -> PgConn ps -> m (PgConn ps')
 putPgConn conn (PgConn mv) = liftIO $ do
    let perms = Set.fromList (fromSing (sing :: Sing ps'))
-   if Set.null perms
-      then Pg.close conn `Cx.finally` putMVar mv Nothing
-      else putMVar mv (Just (conn, perms))
+   putMVar mv (Just (conn, perms))
    return (PgConn mv)
 
 -- | Internal. Make sure to fix @ps'@ to some specific type.
@@ -181,13 +179,24 @@ withPgConn k pc@(PgConn mv) = Cx.bracket
       a <- k conn
       return (a, PgConn mv :: PgConn ps'))
 
+-- | Internal.
+closePgConn :: (MonadIO m) => PgConn ps -> m (PgConn '[])
+closePgConn pc@(PgConn mv) = liftIO $ Cx.mask $ \restore -> do
+  mx <- takeMVar mv
+  case mx of
+     Nothing -> do
+        putMVar mv Nothing
+        restore (Cx.throwM ErrPgConnClosed)
+     Just (conn, perms) -> do
+        flip Cx.onException (putMVar mv mx) $ restore $ do
+           Pg.close conn
+           when (Set.member TransactionFinish perms) $ do
+              putStrLn "Warning: Opaleye.SOT.Run.closePgConn - \
+                       \Closed connection on transaction"
+  putMVar mv Nothing
+  return (PgConn mv)
+
 -- | Drop a permission from the connection.
---
--- If you drop all permissions, then the connection will be closed.
---
--- If you drop the 'Close' permission, then in order to close the
--- connection you will need to use the @'IO' ()@ action returned by
--- 'connect' or 'connect''
 dropPerm
   :: (MonadIO m, Cx.MonadMask m, SingI ps, SingI (DropPerm p ps))
   => proxy (p :: Perm) -> PgConn ps -> m (PgConn (DropPerm p ps)) -- ^
@@ -196,7 +205,7 @@ dropPerm _ = fmap snd . withPgConn return
 connect
   :: MonadIO m
   => Pg.ConnectInfo
-  -> m (PgConn ['Close, 'Read, 'Write, 'TransactionBegin], IO ()) -- ^
+  -> m (PgConn ['Read, 'Write, 'TransactionBegin], IO ()) -- ^
 connect = connect' . Pg.postgreSQLConnectionString
 
 -- | Like 'connect', except it takes a @libpq@ connection string instead of a
@@ -204,22 +213,14 @@ connect = connect' . Pg.postgreSQLConnectionString
 connect'
   :: MonadIO m
   => B8.ByteString -- ^ @libpq@ connection string.
-  -> m (PgConn ['Close, 'Read, 'Write, 'TransactionBegin], IO ())
+  -> m (PgConn ['Read, 'Write, 'TransactionBegin], IO ())
 connect' connStr = liftIO $ Cx.mask $ \restore -> do
   conn <- Pg.connectPostgreSQL connStr
   flip Cx.onException (Pg.close conn) $ restore $ do
      mv <- newEmptyMVar
      let pc = PgConn mv
-         fin = void (putPgConn conn pc :: IO (PgConn '[]))
      _ <- putPgConn conn pc <&> asTypeOf pc
-     return (pc, fin)
-
--- | Close a connection. Connections currently in a transaction can't be closed.
-close
-  :: (MonadIO m, Cx.MonadMask m, SingI ps,
-      Allow 'Close ps, Forbid 'TransactionFinish ps)
-  => PgConn ps -> m (PgConn '[]) -- ^
-close = fmap snd . withPgConn return -- closed when we set perms to []
+     return (pc, void (closePgConn pc))
 
 --------------------------------------------------------------------------------
 -- Transactions
