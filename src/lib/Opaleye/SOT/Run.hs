@@ -1,34 +1,32 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -ddump-splices #-}
 
 module Opaleye.SOT.Run
-{-  ( -- * Connection
+  ( -- * Connection
     PgConn
   , connect
   , connect'
   , close
+    -- * Permissions
   , Perm(..)
+  , SPerm
   , Allow
   , Forbid
-  , dropPerm
-  , unsafePgConn
+  , withoutPerm
     -- * Transaction
-  , begin
-  , commit
-  , rollback
+  , withTransaction
     -- * Query
   , runQueryMany
   , runQuery1
@@ -47,24 +45,15 @@ module Opaleye.SOT.Run
     -- * Exception
   , ErrTooManyRows(..)
   , ErrNoRows(..)
-  , ErrPgConnPerms(..)
-  , ErrPgConnClosed(..)
-  ) -}  where
+  ) where
 
-import           Control.Concurrent.MVar
-import           Control.Monad (when, void)
+import           Control.Concurrent.MVar hiding (withMVar)
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Catch as Cx
-import           Control.Lens
-import           Data.Foldable
 import           Data.Int (Int64)
 import qualified Data.Profunctor.Product.Default as PP
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Singletons
 import           Data.Singletons.Prelude
 import           Data.Singletons.TH
-import           Data.Singletons.Decide
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Char8 as B8
 import qualified Database.PostgreSQL.Simple as Pg
@@ -78,16 +67,15 @@ import           Opaleye.SOT.Internal
 --------------------------------------------------------------------------------
 
 $(singletons [d|
-   -- | 'Perm' is only used at the type level to index 'PgConn'.
-   data Perm
-     = Read -- ^ Allow reading (i.e., @SELECT@)
-     | Write -- ^ Allow writing  (i.e., @INSERT@, @UPDATE@)
-     | TransactionBegin
-       -- ^ Allow beginning transactions (i.e., @BEGIN@)
-     | TransactionFinish
-       -- ^ Allow finishing transactions (i.e., @COMMIT@, @ROLLBACK@)
-     deriving (Eq, Ord, Show)
- |])
+  -- | 'Perm' is only used at the type level to index 'PgConn'.
+  data Perm
+    = Read -- ^ Allow reading (i.e., @SELECT@)
+    | Write -- ^ Allow writing  (i.e., @INSERT@, @UPDATE@)
+    | Transaction
+      -- ^ Allow starting and finishing transactions (i.e., @BEGIN@,
+      -- @COMMIT@, @ROLLBACK@).
+    deriving (Eq, Ord, Show)
+  |])
 
 -- | @'PgConn' perms@ is just a wrapper around @postgresql-simple@'s
 -- 'Pg.Connection' that carries, in @perms@, type-level information about which
@@ -102,7 +90,11 @@ $(singletons [d|
 -- 'TransactionBegin']@ is suitable for performing inserts, updates, and begin
 -- transactions, hereas @'PgConn' '['Write'] can perform inserts and updates, but
 -- cannot work with transactions.
-newtype PgConn (perms :: [Perm]) = PgConn (MVar (Maybe (Pg.Connection, Set Perm)))
+--
+-- Note that 'PgConn' is not thread-safe, you are encouraged to maintain a
+-- multithreaded pool of 'PgConn' instead. See "Data.Pool" from the @ex-pool@
+-- package.
+newtype PgConn (perms :: [Perm]) = PgConn (MVar (Maybe Pg.Connection))
 
 -- | @'Allow' p ps@ ensures that @p@ is present in @ps@.
 type family Allow (p :: Perm) (ps :: [Perm]) :: Constraint where
@@ -126,86 +118,35 @@ type family DropPerm (p :: Perm) (ps :: [Perm]) :: [Perm] where
   DropPerm p (q ': ps) = q ': DropPerm p ps
   DropPerm p '[]       = '[]
 
-
-data ReadOrTake = ReadOrTake_Read | ReadOrTake_Take
-
--- | Internal. This may thrown 'ErrPgConnClosed' or 'ErrPgConnPerms'
-readOrTakePgConn
-  :: forall m ps
-   . (MonadIO m, SingI ps)
-  => ReadOrTake -> PgConn ps -> m Pg.Connection
-readOrTakePgConn rot = \(PgConn mv) -> liftIO $ do
-   let f = case rot of
-             ReadOrTake_Read -> readMVar
-             ReadOrTake_Take -> takeMVar
-   mx <- f mv
-   case mx of
-     Nothing -> Cx.throwM ErrPgConnClosed
-     Just (conn, aperms) -> do
-       let eperms = Set.fromList (fromSing (sing :: Sing ps))
-       if eperms /= aperms
-          then Cx.throwM $ ErrPgConnPerms eperms aperms
-          else return conn
-
--- | Internal. This may thrown 'ErrPgConnClosed' or 'ErrPgConnPerms'
-readPgConn :: (MonadIO m, SingI ps) => PgConn ps -> m Pg.Connection
-readPgConn = readOrTakePgConn ReadOrTake_Read
-
--- | Internal. This may thrown 'ErrPgConnClosed' or 'ErrPgConnPerms'
-takePgConn :: (MonadIO m, SingI ps) => PgConn ps -> m Pg.Connection
-takePgConn = readOrTakePgConn ReadOrTake_Take
-
--- | Internal. Make sure to fix @ps'@ to some specific type.
--- If @ps'@ is @[]@ then the connection will be closed.
-putPgConn
-  :: forall m ps ps'
-   . (MonadIO m, SingI ps')
-  => Pg.Connection -> PgConn ps -> m (PgConn ps')
-putPgConn conn (PgConn mv) = liftIO $ do
-   let perms = Set.fromList (fromSing (sing :: Sing ps'))
-   putMVar mv (Just (conn, perms))
-   return (PgConn mv)
-
--- | Internal. Make sure to fix @ps'@ to some specific type.
--- If @ps'@ is @[]@ then the connection will be closed.
+-- | Internal. @'withPgConn' x f@ ensures that @x@ is not
+-- usable outside @f@ while @f@ is running.
 withPgConn
-  :: forall m ps ps' a
-   . (MonadIO m, Cx.MonadMask m, SingI ps, SingI ps')
-  => (Pg.Connection -> m a) -> PgConn ps -> m (a, PgConn ps')
-withPgConn k pc@(PgConn mv) = Cx.bracket
-  (takePgConn pc)
-  (\conn -> putPgConn conn pc <&> asTypeOf pc)
-  (\conn -> do
-      a <- k conn
-      return (a, PgConn mv :: PgConn ps'))
-
--- | Internal.
-closePgConn :: (MonadIO m) => PgConn ps -> m (PgConn '[])
-closePgConn pc@(PgConn mv) = liftIO $ Cx.mask $ \restore -> do
-  mx <- takeMVar mv
-  case mx of
-     Nothing -> do
-        putMVar mv Nothing
-        restore (Cx.throwM ErrPgConnClosed)
-     Just (conn, perms) -> do
-        flip Cx.onException (putMVar mv mx) $ restore $ do
-           Pg.close conn
-           when (Set.member TransactionFinish perms) $ do
-              putStrLn "Warning: Opaleye.SOT.Run.closePgConn - \
-                       \Closed connection on transaction"
-  putMVar mv Nothing
-  return (PgConn mv)
+  :: (MonadIO m, Cx.MonadMask m)
+  => PgConn ps -> (Pg.Connection -> m a) -> m a
+withPgConn (PgConn mv) f = Cx.bracket
+   (liftIO (takeMVar mv))
+   (liftIO . putMVar mv)
+   (maybe (Cx.throwM ErrPgConnClosed) f)
 
 -- | Drop a permission from the connection.
-dropPerm
-  :: (MonadIO m, Cx.MonadMask m, SingI ps, SingI (DropPerm p ps))
-  => proxy (p :: Perm) -> PgConn ps -> m (PgConn (DropPerm p ps)) -- ^
-dropPerm _ = fmap snd . withPgConn return
+withoutPerm
+  :: forall proxy m p ps a
+   . (MonadIO m, Cx.MonadMask m, Allow p ps, Forbid p (DropPerm p ps))
+  => proxy (p :: Perm)
+  -> PgConn ps
+  -> (forall ps'. Forbid p ps' => PgConn ps' -> m a)
+  -- ^ The usage of @'PgConn' ps@ is undefined within this function,
+  -- and @'PgConn' ps'@ mustn't escape the scope of this function.
+  -> m a
+withoutPerm _ pc f = withPgConn pc $ \conn ->
+  Cx.bracket (liftIO $ newMVar (Just conn)) (liftIO . takeMVar) $ \mv' ->
+     f (PgConn mv' :: PgConn (DropPerm p ps))
 
+-- | Return a new connection and a finalizer for it.
 connect
   :: MonadIO m
   => Pg.ConnectInfo
-  -> m (PgConn ['Read, 'Write, 'TransactionBegin], IO ()) -- ^
+  -> m (PgConn ['Read, 'Write, 'Transaction]) -- ^
 connect = connect' . Pg.postgreSQLConnectionString
 
 -- | Like 'connect', except it takes a @libpq@ connection string instead of a
@@ -213,221 +154,193 @@ connect = connect' . Pg.postgreSQLConnectionString
 connect'
   :: MonadIO m
   => B8.ByteString -- ^ @libpq@ connection string.
-  -> m (PgConn ['Read, 'Write, 'TransactionBegin], IO ())
-connect' connStr = liftIO $ Cx.mask $ \restore -> do
-  conn <- Pg.connectPostgreSQL connStr
-  flip Cx.onException (Pg.close conn) $ restore $ do
-     mv <- newEmptyMVar
-     let pc = PgConn mv
-     _ <- putPgConn conn pc <&> asTypeOf pc
-     return (pc, void (closePgConn pc))
+  -> m (PgConn ['Read, 'Write, 'Transaction])
+connect' bs = liftIO $ do
+  conn <- Pg.connectPostgreSQL bs
+  PgConn <$> newMVar (Just conn)
 
---------------------------------------------------------------------------------
--- Transactions
+-- | Warning: Using the given @'PgConn' ps@ after calling 'close' will result in
+-- a runtime exception.
+close :: (MonadIO m, Cx.MonadMask m) => PgConn ps -> m ()
+close pc = withPgConn pc (liftIO . Pg.close)
 
-begin
-  :: (MonadIO m, Cx.MonadMask m,
-      Allow 'TransactionBegin ps,
-      SingI ps, SingI ('TransactionFinish ': DropPerm 'TransactionBegin ps))
-  => Pg.TransactionMode
-  -> PgConn ps
-  -> m (PgConn ('TransactionFinish ': DropPerm 'TransactionBegin ps)) -- ^
-begin tmode = fmap snd . withPgConn (liftIO . Pg.beginMode tmode)
-
-commit
-  :: (MonadIO m, Cx.MonadMask m,
-      Allow 'TransactionFinish ps,
-      SingI ps, SingI ('TransactionBegin ': DropPerm 'TransactionFinish ps))
+withTransaction
+  :: forall m ps a b
+   . (MonadIO m, Cx.MonadMask m,
+      Allow 'Transaction ps, Forbid 'Transaction (DropPerm 'Transaction ps))
   => PgConn ps
-  -> m (PgConn ('TransactionBegin ': DropPerm 'TransactionFinish ps)) -- ^
-commit = fmap snd . withPgConn (liftIO . Pg.commit)
-
-rollback
-  :: (MonadIO m, Cx.MonadMask m,
-      Allow 'TransactionFinish ps,
-      SingI ps, SingI ('TransactionBegin ': DropPerm 'TransactionFinish ps))
-  => PgConn ps
-  -> m (PgConn ('TransactionBegin ': DropPerm 'TransactionFinish ps)) -- ^
-rollback = fmap snd . withPgConn (liftIO . Pg.rollback)
+  -> Pg.TransactionMode
+  -> (forall ps'. Forbid 'Transaction ps' => PgConn ps' -> m (Either a b))
+  -- ^ The usage of @'PgConn' ps@ is undefined within this function,
+  -- and @'PgConn' ps'@ mustn't escape the scope of this function.
+  -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
+  -> m (Either a b)
+withTransaction pc tmode f = withPgConn pc $ \conn ->
+  Cx.bracket (liftIO $ newMVar (Just conn)) (liftIO . takeMVar) $ \mv' ->
+     Cx.mask $ \restore -> do
+        let pc' = PgConn mv' :: PgConn (DropPerm 'Transaction ps)
+        liftIO $ Pg.beginMode tmode conn
+        eab <- restore (f pc') `Cx.onException` liftIO (Pg.rollback conn)
+        liftIO $ either (const Pg.rollback) (const Pg.commit) eab conn
+        return eab
 
 --------------------------------------------------------------------------------
 
--- -- | Query and fetch zero or more resulting rows.
--- runQueryMany
---  :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
---  => (hs -> Either SomeException r) -> O.Query v -> PgConn ps -> m [r] -- ^
--- runQueryMany f q (PgConn conn) = do
---   traverse (either Cx.throwM return . f) =<< liftIO (O.runQuery conn q)
+-- | Query and fetch zero or more resulting rows.
+runQueryMany
+ :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
+ => PgConn ps -> (hs -> Either Cx.SomeException r) -> O.Query v -> m [r] -- ^
+runQueryMany pc f q = liftIO $ withPgConn pc $ \conn ->
+  traverse (either Cx.throwM return . f) =<< O.runQuery conn q
 
--- -- | Query and fetch zero or one resulting row.
--- --
--- -- Throws 'ErrTooManyRows' if there is more than one row in the result.
--- runQuery1
---  :: forall v hs r m ps
---   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
---  => (hs -> Either SomeException r) -> O.Query v
---  -> PgConn ps -> m (Maybe r) -- ^
--- runQuery1 f q pc = do
---     rs <- runQueryMany f q pc
---     case rs of
---       [r] -> return (Just r)
---       []  -> return Nothing
---       _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
---   where
---     OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
---     sql = O.showSqlForPostgresExplicit u q
+-- | Query and fetch zero or one resulting row.
+--
+-- Throws 'ErrTooManyRows' if there is more than one row in the result.
+runQuery1
+ :: forall v hs r m ps
+  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
+ => PgConn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
+ -> m (Maybe r) -- ^
+runQuery1 pc f q = do
+    rs <- runQueryMany pc f q
+    case rs of
+      [r] -> return (Just r)
+      []  -> return Nothing
+      _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
+  where
+    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
+          in  O.showSqlForPostgresExplicit u q
 
--- -- | Query and fetch one resulting row.
--- --
--- -- Throws 'ErrTooManyRows' if there is more than one row in the result, and
--- -- 'ErrNoRows' if there is no row in the result.
--- runQueryHead
---  :: forall v hs r m ps
---   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
---  => (hs -> Either SomeException r) -> O.Query v -> PgConn ps -> m r -- ^
--- runQueryHead f q pc = do
---     rs <- runQueryMany f q pc
---     case rs of
---       [r] -> return r
---       []  -> Cx.throwM $ ErrNoRows sql
---       _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
---   where
---     OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
---     sql = O.showSqlForPostgresExplicit u q
+-- | Query and fetch one resulting row.
+--
+-- Throws 'ErrTooManyRows' if there is more than one row in the result, and
+-- 'ErrNoRows' if there is no row in the result.
+runQueryHead
+ :: forall v hs r m ps
+  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
+ => PgConn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
+ -> m r -- ^
+runQueryHead pc f q = do
+    rs <- runQueryMany pc f q
+    case rs of
+      [r] -> return r
+      []  -> Cx.throwM $ ErrNoRows sql
+      _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
+  where
+    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
+          in  O.showSqlForPostgresExplicit u q
 
--- --------------------------------------------------------------------------------
 
--- -- | Insert zero or more rows.
--- runInsertMany
---   :: (MonadIO m, Allow 'Write ps)
---   => O.Table w v -> [w] -> PgConn ps -> m Int64 -- ^
--- runInsertMany t ws (PgConn conn) = liftIO (O.runInsertMany conn t ws)
+--------------------------------------------------------------------------------
 
--- -- | Insert one row.
--- runInsert1
---   :: (MonadIO m, Allow 'Write ps)
---   => O.Table w v -> w -> PgConn ps -> m Int64 -- ^
--- runInsert1 t w = runInsertMany t [w]
+-- | Insert zero or more rows.
+runInsertMany
+  :: (MonadIO m, Allow 'Write ps)
+  => PgConn ps -> O.Table w v -> [w] -> m Int64 -- ^
+runInsertMany pc t ws = liftIO $ withPgConn pc $ \conn ->
+  O.runInsertMany conn t ws
 
--- --------------------------------------------------------------------------------
+-- | Insert one row.
+runInsert1
+  :: (MonadIO m, Allow 'Write ps)
+  => PgConn ps -> O.Table w v -> w -> m Int64 -- ^
+runInsert1 pc t w = runInsertMany pc t [w]
 
--- -- | Insert zero or more rows, returning data from the rows actually inserted.
--- runInsertReturningMany
---   :: (MonadIO m, PP.Default O.QueryRunner v hs,
---       Allow 'Write ps, Allow 'Read ps)
---   => (hs -> Either SomeException r) -> O.Table w v -> w
---   -> PgConn ps -> m [r] -- ^
--- runInsertReturningMany f t w (PgConn conn) = liftIO $ do
---    traverse (either Cx.throwM return . f) =<< O.runInsertReturning conn t w id
+--------------------------------------------------------------------------------
 
--- -- | Insert 1 row, returning data from the zero or one rows actually inserted.
--- --
--- -- Throws 'ErrTooManyRows' if there is more than one row in the result.
--- runInsertReturning1
---   :: forall m v hs w r ps
---    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
---       Allow 'Write ps, Allow 'Read ps)
---   => (hs -> Either SomeException r) -> O.Table w v -> w
---   -> PgConn ps -> m (Maybe r) -- ^
--- runInsertReturning1 f t w conn = do
---    rs <- runInsertReturningMany f t w conn
---    case rs of
---      [r] -> return (Just r)
---      []  -> return Nothing
---      _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
---   where
---     OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
---     sql = O.arrangeInsertReturningSql u t w id
+-- | Insert zero or more rows, returning data from the rows actually inserted.
+runInsertReturningMany
+  :: (MonadIO m, PP.Default O.QueryRunner v hs,
+      Allow 'Write ps, Allow 'Read ps)
+  => PgConn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
+  -> m [r] -- ^
+runInsertReturningMany pc f t w = liftIO $ withPgConn pc $ \conn ->
+   traverse (either Cx.throwM return . f) =<< O.runInsertReturning conn t w id
 
--- -- | Insert 1 row, returning data from the one row actually inserted.
--- --
--- -- Throws 'ErrTooManyRows' if there is more than one row in the result, and
--- -- 'ErrNoRows' if there is no row in the result.
--- runInsertReturningHead
---   :: forall m hs w v r ps
---    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
---       Allow 'Write ps, Allow 'Read ps)
---   => (hs -> Either SomeException r) -> O.Table w v -> w
---   -> PgConn ps -> m r -- ^
--- runInsertReturningHead f t w conn = do
---    rs <- runInsertReturningMany f t w conn
---    case rs of
---      [r] -> return r
---      []  -> Cx.throwM $ ErrNoRows sql
---      _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
---   where
---     OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
---     sql = O.arrangeInsertReturningSql u t w id
+-- | Insert 1 row, returning data from the zero or one rows actually inserted.
+--
+-- Throws 'ErrTooManyRows' if there is more than one row in the result.
+runInsertReturning1
+  :: forall m v hs w r ps
+   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
+      Allow 'Write ps, Allow 'Read ps)
+  => PgConn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
+  -> m (Maybe r) -- ^
+runInsertReturning1 pc f t w = do
+   rs <- runInsertReturningMany pc f t w
+   case rs of
+     [r] -> return (Just r)
+     []  -> return Nothing
+     _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
+  where
+    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
+          in  O.arrangeInsertReturningSql u t w id
 
--- --------------------------------------------------------------------------------
+-- | Insert 1 row, returning data from the one row actually inserted.
+--
+-- Throws 'ErrTooManyRows' if there is more than one row in the result, and
+-- 'ErrNoRows' if there is no row in the result.
+runInsertReturningHead
+  :: forall m hs w v r ps
+   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
+      Allow 'Write ps, Allow 'Read ps)
+  => PgConn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
+  -> m r -- ^
+runInsertReturningHead pc f t w = do
+   rs <- runInsertReturningMany pc f t w
+   case rs of
+     [r] -> return r
+     []  -> Cx.throwM $ ErrNoRows sql
+     _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
+  where
+    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
+          in  O.arrangeInsertReturningSql u t w id
 
--- -- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
--- -- return a @('GetKol' w 'O.PGBool')@.
--- --
--- -- It is recommended that you use 'runUpdateTabla' if you are trying to update
--- -- a table that is an instance of 'Tabla'. The result is the same, but the
--- -- this function might be less convenient to use.
--- runUpdate
---   :: (MonadIO m, GetKol gkb O.PGBool, Allow 'Write ps)
---   => O.Table w r -> (r -> w) -> (r -> gkb) -> PgConn ps -> m Int64 -- ^
--- runUpdate t upd fil (PgConn conn) = liftIO $ do
---     O.runUpdate conn t upd (unKol . getKol . fil)
+--------------------------------------------------------------------------------
 
--- -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
--- runUpdateTabla'
---   :: forall t m gkb ps
---    . (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Write ps)
---   => (PgW t -> PgW t) -- ^ Upgrade current values to new values.
---   -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
---   -> PgConn ps
---   -> m Int64          -- ^ Number of updated rows.
--- runUpdateTabla' = runUpdateTabla (T::T t)
+-- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
+-- return a @('GetKol' w 'O.PGBool')@.
+--
+-- It is recommended that you use 'runUpdateTabla' if you are trying to update
+-- a table that is an instance of 'Tabla'. The result is the same, but the
+-- this function might be less convenient to use.
+runUpdate
+  :: (MonadIO m, GetKol gkb O.PGBool, Allow 'Write ps)
+  => PgConn ps -> O.Table w r -> (r -> w) -> (r -> gkb) -> m Int64 -- ^
+runUpdate pc t upd fil = liftIO $ withPgConn pc $ \conn ->
+    O.runUpdate conn t upd (unKol . getKol . fil)
 
--- -- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
--- -- it can't be inferred.
--- runUpdateTabla
---   :: (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Write ps)
---   => T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> PgConn ps -> m Int64 -- ^
--- runUpdateTabla t upd = runUpdate (table t) (upd . update')
+-- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
+runUpdateTabla'
+  :: forall t m gkb ps
+   . (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Write ps)
+  => PgConn ps
+  -> (PgW t -> PgW t) -- ^ Upgrade current values to new values.
+  -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
+  -> m Int64          -- ^ Number of updated rows.
+runUpdateTabla' pc = runUpdateTabla pc (T::T t)
+
+-- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
+-- it can't be inferred.
+runUpdateTabla
+  :: (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Write ps)
+  => PgConn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64 -- ^
+runUpdateTabla pc t upd = runUpdate pc (table t) (upd . update')
 
 --------------------------------------------------------------------------------
 -- Exceptions
 
--- | Exception thrown when the expected 'PgConn' permissions don't match the
--- actual permissions,
-data ErrPgConnPerms = ErrPgConnPerms
-  { _errPgConnPerms_expected :: !(Set Perm)
-    -- ^ Expected permissions (i.e., those indexing 'PgConn').
-  , _errPgConnPerms_actual :: !(Set Perm)
-    -- ^ Actual current permissions.
-  } deriving (Typeable, Show)
-instance Cx.Exception ErrPgConnPerms
-
--- | Exception thrown when trying to use a 'PgConn' that has already been
--- closed.
-data ErrPgConnClosed = ErrPgConnClosed deriving (Typeable, Show)
-instance Cx.Exception ErrPgConnClosed
-
 -- | Exception thrown when indicating more rows than expected are available.
 data ErrTooManyRows = ErrTooManyRows Int String -- ^ Number of rows, SQL string
-   deriving (Typeable, Show)
+  deriving (Typeable, Show)
 instance Cx.Exception ErrTooManyRows
 
 -- | Exception thrown when indicating no rows are available.
 data ErrNoRows = ErrNoRows String -- ^ SQL string
-   deriving (Typeable, Show)
+  deriving (Typeable, Show)
 instance Cx.Exception ErrNoRows
 
---------------------------------------------------------------------------------
--- Misc
-
-class (kparam ~ 'KProxy, SingKind kparam)
-  => FromSings (kparam :: KProxy k) (as :: [k]) where
-  fromSings :: proxy as -> [DemoteRep kparam]
-instance (kparam ~ 'KProxy, SingKind kparam)
-  => FromSings (kparam :: KProxy k) '[] where
-  fromSings _ = []
-instance (kparam ~ 'KProxy, SingKind kparam, SingI a, FromSings kparam as)
-  => FromSings (kparam :: KProxy k) (a ': as) where
-  fromSings (_ :: proxy (a ': as))
-     = fromSing (sing :: Sing a) : fromSings (Proxy :: Proxy as)
+-- | Exception thrown when trying to use a closed connection.
+data ErrPgConnClosed = ErrPgConnClosed
+  deriving (Typeable, Show)
+instance Cx.Exception ErrPgConnClosed
