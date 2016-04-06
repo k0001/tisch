@@ -2,11 +2,23 @@
 -- unqualified as follows:
 --
 -- @
--- import           Opaleye.SOT
--- import qualified Opaleye as O
+-- import Opaleye.SOT
 -- @
 --
--- This module overrides some of the names exported by the "Opaleye".
+-- Note that "Opaleye.SOT" only exports tools for writing queries, but in
+-- order to actually run the queries you will need to import "Opaleye.Run" too:
+--
+-- @
+-- import Opaleye.SOT.Run
+-- @
+--
+-- Both "Opaleye.SOT" and "Opaleye.SOT.Run" override some of the names exported
+-- by the "Opaleye", so it is recommended that you import Opaleye, if needed,
+-- qualified as:
+--
+-- @
+-- import qualified Opaleye as O
+-- @
 --
 -- This module doesn't export any infix operator.
 module Opaleye.SOT
@@ -53,11 +65,6 @@ module Opaleye.SOT
  , altKoln
  , liftKoln1
  , liftKoln2
-
-   -- * Executing
-   --
-   -- Please see the "Opaleye.SOT.Run" module for documentation.
- , module Opaleye.SOT.Run
 
    -- * Querying
  , leftJoin
@@ -118,4 +125,3 @@ module Opaleye.SOT
  ) where
 
 import           Opaleye.SOT.Internal
-import           Opaleye.SOT.Run

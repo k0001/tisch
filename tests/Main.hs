@@ -21,6 +21,7 @@ import qualified Database.PostgreSQL.Simple as Pg
 import qualified Opaleye as O
 
 import           Opaleye.SOT
+import           Opaleye.SOT.Run
 
 import           Tutorial () -- Just for typechecking
 
@@ -107,8 +108,8 @@ query3 = proc () -> do
 outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
-update1 :: Pg.Connection -> IO Int64
-update1 = runUpdate table' update' fil
+update1 :: Allow 'Update ps => Conn ps -> IO Int64
+update1 c = runUpdate c table' update' fil
   where fil :: PgR TTest -> Kol O.PGBool
         fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
 
