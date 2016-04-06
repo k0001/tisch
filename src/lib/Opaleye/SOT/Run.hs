@@ -45,9 +45,12 @@ module Opaleye.SOT.Run
     -- * Exception
   , ErrTooManyRows(..)
   , ErrNoRows(..)
+  , ErrPgConnClosed(..)
+  , ErrPgConnInUse(..)
   ) where
 
 import           Control.Concurrent.MVar hiding (withMVar)
+import           Control.Monad ((<=<))
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Catch as Cx
 import           Data.Int (Int64)
@@ -138,9 +141,10 @@ withoutPerm
   -- ^ The usage of @'PgConn' ps@ is undefined within this function,
   -- and @'PgConn' ps'@ mustn't escape the scope of this function.
   -> m a
-withoutPerm _ pc f = withPgConn pc $ \conn ->
-  Cx.bracket (liftIO $ newMVar (Just conn)) (liftIO . takeMVar) $ \mv' ->
-     f (PgConn mv' :: PgConn (DropPerm p ps))
+withoutPerm _ pc f = withPgConn pc $ \conn -> Cx.bracket
+  (liftIO $ newMVar (Just conn))
+  (maybe (Cx.throwM ErrPgConnInUse) return <=< liftIO . tryTakeMVar)
+  (\mv' -> f (PgConn mv' :: PgConn (DropPerm p ps)))
 
 -- | Return a new connection and a finalizer for it.
 connect
@@ -175,14 +179,15 @@ withTransaction
   -- and @'PgConn' ps'@ mustn't escape the scope of this function.
   -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
   -> m (Either a b)
-withTransaction pc tmode f = withPgConn pc $ \conn ->
-  Cx.bracket (liftIO $ newMVar (Just conn)) (liftIO . takeMVar) $ \mv' ->
-     Cx.mask $ \restore -> do
-        let pc' = PgConn mv' :: PgConn (DropPerm 'Transaction ps)
-        liftIO $ Pg.beginMode tmode conn
-        eab <- restore (f pc') `Cx.onException` liftIO (Pg.rollback conn)
-        liftIO $ either (const Pg.rollback) (const Pg.commit) eab conn
-        return eab
+withTransaction pc tmode f = withPgConn pc $ \conn -> Cx.bracket
+  (liftIO $ newMVar (Just conn))
+  (maybe (Cx.throwM ErrPgConnInUse) return <=< liftIO . tryTakeMVar)
+  (\mv' -> Cx.mask $ \restore -> do
+     let pc' = PgConn mv' :: PgConn (DropPerm 'Transaction ps)
+     liftIO $ Pg.beginMode tmode conn
+     eab <- restore (f pc') `Cx.onException` liftIO (Pg.rollback conn)
+     liftIO $ either (const Pg.rollback) (const Pg.commit) eab conn
+     return eab)
 
 --------------------------------------------------------------------------------
 
@@ -344,3 +349,8 @@ instance Cx.Exception ErrNoRows
 data ErrPgConnClosed = ErrPgConnClosed
   deriving (Typeable, Show)
 instance Cx.Exception ErrPgConnClosed
+
+-- | Exception thrown when a connection is being used when it shouldn't be.
+data ErrPgConnInUse = ErrPgConnInUse
+  deriving (Typeable, Show)
+instance Cx.Exception ErrPgConnInUse
