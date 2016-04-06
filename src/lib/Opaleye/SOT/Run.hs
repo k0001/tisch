@@ -1,14 +1,9 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -16,6 +11,8 @@
 module Opaleye.SOT.Run
   ( -- * Connection
     Conn
+  , Conn'
+  , unConn
   , connect
   , connect'
   , close
@@ -23,6 +20,7 @@ module Opaleye.SOT.Run
   , Perm(..)
   , Allow
   , Forbid
+  , DropPerm
   , withoutPerm
     -- * Transaction
   , withTransaction
@@ -98,67 +96,71 @@ data Perm
 -- package.
 newtype Conn (perms :: [Perm]) = Conn Pg.Connection
 
+unConn :: Conn ps -> Pg.Connection
+unConn (Conn conn) = conn
+
+-- | A type synonym for a 'Conn' with all the permissions enabled.
+type Conn' = Conn ['Read, 'Insert, 'Update, 'Delete, 'Transact]
+
 -- | @'Allow' p ps@ ensures that @p@ is present in @ps@.
 --
 -- The kind of @p@ can be 'Perm' or @['Perm']@.
-type family Allow (p :: k) (ps :: [Perm]) :: Constraint where
-  Allow p '[] =
-     "Opaleye.SOT.Run.Allow" ~
-     "Allow: The required permission is forbidden"
-  Allow p (p ': ps) = ()
-  Allow p (q ': ps) = Allow p ps
-  Allow '[] ps = ()
-  Allow (p ': ps) qs = (Allow p qs, Allow ps qs)
+type Allow (p :: k) (ps :: [Perm]) = Allow' p ps
 
--- | @'Forbid' p ps@ ensures that @p@ is not present in @ps@.
+type family Allow' (p :: k) (ps :: [Perm]) :: Constraint where
+  Allow' p '[] =
+     "Opaleye.SOT.Run.Allow'" ~
+     "Allow': The required permission is forbidden"
+  Allow' p (p ': ps) = ()
+  Allow' p (q ': ps) = Allow' p ps
+  Allow' '[] ps = ()
+  Allow' (p ': ps) qs = (Allow' p qs, Allow' ps qs)
+
+-- | @'Forbid'' p ps@ ensures that @p@ is not present in @ps@.
 --
 -- The kind of @p@ can be 'Perm' or @['Perm']@.
-type family Forbid (p :: k) (ps :: [Perm]) :: Constraint where
-  Forbid p (p ': ps) =
-     "Opaleye.SOT.Run.Forbid" ~
-     "Forbid: The forbidden permission is allowed"
-  Forbid p (q ': ps) = Forbid p ps
-  Forbid p '[] = ()
-  Forbid '[] ps = ()
-  Forbid (p ': ps) qs = (Forbid p qs, Forbid ps qs)
+type Forbid (p :: k) (ps :: [Perm]) = Forbid' p ps
+
+type family Forbid' (p :: k) (ps :: [Perm]) :: Constraint where
+  Forbid' p (p ': ps) =
+     "Opaleye.SOT.Run.Forbid'" ~
+     "Forbid': The forbidden permission is allowed"
+  Forbid' p (q ': ps) = Forbid' p ps
+  Forbid' p '[] = ()
+  Forbid' '[] ps = ()
+  Forbid' (p ': ps) qs = (Forbid' p qs, Forbid' ps qs)
 
 -- | @'DropPerm' p ps@ removes @p@ from @ps@ if present.
 --
 -- The kind of @p@ can be 'Perm' or @['Perm']@.
-type family DropPerm (p :: k) (ps :: [Perm]) :: [Perm] where
-  DropPerm p (p ': ps) = DropPerm p ps
-  DropPerm p (q ': ps) = q ': DropPerm p ps
-  DropPerm p '[] = '[]
-  DropPerm '[] ps = ps
-  DropPerm (p ': ps) qs = DropPerm p (DropPerm ps qs)
+type DropPerm (p :: k) (ps :: [Perm]) = DropPerm' p ps
 
+type family DropPerm' (p :: k) (ps :: [Perm]) :: [Perm] where
+  DropPerm' p (p ': ps) = DropPerm' p ps
+  DropPerm' p (q ': ps) = q ': DropPerm' p ps
+  DropPerm' p '[] = '[]
+  DropPerm' '[] ps = ps
+  DropPerm' (p ': ps) qs = DropPerm' p (DropPerm' ps qs)
 
 -- | Drop a permission from the connection.
 withoutPerm
-  :: forall proxy m p ps a
-   . (MonadIO m, Cx.MonadMask m, Allow p ps, Forbid p (DropPerm p ps))
+  :: (MonadIO m, Cx.MonadMask m, Allow p ps, ps' ~ DropPerm p ps)
   => proxy (p :: k)
   -- ^ @k@ may be 'Perm' or @['Perm']@.
   -> Conn ps
-  -> (forall ps'. Forbid p ps' => Conn ps' -> m a)
+  -> (Conn ps' -> m a)
   -- ^ The usage of @'Conn' ps@ is undefined within this function,
   -- and @'Conn' ps'@ mustn't escape the scope of this function.
   -> m a
-withoutPerm _ (Conn conn) f = f (Conn conn :: Conn (DropPerm p ps))
+withoutPerm _ (Conn conn) f = f (Conn conn)
 
 -- | Return a new connection.
-connect
-  :: MonadIO m
-  => Pg.ConnectInfo
-  -> m (Conn ['Read, 'Insert, 'Update, 'Delete, 'Transact]) -- ^
+connect :: MonadIO m => Pg.ConnectInfo -> m Conn'
 connect = connect' . Pg.postgreSQLConnectionString
 
 -- | Like 'connect', except it takes a @libpq@ connection string instead of a
 -- 'Pg.ConnectInfo'.
-connect'
-  :: MonadIO m
-  => B8.ByteString -- ^ @libpq@ connection string.
-  -> m (Conn ['Read, 'Insert, 'Update, 'Delete, 'Transact]) -- ^
+connect' :: MonadIO m => B8.ByteString -> m Conn'
 connect' = liftIO . fmap Conn . Pg.connectPostgreSQL
 
 -- | Warning: Using the given @'Conn' ps@ after calling 'close' will result in
@@ -167,20 +169,17 @@ close :: (MonadIO m, Cx.MonadMask m) => Conn ps -> m ()
 close (Conn conn) = liftIO (Pg.close conn)
 
 withTransaction
-  :: forall m ps a b
-   . (MonadIO m, Cx.MonadMask m,
-      Allow 'Transact ps, Forbid 'Transact (DropPerm 'Transact ps))
-  => Conn ps
-  -> Pg.TransactionMode
-  -> (forall ps'. Forbid 'Transact ps' => Conn ps' -> m (Either a b))
-  -- ^ The usage of @'Conn' ps@ is undefined within this function,
-  -- and @'Conn' ps'@ mustn't escape the scope of this function.
-  -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
-  -> m (Either a b)
+ :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps, ps' ~ DropPerm 'Transact ps)
+ => Conn ps
+ -> Pg.TransactionMode
+ -> (Conn ps' -> m (Either a b))
+ -- ^ The usage of @'Conn' ps@ is undefined within this function,
+ -- and @'Conn' ps'@ mustn't escape the scope of this function.
+ -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
+ -> m (Either a b)
 withTransaction (Conn conn) tmode f = Cx.mask $ \restore -> do
   liftIO $ Pg.beginMode tmode conn
-  let pc' = Conn conn :: Conn (DropPerm 'Transact ps)
-  eab <- restore (f pc') `Cx.onException` liftIO (Pg.rollback conn)
+  eab <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
   eab <$ liftIO (either (const Pg.rollback) (const Pg.commit) eab conn)
 
 --------------------------------------------------------------------------------
