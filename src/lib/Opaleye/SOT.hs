@@ -5,12 +5,8 @@
 -- import Opaleye.SOT
 -- @
 --
--- Note that "Opaleye.SOT" only exports tools for writing queries, but in
--- order to actually run the queries you will need to import "Opaleye.Run" too:
---
--- @
--- import Opaleye.SOT.Run
--- @
+-- Note that "Opaleye.SOT" re-exports all of "Opaleye.SOT.Run", you might want
+-- to refer to that module for documentation.
 --
 -- Both "Opaleye.SOT" and "Opaleye.SOT.Run" override some of the names exported
 -- by the "Opaleye", so it is recommended that you import Opaleye, if needed,

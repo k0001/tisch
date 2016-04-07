@@ -66,8 +66,8 @@ import           Opaleye.SOT.Internal
 
 -- | 'Perm' is only used at the type level to index 'Conn'.
 data Perm
-  = Read
-    -- ^ Allow reading and fetching a value from the database
+  = Fetch
+    -- ^ Allow fetching a value from the database
     -- (i.e., @SELECT@, @... RETURNING@).
   | Update
     -- ^ Allow updating data in the database (i.e., @UPDATE@)
@@ -100,7 +100,7 @@ unConn :: Conn ps -> Pg.Connection
 unConn (Conn conn) = conn
 
 -- | A type synonym for a 'Conn' with all the permissions enabled.
-type Conn' = Conn ['Read, 'Insert, 'Update, 'Delete, 'Transact]
+type Conn' = Conn ['Fetch, 'Insert, 'Update, 'Delete, 'Transact]
 
 -- | @'Allow' p ps@ ensures that @p@ is present in @ps@.
 --
@@ -108,13 +108,13 @@ type Conn' = Conn ['Read, 'Insert, 'Update, 'Delete, 'Transact]
 type Allow (p :: k) (ps :: [Perm]) = Allow' p ps
 
 type family Allow' (p :: k) (ps :: [Perm]) :: Constraint where
-  Allow' p '[] =
+  Allow' ('[] :: [Perm]) ps = ()
+  Allow' ((p ': ps) :: [Perm]) qs = (Allow' p qs, Allow' ps qs)
+  Allow' (p :: Perm) '[] =
      "Opaleye.SOT.Run.Allow'" ~
      "Allow': The required permission is forbidden"
-  Allow' p (p ': ps) = ()
-  Allow' p (q ': ps) = Allow' p ps
-  Allow' '[] ps = ()
-  Allow' (p ': ps) qs = (Allow' p qs, Allow' ps qs)
+  Allow' (p :: Perm) (p ': ps) = ()
+  Allow' (p :: Perm) (q ': ps) = Allow' p ps
 
 -- | @'Forbid'' p ps@ ensures that @p@ is not present in @ps@.
 --
@@ -122,13 +122,13 @@ type family Allow' (p :: k) (ps :: [Perm]) :: Constraint where
 type Forbid (p :: k) (ps :: [Perm]) = Forbid' p ps
 
 type family Forbid' (p :: k) (ps :: [Perm]) :: Constraint where
-  Forbid' p (p ': ps) =
+  Forbid' ('[] :: [Perm]) ps = ()
+  Forbid' ((p ': ps) :: [Perm]) qs = (Forbid' p qs, Forbid' ps qs)
+  Forbid' (p :: Perm) (p ': ps) =
      "Opaleye.SOT.Run.Forbid'" ~
      "Forbid': The forbidden permission is allowed"
-  Forbid' p (q ': ps) = Forbid' p ps
-  Forbid' p '[] = ()
-  Forbid' '[] ps = ()
-  Forbid' (p ': ps) qs = (Forbid' p qs, Forbid' ps qs)
+  Forbid' (p :: Perm) (q ': ps) = Forbid' p ps
+  Forbid' (p :: Perm) '[] = ()
 
 -- | @'DropPerm' p ps@ removes @p@ from @ps@ if present.
 --
@@ -136,11 +136,11 @@ type family Forbid' (p :: k) (ps :: [Perm]) :: Constraint where
 type DropPerm (p :: k) (ps :: [Perm]) = DropPerm' p ps
 
 type family DropPerm' (p :: k) (ps :: [Perm]) :: [Perm] where
-  DropPerm' p (p ': ps) = DropPerm' p ps
-  DropPerm' p (q ': ps) = q ': DropPerm' p ps
-  DropPerm' p '[] = '[]
-  DropPerm' '[] ps = ps
-  DropPerm' (p ': ps) qs = DropPerm' p (DropPerm' ps qs)
+  DropPerm' ('[] :: [Perm]) ps = ps
+  DropPerm' ((p ': ps) :: [Perm]) qs = DropPerm' p (DropPerm' ps qs)
+  DropPerm' (p :: Perm) (p ': ps) = DropPerm' p ps
+  DropPerm' (p :: Perm) (q ': ps) = q ': DropPerm' p ps
+  DropPerm' (p :: Perm) '[] = '[]
 
 -- | Drop a permission from the connection.
 withoutPerm
@@ -186,7 +186,7 @@ withTransaction (Conn conn) tmode f = Cx.mask $ \restore -> do
 
 -- | Query and fetch zero or more resulting rows.
 runQueryMany
- :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
+ :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v -> m [r] -- ^
 runQueryMany (Conn conn) f q =
   liftIO $ traverse (either Cx.throwM return . f) =<< O.runQuery conn q
@@ -196,7 +196,7 @@ runQueryMany (Conn conn) f q =
 -- Throws 'ErrTooManyRows' if there is more than one row in the result.
 runQuery1
  :: forall v hs r m ps
-  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
+  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
  -> m (Maybe r) -- ^
 runQuery1 pc f q = do
@@ -215,7 +215,7 @@ runQuery1 pc f q = do
 -- 'ErrNoRows' if there is no row in the result.
 runQueryHead
  :: forall v hs r m ps
-  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Read ps)
+  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
  -> m r -- ^
 runQueryHead pc f q = do
@@ -247,7 +247,7 @@ runInsert1 pc t w = runInsertMany pc t [w]
 
 -- | Insert zero or more rows, returning data from the rows actually inserted.
 runInsertReturningMany
-  :: (MonadIO m, PP.Default O.QueryRunner v hs, Allow ['Insert, 'Read] ps)
+  :: (MonadIO m, PP.Default O.QueryRunner v hs, Allow ['Insert, 'Fetch] ps)
   => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
   -> m [r] -- ^
 runInsertReturningMany (Conn conn) f t w = liftIO $
@@ -259,7 +259,7 @@ runInsertReturningMany (Conn conn) f t w = liftIO $
 runInsertReturning1
   :: forall m v hs w r ps
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
-      Allow ['Insert, 'Read] ps)
+      Allow ['Insert, 'Fetch] ps)
   => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
   -> m (Maybe r) -- ^
 runInsertReturning1 pc f t w = do
@@ -279,7 +279,7 @@ runInsertReturning1 pc f t w = do
 runInsertReturningHead
   :: forall m hs w v r ps
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
-      Allow ['Insert, 'Read] ps)
+      Allow ['Insert, 'Fetch] ps)
   => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
   -> m r -- ^
 runInsertReturningHead pc f t w = do
