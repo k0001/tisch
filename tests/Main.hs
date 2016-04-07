@@ -21,7 +21,6 @@ import qualified Database.PostgreSQL.Simple as Pg
 import qualified Opaleye as O
 
 import           Opaleye.SOT
-import           Opaleye.SOT.Run
 
 import           Tutorial () -- Just for typechecking
 
