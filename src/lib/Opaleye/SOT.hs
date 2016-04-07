@@ -18,8 +18,11 @@
 --
 -- This module doesn't export any infix operator.
 module Opaleye.SOT
- ( -- * Defining a 'Tabla'
-   Tabla(..)
+ ( -- * Executing queries
+   module Opaleye.SOT.Run
+
+   -- * Defining a 'Tabla'
+ , Tabla(..)
  , UnHsR(..)
  , unHsR
  , unHsR_
@@ -121,3 +124,4 @@ module Opaleye.SOT
  ) where
 
 import           Opaleye.SOT.Internal
+import           Opaleye.SOT.Run
