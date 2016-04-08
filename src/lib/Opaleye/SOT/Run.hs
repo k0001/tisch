@@ -54,7 +54,6 @@ module Opaleye.SOT.Run
 
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Catch as Cx
-import           Data.Int (Int64)
 import qualified Data.Profunctor.Product.Default as PP
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Char8 as B8
@@ -291,15 +290,21 @@ runQueryHead pc f q = do
 --------------------------------------------------------------------------------
 
 -- | Insert zero or more rows.
+--
+-- Returns the number of inserted rows, which may be different from the passed
+-- in number of rows due to database triggers.
 runInsertMany
   :: (MonadIO m, Allow 'Insert ps)
-  => Conn ps -> O.Table w v -> [w] -> m Int64 -- ^
-runInsertMany (Conn conn) t ws = liftIO $ O.runInsertMany conn t ws
+  => Conn ps -> O.Table w v -> [w] -> m () -- ^
+runInsertMany (Conn conn) t ws = () <$ liftIO (O.runInsertMany conn t ws)
 
 -- | Insert one row.
+--
+-- Returns the number of inserted rows, which may be different than one due to
+-- database triggers.
 runInsert1
   :: (MonadIO m, Allow 'Insert ps)
-  => Conn ps -> O.Table w v -> w -> m Int64 -- ^
+  => Conn ps -> O.Table w v -> w -> m () -- ^
 runInsert1 pc t w = runInsertMany pc t [w]
 
 --------------------------------------------------------------------------------
@@ -361,9 +366,9 @@ runInsertReturningHead pc f t w = do
 -- this function might be less convenient to use.
 runUpdate
   :: (MonadIO m, GetKol gkb O.PGBool, Allow 'Update ps)
-  => Conn ps -> O.Table w r -> (r -> w) -> (r -> gkb) -> m Int64 -- ^
+  => Conn ps -> O.Table w r -> (r -> w) -> (r -> gkb) -> m () -- ^
 runUpdate (Conn conn) t upd fil =
-  liftIO $ O.runUpdate conn t upd (unKol . getKol . fil)
+  () <$ liftIO (O.runUpdate conn t upd (unKol . getKol . fil))
 
 -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
 runUpdateTabla'
@@ -372,14 +377,14 @@ runUpdateTabla'
   => Conn ps
   -> (PgW t -> PgW t) -- ^ Upgrade current values to new values.
   -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
-  -> m Int64          -- ^ Number of updated rows.
+  -> m ()             -- ^ Number of updated rows.
 runUpdateTabla' pc = runUpdateTabla pc (T::T t)
 
 -- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
 -- it can't be inferred.
 runUpdateTabla
   :: (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Update ps)
-  => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m Int64 -- ^
+  => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m () -- ^
 runUpdateTabla pc t upd = runUpdate pc (table t) (upd . update')
 
 --------------------------------------------------------------------------------
@@ -392,9 +397,9 @@ runUpdateTabla pc t upd = runUpdate pc (table t) (upd . update')
 -- this function might be less convenient to use.
 runDelete
   :: (MonadIO m, GetKol gkb O.PGBool, Allow 'Delete ps)
-  => Conn ps -> O.Table w r -> (r -> gkb) -> m Int64 -- ^
+  => Conn ps -> O.Table w r -> (r -> gkb) -> m () -- ^
 runDelete (Conn conn) t fil =
-  liftIO $ O.runDelete conn t (unKol . getKol . fil)
+  () <$ liftIO (O.runDelete conn t (unKol . getKol . fil))
 
 -- | Like 'runDelete', but specifically designed to work well with 'Tabla'.
 runDeleteTabla'
@@ -402,7 +407,7 @@ runDeleteTabla'
    . (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Delete ps)
   => Conn ps
   -> (PgR t -> gkb) -- ^ Whether a row should be deleted.
-  -> m Int64
+  -> m ()
 runDeleteTabla' pc = runDeleteTabla pc (T::T t)
 
 -- | Like 'runDeleteTabla'', but takes @t@ explicitely for the times when it
@@ -412,7 +417,7 @@ runDeleteTabla
   => Conn ps
   -> T t
   -> (PgR t -> gkb) -- ^ Whether a row should be deleted.
-  -> m Int64
+  -> m ()
 runDeleteTabla pc t = runDelete pc (table t)
 
 --------------------------------------------------------------------------------
