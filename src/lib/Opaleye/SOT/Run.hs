@@ -28,6 +28,7 @@ module Opaleye.SOT.Run
   , IsolationLevel(..)
   , ReadWriteMode(..)
   , TransactionPerms
+  , withSavepoint
     -- * Query
   , runQueryMany
   , runQuery1
@@ -82,6 +83,8 @@ data Perm
   | Transact
     -- ^ Allow starting and finishing transactions (i.e., @BEGIN@,
     -- @COMMIT@, @ROLLBACK@).
+  | Savepoint
+    -- ^ Allow creating transactions savepoints and rolling back to them.
   deriving (Eq, Ord, Show)
 
 -- | @'Conn' perms@ is just a wrapper around @postgresql-simple@'s
@@ -201,7 +204,8 @@ pgReadWriteMode ReadOnly = Pg.ReadOnly
 -- @rwm@.
 type family TransactionPerms (rwm :: RWM) (ps :: [Perm]) :: [Perm] where
   TransactionPerms 'RW ps = DropPerm 'Transact ps
-  TransactionPerms 'RO ps = DropPerm ['Transact, 'Insert, 'Update, 'Delete] ps
+  TransactionPerms 'RO ps
+    = DropPerm ['Transact, 'Savepoint, 'Insert, 'Update, 'Delete] ps
 
 withTransaction
   :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
@@ -219,6 +223,20 @@ withTransaction (Conn conn) il rwm f = Cx.mask $ \restore -> do
   liftIO $ Pg.beginMode tmode conn
   eab <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
   eab <$ liftIO (either (const Pg.rollback) (const Pg.commit) eab conn)
+
+-- | You can use this function within `withTransaction` as a sort of nested
+-- transaction.
+withSavepoint
+  :: (MonadIO m, Cx.MonadMask m, Allow 'Savepoint ps)
+  => Conn ps
+  -> (Conn ps -> m (Either a b))
+  -- ^ A 'Left' return value rollbacks the savepoint, 'Right' keeps it.
+  -> m (Either a b)
+withSavepoint (Conn conn) f = Cx.mask $ \restore -> do
+  sp <- liftIO $ Pg.newSavepoint conn
+  let abort = liftIO $ Pg.rollbackToAndReleaseSavepoint conn sp
+  eab <- restore (f (Conn conn)) `Cx.onException` abort
+  eab <$ either (const abort) (const (return ())) eab
 
 --------------------------------------------------------------------------------
 
