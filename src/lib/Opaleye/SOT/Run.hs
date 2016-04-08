@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PolyKinds #-}
@@ -24,6 +25,9 @@ module Opaleye.SOT.Run
   , withoutPerm
     -- * Transaction
   , withTransaction
+  , IsolationLevel(..)
+  , ReadWriteMode(..)
+  , TransactionPerms
     -- * Query
   , runQueryMany
   , runQuery1
@@ -168,16 +172,50 @@ connect' = liftIO . fmap Conn . Pg.connectPostgreSQL
 close :: (MonadIO m, Cx.MonadMask m) => Conn ps -> m ()
 close (Conn conn) = liftIO (Pg.close conn)
 
+--------------------------------------------------------------------------------
+
+-- | Like 'Pg.IsolationLevel', but without support for default values.
+data IsolationLevel = ReadCommitted | RepeatableRead | Serializable
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+pgIsolationLevel :: IsolationLevel -> Pg.IsolationLevel
+pgIsolationLevel ReadCommitted = Pg.ReadCommitted
+pgIsolationLevel RepeatableRead = Pg.RepeatableRead
+pgIsolationLevel Serializable = Pg.Serializable
+
+---
+
+-- | Internal. Index to 'ReadWriteMode'
+data RWM = RO | RW
+
+-- | Like 'Pg.ReadWriteMode', but without support for default values.
+data ReadWriteMode :: RWM -> * where
+  ReadWrite :: ReadWriteMode 'RW
+  ReadOnly  :: ReadWriteMode 'RO
+
+pgReadWriteMode :: ReadWriteMode a -> Pg.ReadWriteMode
+pgReadWriteMode ReadWrite = Pg.ReadWrite
+pgReadWriteMode ReadOnly = Pg.ReadOnly
+
+-- | Permissions for a transaction initiated on @'Conn' ps@ with 'ReadWriteMode'
+-- @rwm@.
+type family TransactionPerms (rwm :: RWM) (ps :: [Perm]) :: [Perm] where
+  TransactionPerms 'RW ps = DropPerm 'Transact ps
+  TransactionPerms 'RO ps = DropPerm ['Transact, 'Insert, 'Update, 'Delete] ps
+
 withTransaction
- :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps, ps' ~ DropPerm 'Transact ps)
- => Conn ps
- -> Pg.TransactionMode
- -> (Conn ps' -> m (Either a b))
- -- ^ The usage of @'Conn' ps@ is undefined within this function,
- -- and @'Conn' ps'@ mustn't escape the scope of this function.
- -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
- -> m (Either a b)
-withTransaction (Conn conn) tmode f = Cx.mask $ \restore -> do
+  :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
+      ps' ~ TransactionPerms rwm ps)
+  => Conn ps
+  -> IsolationLevel
+  -> ReadWriteMode rwm
+  -> (Conn ps' -> m (Either a b))
+  -- ^ The usage of @'Conn' ps@ is undefined within this function,
+  -- and @'Conn' ps'@ mustn't escape the scope of this function.
+  -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
+  -> m (Either a b)
+withTransaction (Conn conn) il rwm f = Cx.mask $ \restore -> do
+  let tmode = Pg.TransactionMode (pgIsolationLevel il) (pgReadWriteMode rwm)
   liftIO $ Pg.beginMode tmode conn
   eab <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
   eab <$ liftIO (either (const Pg.rollback) (const Pg.commit) eab conn)
