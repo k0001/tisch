@@ -192,13 +192,13 @@ pgIsolationLevel Serializable = Pg.Serializable
 withTransactionRead
   :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
       ps' ~ DropPerm ['Savepoint, 'Transact, 'Insert, 'Update, 'Delete] ps)
-  => Conn ps
-  -> IsolationLevel
+  => IsolationLevel
+  -> Conn ps
   -> (Conn ps' -> m a)
   -- ^ The usage of @'Conn' ps@ is undefined within this function,
   -- as well as the usage of @'Conn' ps'@ outside this function.
   -> m a
-withTransactionRead (Conn conn) il f = Cx.mask $ \restore -> do
+withTransactionRead il (Conn conn) f = Cx.mask $ \restore -> do
   let tmode = Pg.TransactionMode (pgIsolationLevel il) Pg.ReadOnly
   liftIO $ Pg.beginMode tmode conn
   a <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
@@ -211,14 +211,14 @@ withTransactionRead (Conn conn) il f = Cx.mask $ \restore -> do
 withTransactionReadWrite
  :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
      ps' ~ ('Savepoint ': DropPerm 'Transact ps))
- => Conn ps
- -> IsolationLevel
+ => IsolationLevel
+ -> Conn ps
  -> (Conn ps' -> m (Either a b))
  -- ^ The usage of @'Conn' ps@ is undefined within this function,
  -- as well as the usage of @'Conn' ps'@ outside this function.
  -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
  -> m (Either a b)
-withTransactionReadWrite (Conn conn) il f = Cx.mask $ \restore -> do
+withTransactionReadWrite il (Conn conn) f = Cx.mask $ \restore -> do
   let tmode = Pg.TransactionMode (pgIsolationLevel il) Pg.ReadWrite
   liftIO $ Pg.beginMode tmode conn
   eab <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
