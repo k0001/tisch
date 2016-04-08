@@ -24,10 +24,9 @@ module Opaleye.SOT.Run
   , DropPerm
   , withoutPerm
     -- * Transaction
-  , withTransaction
   , IsolationLevel(..)
-  , ReadWriteMode(..)
-  , TransactionPerms
+  , withTransactionRead
+  , withTransactionReadWrite
   , withSavepoint
     -- * Query
   , runQueryMany
@@ -188,41 +187,45 @@ pgIsolationLevel Serializable = Pg.Serializable
 
 ---
 
--- | Internal. Index to 'ReadWriteMode'
-data RWM = RO | RW
-
--- | Like 'Pg.ReadWriteMode', but without support for default values.
-data ReadWriteMode :: RWM -> * where
-  ReadWrite :: ReadWriteMode 'RW
-  ReadOnly  :: ReadWriteMode 'RO
-
-pgReadWriteMode :: ReadWriteMode a -> Pg.ReadWriteMode
-pgReadWriteMode ReadWrite = Pg.ReadWrite
-pgReadWriteMode ReadOnly = Pg.ReadOnly
-
--- | Permissions for a transaction initiated on @'Conn' ps@ with 'ReadWriteMode'
--- @rwm@.
-type family TransactionPerms (rwm :: RWM) (ps :: [Perm]) :: [Perm] where
-  TransactionPerms 'RW ps = DropPerm 'Transact ps
-  TransactionPerms 'RO ps
-    = DropPerm ['Transact, 'Savepoint, 'Insert, 'Update, 'Delete] ps
-
-withTransaction
+-- | Execute the given callback within a read-only transaction with the given
+-- isolation level. The transaction is rolled-back afterwards, as there wouldn't
+-- be anything to commit anyway, even in case of execeptions.
+withTransactionRead
   :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
-      ps' ~ TransactionPerms rwm ps)
+      ps' ~ DropPerm ['Savepoint, 'Transact, 'Insert, 'Update, 'Delete] ps)
   => Conn ps
   -> IsolationLevel
-  -> ReadWriteMode rwm
-  -> (Conn ps' -> m (Either a b))
+  -> (Conn ps' -> m a)
   -- ^ The usage of @'Conn' ps@ is undefined within this function,
-  -- and @'Conn' ps'@ mustn't escape the scope of this function.
-  -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
-  -> m (Either a b)
-withTransaction (Conn conn) il rwm f = Cx.mask $ \restore -> do
-  let tmode = Pg.TransactionMode (pgIsolationLevel il) (pgReadWriteMode rwm)
+  -- as well as the usage of @'Conn' ps'@ outside this function.
+  -> m a
+withTransactionRead (Conn conn) il f = Cx.mask $ \restore -> do
+  let tmode = Pg.TransactionMode (pgIsolationLevel il) Pg.ReadOnly
+  liftIO $ Pg.beginMode tmode conn
+  a <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
+  a <$ liftIO (Pg.rollback conn)
+
+-- | Execute the given callback within a read-write transaction with the given
+-- isolation level, rolling back the transaction in case of exceptions,
+-- and either commiting or rolling back the transaction otherwise, as requested
+-- by the passed in callback.
+withTransactionReadWrite
+ :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
+     ps' ~ ('Savepoint ': DropPerm 'Transact ps))
+ => Conn ps
+ -> IsolationLevel
+ -> (Conn ps' -> m (Either a b))
+ -- ^ The usage of @'Conn' ps@ is undefined within this function,
+ -- as well as the usage of @'Conn' ps'@ outside this function.
+ -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
+ -> m (Either a b)
+withTransactionReadWrite (Conn conn) il f = Cx.mask $ \restore -> do
+  let tmode = Pg.TransactionMode (pgIsolationLevel il) Pg.ReadWrite
   liftIO $ Pg.beginMode tmode conn
   eab <- restore (f (Conn conn)) `Cx.onException` liftIO (Pg.rollback conn)
   eab <$ liftIO (either (const Pg.rollback) (const Pg.commit) eab conn)
+
+---
 
 -- | You can use this function within `withTransaction` as a sort of nested
 -- transaction.
