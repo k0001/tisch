@@ -532,11 +532,11 @@ type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- table in a specific schema.
-data Tabla t => T (t :: k) = T
+data T (t :: k) = Tabla t => T
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in a specific table in a specific schema.
-data Tabla t => TC (t :: k) (c :: GHC.Symbol) = TC
+data TC (t :: k) (c :: GHC.Symbol) = Tabla t => TC
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
