@@ -190,8 +190,8 @@ pgIsolationLevel Serializable = Pg.Serializable
 -- isolation level. The transaction is rolled-back afterwards, as there wouldn't
 -- be anything to commit anyway, even in case of execeptions.
 withTransactionRead
-  :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
-      ps' ~ DropPerm ['Savepoint, 'Transact, 'Insert, 'Update, 'Delete] ps)
+  :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps, Forbid 'Savepoint ps,
+      ps' ~ DropPerm ['Transact, 'Insert, 'Update, 'Delete] ps)
   => IsolationLevel
   -> Conn ps
   -> (Conn ps' -> m a)
@@ -209,7 +209,7 @@ withTransactionRead il (Conn conn) f = Cx.mask $ \restore -> do
 -- and either commiting or rolling back the transaction otherwise, as requested
 -- by the passed in callback.
 withTransactionReadWrite
- :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps,
+ :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps, Forbid 'Savepoint ps,
      ps' ~ ('Savepoint ': DropPerm 'Transact ps))
  => IsolationLevel
  -> Conn ps
@@ -229,7 +229,7 @@ withTransactionReadWrite il (Conn conn) f = Cx.mask $ \restore -> do
 -- | You can use this function within `withTransaction` as a sort of nested
 -- transaction.
 withSavepoint
-  :: (MonadIO m, Cx.MonadMask m, Allow 'Savepoint ps)
+  :: (MonadIO m, Cx.MonadMask m, Allow 'Savepoint ps, Forbid 'Transact ps)
   => Conn ps
   -> (Conn ps -> m (Either a b))
   -- ^ A 'Left' return value rollbacks the savepoint, 'Right' keeps it.
