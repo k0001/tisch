@@ -290,18 +290,12 @@ runQueryHead pc f q = do
 --------------------------------------------------------------------------------
 
 -- | Insert zero or more rows.
---
--- Returns the number of inserted rows, which may be different from the passed
--- in number of rows due to database triggers.
 runInsertMany
   :: (MonadIO m, Allow 'Insert ps)
   => Conn ps -> O.Table w v -> [w] -> m () -- ^
 runInsertMany (Conn conn) t ws = () <$ liftIO (O.runInsertMany conn t ws)
 
 -- | Insert one row.
---
--- Returns the number of inserted rows, which may be different than one due to
--- database triggers.
 runInsert1
   :: (MonadIO m, Allow 'Insert ps)
   => Conn ps -> O.Table w v -> w -> m () -- ^
