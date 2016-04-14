@@ -1514,11 +1514,3 @@ instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2' a 
 -- | nnn -> ttn
 instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
---------------------------------------------------------------------------------
--- Missing stuff in Opaleye
-
--- | Orphan. 'Opaleye.SOT.Internal'.
---
--- See https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
-instance O.QueryRunnerColumnDefault O.PGInt4 Int32 where
-  queryRunnerColumnDefault = O.fieldQueryRunnerColumn

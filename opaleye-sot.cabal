@@ -26,7 +26,7 @@ library
   build-depends:
       -- NOTE: The dependencies without specific version ranges are transitional
       aeson
-    , base >=4.7 && <4.9
+    , base >=4.7 && <5.0
     , bytestring
     , case-insensitive
     , exceptions >=0.8 && <0.9
@@ -37,6 +37,7 @@ library
     , postgresql-simple
     , product-profunctors
     , profunctors
+    , semigroups
     , singletons >=1.1 && <2.1
     , text
     , transformers >=0.4 && <0.5

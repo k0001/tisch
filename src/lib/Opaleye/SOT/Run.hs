@@ -29,16 +29,16 @@ module Opaleye.SOT.Run
   , withTransactionReadWrite
   , withSavepoint
     -- * Query
-  , runQueryMany
+  , runQuery
   , runQuery1
-  , runQueryHead
     -- * Insert
-  , runInsertMany
+  , runInsert
+  , runInsert'
   , runInsert1
     -- ** Returning
-  , runInsertReturningMany
+  , runInsertReturning
+  , runInsertReturning'
   , runInsertReturning1
-  , runInsertReturningHead
     -- * Update
   , runUpdate
   , runUpdateTabla
@@ -48,12 +48,14 @@ module Opaleye.SOT.Run
   , runDeleteTabla
   , runDeleteTabla'
     -- * Exception
-  , ErrTooManyRows(..)
-  , ErrNoRows(..)
+  , ErrNumRows(..)
   ) where
 
+import           Control.Monad (when)
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Catch as Cx
+import           Data.Int
+import qualified Data.List.NonEmpty as NEL
 import qualified Data.Profunctor.Product.Default as PP
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Char8 as B8
@@ -243,112 +245,114 @@ withSavepoint (Conn conn) f = Cx.mask $ \restore -> do
 --------------------------------------------------------------------------------
 
 -- | Query and fetch zero or more resulting rows.
-runQueryMany
+runQuery
  :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v -> m [r] -- ^
-runQueryMany (Conn conn) f q =
+runQuery (Conn conn) f q =
   liftIO $ traverse (either Cx.throwM return . f) =<< O.runQuery conn q
 
 -- | Query and fetch zero or one resulting row.
 --
--- Throws 'ErrTooManyRows' if there is more than one row in the result.
+-- Throws 'ErrNumRows' if there is more than one row in the result.
 runQuery1
  :: forall v hs r m ps
   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
  -> m (Maybe r) -- ^
 runQuery1 pc f q = do
-    rs <- runQueryMany pc f q
+    rs <- runQuery pc f q
     case rs of
       [r] -> return (Just r)
       []  -> return Nothing
-      _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
+      _   -> Cx.throwM (ErrNumRows 1 (fromIntegral (length rs)) sql)
   where
     sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
           in  O.showSqlForPostgresExplicit u q
-
--- | Query and fetch one resulting row.
---
--- Throws 'ErrTooManyRows' if there is more than one row in the result, and
--- 'ErrNoRows' if there is no row in the result.
-runQueryHead
- :: forall v hs r m ps
-  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
- => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
- -> m r -- ^
-runQueryHead pc f q = do
-    rs <- runQueryMany pc f q
-    case rs of
-      [r] -> return r
-      []  -> Cx.throwM $ ErrNoRows sql
-      _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
-  where
-    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
-          in  O.showSqlForPostgresExplicit u q
-
 
 --------------------------------------------------------------------------------
 
--- | Insert zero or more rows.
-runInsertMany
-  :: (MonadIO m, Allow 'Insert ps)
+-- | Insert many rows.
+--
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- the number of passed in rows. Use 'runInsert'' if you don't want this
+-- behavior.
+runInsert
+  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
   => Conn ps -> O.Table w v -> [w] -> m () -- ^
-runInsertMany (Conn conn) t ws = () <$ liftIO (O.runInsertMany conn t ws)
+runInsert _ _ [] = return ()
+runInsert conn t ws = do
+    nAffected <- runInsert' conn t ws
+    let nExpected = fromIntegral (length ws) :: Int64
+    when (nExpected /= nAffected) $ do
+       Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
+  where
+    sql = O.arrangeInsertManySql t (NEL.fromList ws)
+
+-- | Like 'runInsert', but doesn't check the number of affected rows.
+runInsert'
+  :: (MonadIO m, Allow 'Insert ps)
+  => Conn ps -> O.Table w v -> [w] -> m Int64 -- ^
+runInsert' (Conn conn) t ws = liftIO (O.runInsertMany conn t ws)
 
 -- | Insert one row.
+--
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- one. Use 'runInsert'' if you don't want this behavior.
 runInsert1
-  :: (MonadIO m, Allow 'Insert ps)
+  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
   => Conn ps -> O.Table w v -> w -> m () -- ^
-runInsert1 pc t w = runInsertMany pc t [w]
+runInsert1 pc t w = runInsert pc t [w]
 
 --------------------------------------------------------------------------------
 
--- | Insert zero or more rows, returning data from the rows actually inserted.
-runInsertReturningMany
-  :: (MonadIO m, PP.Default O.QueryRunner v hs, Allow ['Insert, 'Fetch] ps)
-  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
-  -> m [r] -- ^
-runInsertReturningMany (Conn conn) f t w = liftIO $
-   traverse (either Cx.throwM return . f) =<< O.runInsertReturning conn t w id
-
--- | Insert 1 row, returning data from the zero or one rows actually inserted.
+-- | Insert many rows, returning data from the rows actually inserted.
 --
--- Throws 'ErrTooManyRows' if there is more than one row in the result.
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- the number of passed in rows. Use 'runInsertReturning'' if you don't want
+-- this behavior.
+runInsertReturning
+  :: forall m ps w v hs r
+   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
+      Allow ['Insert, 'Fetch] ps)
+  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> [w]
+  -> m [r] -- ^
+runInsertReturning conn f t ws = do
+   rs <- runInsertReturning' conn f t ws
+   let nExpected = fromIntegral (length ws) :: Int64
+       nAffected = fromIntegral (length rs) :: Int64
+   if nExpected == nAffected
+      then return rs
+      else Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
+  where
+    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
+          in  O.arrangeInsertManyReturningSql u t (NEL.fromList ws) id
+
+-- Like 'runInsertReturning', except it doesn't check for the number of
+-- actually affected rows.
+runInsertReturning'
+  :: (MonadIO m, PP.Default O.QueryRunner v hs, Allow ['Insert, 'Fetch] ps)
+  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> [w]
+  -> m [r] -- ^
+runInsertReturning' _ _ _ [] = return []
+runInsertReturning' (Conn conn) f t ws = liftIO $ do
+   xs <- O.runInsertManyReturning conn t ws id
+   traverse (either Cx.throwM return . f) xs
+
+
+-- | Insert one row, returning data from the one row actually inserted.
+--
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- the one. Use 'runInsertReturning'' if you don't want this behavior.
 runInsertReturning1
   :: forall m v hs w r ps
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
       Allow ['Insert, 'Fetch] ps)
   => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
-  -> m (Maybe r) -- ^
-runInsertReturning1 pc f t w = do
-   rs <- runInsertReturningMany pc f t w
-   case rs of
-     [r] -> return (Just r)
-     []  -> return Nothing
-     _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
-  where
-    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
-          in  O.arrangeInsertReturningSql u t w id
-
--- | Insert 1 row, returning data from the one row actually inserted.
---
--- Throws 'ErrTooManyRows' if there is more than one row in the result, and
--- 'ErrNoRows' if there is no row in the result.
-runInsertReturningHead
-  :: forall m hs w v r ps
-   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
-      Allow ['Insert, 'Fetch] ps)
-  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
   -> m r -- ^
-runInsertReturningHead pc f t w = do
-   rs <- runInsertReturningMany pc f t w
-   case rs of
-     [r] -> return r
-     []  -> Cx.throwM $ ErrNoRows sql
-     _   -> Cx.throwM $ ErrTooManyRows (length rs) sql
-  where
-    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
-          in  O.arrangeInsertReturningSql u t w id
+runInsertReturning1 pc f t w = do
+   -- pattern matching on [r] is safe here, see runInsertReturningMany
+   [r] <- runInsertReturning pc f t [w]
+   return r
 
 --------------------------------------------------------------------------------
 
@@ -417,12 +421,10 @@ runDeleteTabla pc t = runDelete pc (table t)
 --------------------------------------------------------------------------------
 -- Exceptions
 
--- | Exception thrown when indicating more rows than expected are available.
-data ErrTooManyRows = ErrTooManyRows Int String -- ^ Number of rows, SQL string
-  deriving (Typeable, Show)
-instance Cx.Exception ErrTooManyRows
-
--- | Exception thrown when indicating no rows are available.
-data ErrNoRows = ErrNoRows String -- ^ SQL string
-  deriving (Typeable, Show)
-instance Cx.Exception ErrNoRows
+-- | Exception thrown when indicating less rows than expected are available.
+data ErrNumRows = ErrNumRows
+  { _errNumRowsExpected :: Int64
+  , _errNumRowsActual   :: Int64
+  , _errNumRowsSQL      :: Maybe String -- ^ Nothing means empty query.
+  } deriving (Typeable, Show)
+instance Cx.Exception ErrNumRows
