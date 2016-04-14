@@ -117,9 +117,6 @@ type Allow (p :: k) (ps :: [Perm]) = Allow' p ps
 type family Allow' (p :: k) (ps :: [Perm]) :: Constraint where
   Allow' ('[] :: [Perm]) ps = ()
   Allow' ((p ': ps) :: [Perm]) qs = (Allow' p qs, Allow' ps qs)
-  Allow' (p :: Perm) '[] =
-     "Opaleye.SOT.Run.Allow'" ~
-     "Allow': The required permission is forbidden"
   Allow' (p :: Perm) (p ': ps) = ()
   Allow' (p :: Perm) (q ': ps) = Allow' p ps
 
