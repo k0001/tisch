@@ -96,7 +96,6 @@ module Opaleye.SOT
  , wdef
 
    -- * Types
- , Comparable
  , PGType
  , Col(..)
  , C(..)
