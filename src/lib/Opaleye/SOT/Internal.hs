@@ -146,6 +146,19 @@ instance
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
 
+instance Fractional (O.Column a) => Fractional (Kol a) where
+  fromRational = UnsafeKol . fromRational
+  (/) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a / b)
+
+instance Num (O.Column a) => Num (Kol a) where
+  (*) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a * b)
+  (+) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a + b)
+  (-) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a - b)
+  abs (UnsafeKol a) = UnsafeKol (abs a)
+  negate (UnsafeKol a) = UnsafeKol (negate a)
+  signum (UnsafeKol a) = UnsafeKol (signum a)
+  fromInteger = UnsafeKol . fromInteger
+
 -- | Build a 'Kol'.
 --
 -- You need to provide an instance for every Haskell type you plan to
@@ -930,15 +943,14 @@ cola = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 --------------------------------------------------------------------------------
 -- Unary operations on columns
 
--- | Constraint on arguments to 'no'.
-type Op_no a b = Op1' O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b
+-- | Constraint on arguments to 'lnot'.
+type Op_lnot a b = Op1' O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b
 -- | Polymorphic Opaleye's 'O.not'. See 'eq' for the type of arguments this
 -- function can take.
 --
--- “No” means “not” in English, Spanish, and Italian, and it is a great name
--- because it doesn't clash with 'Prelude.not'.
-no :: Op_no a b => a -> b
-no = op1 (liftKol1 O.not)
+-- Mnemonic: Logical NOT.
+lnot :: Op_lnot a b => a -> b
+lnot = op1 (liftKol1 O.not)
 
 --------------------------------------------------------------------------------
 -- Binary operations on columns
@@ -1014,18 +1026,20 @@ eq = go where -- we hide the 'forall' from the type signature
   go :: forall x a b c. Op_eq x a b c => a -> b -> c
   go = op2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 
--- | Constraint on arguments to 'in_'. See 'Op_eq' for a detailed explanation.
-type Op_in_ f x a b c = (Op_eq x a b c, Op_ous c, Functor f, Foldable f)
--- | Like Opaleye's @('O.in_')@, but can accept more arguments than just 'O.Column'.
+-- | Constraint on arguments to 'eqs'. See 'Op_eq' for a detailed explanation.
+type Op_eqs f x a b c = (Op_eq x a b c, Op_lors c, Functor f, Foldable f)
+-- | Like Opaleye's @('O.eqs')@, but can accept more arguments than just 'O.Column'.
 -- See 'eq' for a detailed explanation.
 --
--- Mnemonic reminder: INside.
-in_ :: Op_in_ f x a b c => a -> f b -> c
-in_ a = ous . fmap (eq a)
+-- Mnemonic reminder: EQualS.
+eqs :: Op_eqs f x a b c => a -> f b -> c
+eqs a = lors . fmap (eq a)
 
+---
 -- | Constraint on arguments to 'lt'. See 'Op_eq' for a detailed explanation.
 type Op_lt x a b c = (O.PGOrd x, Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
--- | Like Opaleye's @('O..=<')@, but can accept more arguments than just 'O.Column'.
+-- | Like Opaleye's @('O..<')@, compares whether the first argument is less
+-- than the second argument, but can accept more arguments than just 'O.Column'.
 -- See 'eq' for a detailed explanation.
 --
 -- Mnemonic reminder: Less Than.
@@ -1034,33 +1048,73 @@ lt = go where -- we hide the 'forall' from the type signature
   go :: forall x a b c. Op_lt x a b c => a -> b -> c
   go = op2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
 
--- | Constraint on arguments to 'ou'. See 'Op_eq' for a detailed explanation.
-type Op_ou a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
+---
+-- | Constraint on arguments to 'lte'. See 'Op_eq' for a detailed explanation.
+type Op_lte x a b c = (O.PGOrd x, Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
+-- | Like Opaleye's @('O..<=')@, compares whether the first argument is less
+-- than or equal to the second argument, but can accept more arguments than just
+-- 'O.Column'.  See 'eq' for a detailed explanation.
+--
+-- Mnemonic reminder: Less Than or Equal.
+lte :: Op_lte x a b c => a -> b -> c
+lte = go where -- we hide the 'forall' from the type signature
+  go :: forall x a b c. Op_lte x a b c => a -> b -> c
+  go = op2 (liftKol2 (O..<=) :: Kol x -> Kol x -> Kol O.PGBool)
+
+---
+-- | Constraint on arguments to 'gt'. See 'Op_eq' for a detailed explanation.
+type Op_gt x a b c = (O.PGOrd x, Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
+-- | Like Opaleye's @('O..>')@, compares whether the first argument is greater
+-- than the second argument, but can accept more arguments than just 'O.Column'.
+-- See 'eq' for a detailed explanation.
+--
+-- Mnemonic reminder: Less Than.
+gt :: Op_gt x a b c => a -> b -> c
+gt = go where -- we hide the 'forall' from the type signature
+  go :: forall x a b c. Op_gt x a b c => a -> b -> c
+  go = op2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
+
+---
+-- | Constraint on arguments to 'gte'. See 'Op_eq' for a detailed explanation.
+type Op_gte x a b c = (O.PGOrd x, Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
+-- | Like Opaleye's @('O..>=')@, compares whether the first argument is greater
+-- than or equal to the second argument, but can accept more arguments than just
+-- 'O.Column'.  See 'eq' for a detailed explanation.
+--
+-- Mnemonic reminder: Greater Than or Equal.
+gte :: Op_gte x a b c => a -> b -> c
+gte = go where -- we hide the 'forall' from the type signature
+  go :: forall x a b c. Op_gte x a b c => a -> b -> c
+  go = op2 (liftKol2 (O..>=) :: Kol x -> Kol x -> Kol O.PGBool)
+
+---
+-- | Constraint on arguments to 'lor'. See 'Op_eq' for a detailed explanation.
+type Op_lor a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
 -- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column'.
 -- See 'eq' for a detailed explanation.
 --
--- “Ou” means “or” in French, and it is a great name because it doesn't overlap
--- with 'Prelude.or'. N'est-ce pas?
-ou :: Op_ou a b c => a -> b -> c
-ou = op2 (liftKol2 (O..||))
+-- Mnemonic: Logical OR.
+lor :: Op_lor a b c => a -> b -> c
+lor = op2 (liftKol2 (O..||))
 
--- | Internal. We don't export this because 'ou' is more general.
-class Op_ous a where
-  -- | Like Opaleye's @('O.ors')@, but can accept more arguments than just
+---
+-- | Internal. We don't export this because 'or' is more general.
+class Op_lors a where
+  -- | Like Opaleye's @('O.lors')@, but can accept more arguments than just
   -- 'O.Column'. See 'eq' for a detailed explanation.
-  ous :: Foldable f => f a -> a
-instance Op_ous (Kol O.PGBool) where ous = foldl' ou (kol False)
-instance Op_ous (Koln O.PGBool) where ous = foldl' ou (koln False)
+  lors :: Foldable f => f a -> a
+instance Op_lors (Kol O.PGBool) where lors = foldl' lor (kol False)
+instance Op_lors (Koln O.PGBool) where lors = foldl' lor (koln False)
 
--- | Constraint on arguments to 'et'. See 'Op_eq' for a detailed explanation.
-type Op_et a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
+---
+-- | Constraint on arguments to 'land'. See 'Op_eq' for a dlandailed explanation.
+type Op_land a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
 -- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column'.
--- See 'eq' for a detailed explanation.
+-- See 'eq' for a dlandailed explanation.
 --
--- “Et” means “and” in French, and it is a great name because it doesn't overlap
--- with 'Prelude.and'. N'est-ce pas?
-et :: Op_et a b c => a -> b -> c
-et = op2 (liftKol2 (O..&&))
+-- Mnemonic: Logical AND.
+land :: Op_land a b c => a -> b -> c
+land = op2 (liftKol2 (O..&&))
 
 --------------------------------------------------------------------------------
 

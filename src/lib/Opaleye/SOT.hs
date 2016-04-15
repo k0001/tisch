@@ -71,12 +71,15 @@ module Opaleye.SOT
  , restrict
  , nullTrue
  , nullFalse
- , no, Op_no
+ , lnot, Op_lnot
+ , lor, Op_lor
+ , land, Op_land
  , eq, Op_eq
- , in_, Op_in_
+ , eqs, Op_eqs
  , lt, Op_lt
- , ou, Op_ou
- , et, Op_et
+ , lte, Op_lte
+ , gt, Op_gt
+ , gte, Op_gte
    -- * Selecting
  , col
  , cola
