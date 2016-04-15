@@ -146,18 +146,18 @@ instance
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
 
-instance Fractional (O.Column a) => Fractional (Kol a) where
+instance (PGType a, Fractional (O.Column a)) => Fractional (Kol a) where
   fromRational = UnsafeKol . fromRational
-  (/) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a / b)
+  (/) = liftKol2 (/)
 
-instance Num (O.Column a) => Num (Kol a) where
-  (*) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a * b)
-  (+) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a + b)
-  (-) (UnsafeKol a) (UnsafeKol b) = UnsafeKol (a - b)
-  abs (UnsafeKol a) = UnsafeKol (abs a)
-  negate (UnsafeKol a) = UnsafeKol (negate a)
-  signum (UnsafeKol a) = UnsafeKol (signum a)
+instance (PGType a, Num (O.Column a)) => Num (Kol a) where
   fromInteger = UnsafeKol . fromInteger
+  (*) = liftKol2 (*)
+  (+) = liftKol2 (+)
+  (-) = liftKol2 (-)
+  abs = liftKol1 abs
+  negate = liftKol1 negate
+  signum = liftKol1 signum
 
 -- | Build a 'Kol'.
 --
@@ -271,7 +271,7 @@ instance PGType pg => ToKoln (O.Column (O.Nullable pg)) pg where
   koln = UnsafeKoln
   {-# INLINE koln #-}
 instance ToKoln (Kol pg) pg where
-  koln = UnsafeKoln . O.toNullable . unKol
+  koln = kolnFromKol
   {-# INLINE koln #-}
 -- | Converted to @NULL@ if 'Nothing'.
 instance forall hs pg. (ToKol hs pg, PGType pg) => ToKoln (Maybe hs) pg where
@@ -280,6 +280,11 @@ instance forall hs pg. (ToKol hs pg, PGType pg) => ToKoln (Maybe hs) pg where
 instance {-# OVERLAPPABLE #-} forall hs pg. (ToKol hs pg, PGType pg) => ToKoln hs pg where
   koln = koln . (kol :: hs -> Kol pg)
   {-# INLINE koln #-}
+
+-- | Like 'koln', but with a more restricted type.
+kolnFromKol :: Kol pg -> Koln pg
+kolnFromKol = UnsafeKoln . O.toNullable . unKol
+{-# INLINE kolnFromKol #-}
 
 -- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
 nul :: PGType a => Koln a
@@ -369,6 +374,19 @@ instance {-# OVERLAPPABLE #-}
     ) => O.QueryRunnerColumnDefault pg (Maybe hs) where
   queryRunnerColumnDefault = OI.QueryRunnerColumn u (fmap (fmap (fmap Just)) fp)
     where OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
+
+instance (PGType a, Fractional (Kol a)) => Fractional (Koln a) where
+  fromRational = kolnFromKol . fromRational
+  (/) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka / kb)))
+
+instance (PGType a, Num (Kol a)) => Num (Koln a) where
+  fromInteger = kolnFromKol . fromInteger
+  (*) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka * kb)))
+  (+) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka + kb)))
+  (-) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka - kb)))
+  abs = mapKoln abs
+  negate = mapKoln negate
+  signum = mapKoln signum
 
 -------------------------------------------------------------------------------
 
