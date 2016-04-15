@@ -29,6 +29,7 @@ import qualified Control.Exception as Ex
 import           Control.Monad (MonadPlus(..))
 import           Control.Monad.Fix (MonadFix(..))
 import           Data.Data (Data)
+import           Data.Foldable
 import           Data.Typeable (Typeable)
 import qualified Data.Aeson
 import qualified Data.ByteString
@@ -1013,6 +1014,14 @@ eq = go where -- we hide the 'forall' from the type signature
   go :: forall x a b c. Op_eq x a b c => a -> b -> c
   go = op2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
 
+-- | Constraint on arguments to 'in_'. See 'Op_eq' for a detailed explanation.
+type Op_in_ f x a b c = (Op_eq x a b c, Op_ous c, Functor f, Foldable f)
+-- | Like Opaleye's @('O.in_')@, but can accept more arguments than just 'O.Column'.
+-- See 'eq' for a detailed explanation.
+--
+-- Mnemonic reminder: INside.
+in_ :: Op_in_ f x a b c => a -> f b -> c
+in_ a = ous . fmap (eq a)
 
 -- | Constraint on arguments to 'lt'. See 'Op_eq' for a detailed explanation.
 type Op_lt x a b c = (O.PGOrd x, Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
@@ -1034,6 +1043,14 @@ type Op_ou a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool)
 -- with 'Prelude.or'. N'est-ce pas?
 ou :: Op_ou a b c => a -> b -> c
 ou = op2 (liftKol2 (O..||))
+
+-- | Internal. We don't export this because 'ou' is more general.
+class Op_ous a where
+  -- | Like Opaleye's @('O.ors')@, but can accept more arguments than just
+  -- 'O.Column'. See 'eq' for a detailed explanation.
+  ous :: Foldable f => f a -> a
+instance Op_ous (Kol O.PGBool) where ous = foldl' ou (kol False)
+instance Op_ous (Koln O.PGBool) where ous = foldl' ou (koln False)
 
 -- | Constraint on arguments to 'et'. See 'Op_eq' for a detailed explanation.
 type Op_et a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c

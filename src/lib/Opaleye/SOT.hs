@@ -73,6 +73,7 @@ module Opaleye.SOT
  , nullFalse
  , no, Op_no
  , eq, Op_eq
+ , in_, Op_in_
  , lt, Op_lt
  , ou, Op_ou
  , et, Op_et
