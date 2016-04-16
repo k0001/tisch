@@ -96,7 +96,7 @@ module Opaleye.SOT
  , wdef
 
    -- * Types
- , PGType
+ , PgNewtype(..)
  , Col(..)
  , C(..)
  , T(..)
