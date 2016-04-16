@@ -374,7 +374,7 @@ q_TEmployee_1 :: O.Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
   e <- queryTabla' -< () -- Here: table' == table TEmployee, inferred.
   restrict -< isNull (e ^. col (C::C "end_date"))
-  restrict <<< nullFalse -< ou
+  restrict <<< nullFalse -< lor
      (lt (koln (Time.fromGregorian 2003 1 1))
          (e ^. col (C::C "start_date")))
      (eq (koln "Teller")
@@ -388,12 +388,7 @@ q_TEmployee_TDepartment_join = proc () -> do
   restrict <<< nullFalse -< eq
      (e ^. col (C::C "department_id")) -- tnc
      (d ^. col (C::C "department_id")) -- tc
-     -- Comparing the two columns above doesn't compile without the
-     -- 'Comparable' instance below. Yay for not allowing
-     -- comparissons/joins between unrelated columns!
   id -< (e,d)
-
-instance Comparable TEmployee "department_id" TDepartment "department_id"
 
 q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
@@ -402,5 +397,3 @@ q_TAccount_TIndividual_leftJoin =
    (queryTabla (T::T TIndividual)) -- Can't be inferred.
    (\(a,i) -> eq (a ^. col (C::C "customer_id"))
                  (i ^. col (C::C "customer_id")))
-
-instance Comparable TAccount "customer_id" TIndividual "customer_id"

@@ -74,8 +74,6 @@ types = seq x () where
        ) => ()
   x = ()
 
-instance Comparable TTest "c1" TTest "c3"
-
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
    t1 <- queryTabla' -< ()
@@ -86,7 +84,7 @@ query1 = proc () -> do
    (t3, t4n) <- leftJoin
       (queryTabla (T::T TTest))
       (queryTabla (T::T TTest))
-      (\(t3, t4) -> eq -- requires instance Comparable TTest "c1" TTest "c3" O.PGBool
+      (\(t3, t4) -> eq
          (view (col (C::C "c1")) t3)
          (view (col (C::C "c3")) t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
