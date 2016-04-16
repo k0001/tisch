@@ -46,16 +46,13 @@ module Opaleye.SOT
  , update
 
    -- * Kol
- , Kol
- , unKol
+ , Kol(..)
  , ToKol(..)
  , liftKol1
  , liftKol2
 
    -- * Koln
- , NotNullable
- , Koln
- , unKoln
+ , Koln(..)
  , koln
  , matchKoln
  , isNull
@@ -96,6 +93,7 @@ module Opaleye.SOT
  , wdef
 
    -- * Types
+ , NotNullable
  , PgNewtype(..)
  , Col(..)
  , C(..)

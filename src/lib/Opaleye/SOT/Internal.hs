@@ -114,7 +114,7 @@ instance PgNewtype O.PGUuid where type PgType O.PGUuid = O.PGUuid
 -- guaranteed to be not 'O.Nullable'.  If you need to have a 'O.Nullable' column
 -- type, use 'Koln' instead.
 --
--- Build using 'kol' or 'kolFromColumn'.
+-- Build using 'kol' or 'Kol'.
 --
 -- We do not use @('O.Column' ('PgType' a))@, instead we use @('Kol' a)@ This is
 -- where we drift a bit appart from Opaleye, but hopefully not for a long time.
@@ -123,14 +123,7 @@ instance PgNewtype O.PGUuid where type PgType O.PGUuid = O.PGUuid
 -- /Notice that 'Kol' is very different from 'Col': 'Col' is used to describe/
 -- /the properties of a column at compile time. 'Kol' is used at runtime/
 -- /for manipulating with values stored in columns./
-data Kol a = PgNewtype a => UnsafeKol (O.Column (PgType a))
-  -- ^ Build safely using 'kol'.
-
-unKol :: PgNewtype a => Kol a -> O.Column (PgType a)
-unKol (UnsafeKol ca) = ca
-
-kolFromColumn :: PgNewtype a => O.Column (PgType a) -> Kol a
-kolFromColumn = UnsafeKol
+data Kol a = PgNewtype a => Kol { unKol :: O.Column (PgType a) }
 
 -- | Converts an unary function on Opaleye's 'O.Column' to an unary
 -- function on 'Kol'.
@@ -142,7 +135,7 @@ liftKol1
   => (O.Column (PgType a)
   -> O.Column (PgType b))
   -> (Kol a -> Kol b) -- ^
-liftKol1 f = \ka -> UnsafeKol (f (unKol ka))
+liftKol1 f = \ka -> Kol (f (unKol ka))
 
 -- | Converts a binary function on Opaleye's 'O.Column's to an binary
 -- function on 'Koln'.
@@ -153,7 +146,7 @@ liftKol2
   :: (PgNewtype a, PgNewtype b, PgNewtype c)
   => (O.Column (PgType a) -> O.Column (PgType b) -> O.Column (PgType c))
   -> (Kol a -> Kol b -> Kol c)
-liftKol2 f = \ka kb -> kolFromColumn (f (unKol ka) (unKol kb))
+liftKol2 f = \ka kb -> Kol (f (unKol ka) (unKol kb))
 
 instance ( PgNewtype a
          , Profunctor p, PP.Default p (O.Column (PgType a)) (O.Column b)
@@ -163,13 +156,13 @@ instance ( PgNewtype a
 instance forall p a b.
     ( PgNewtype b, Profunctor p, PP.Default p (O.Column a) (O.Column (PgType b))
     ) => PP.Default p (O.Column a) (Kol b) where
-  def = P.rmap kolFromColumn (PP.def :: p (O.Column a) (O.Column (PgType b)))
+  def = P.rmap Kol (PP.def :: p (O.Column a) (O.Column (PgType b)))
 
 instance forall p a b.
     ( PgNewtype a, PgNewtype b
     , Profunctor p, PP.Default p (O.Column (PgType a)) (O.Column (PgType b))
     ) => PP.Default p (Kol a) (Kol b) where
-  def = P.dimap unKol kolFromColumn (PP.def :: p (O.Column (PgType a)) (O.Column (PgType b)))
+  def = P.dimap unKol Kol (PP.def :: p (O.Column (PgType a)) (O.Column (PgType b)))
 
 instance
     ( PgNewtype a, PP.Default O.QueryRunner (O.Column (PgType a)) b
@@ -177,11 +170,11 @@ instance
   def = P.lmap unKol PP.def
 
 instance (PgNewtype a, Fractional (O.Column (PgType a))) => Fractional (Kol a) where
-  fromRational = UnsafeKol . fromRational
+  fromRational = Kol . fromRational
   (/) = liftKol2 (/)
 
 instance (PgNewtype a, Num (O.Column (PgType a))) => Num (Kol a) where
-  fromInteger = UnsafeKol . fromInteger
+  fromInteger = Kol . fromInteger
   (*) = liftKol2 (*)
   (+) = liftKol2 (+)
   (-) = liftKol2 (-)
@@ -226,38 +219,38 @@ class PgNewtype b => ToKol a b where
   {-# INLINE kol #-}
 
 instance ToKol a b => ToKol (Tagged t a) b
-instance ToKol [Char] O.PGText where kol = kolFromColumn . O.pgString
+instance ToKol [Char] O.PGText where kol = Kol . O.pgString
 instance ToKol Char O.PGText where kol = kol . (:[])
-instance ToKol Bool O.PGBool where kol = kolFromColumn . O.pgBool
+instance ToKol Bool O.PGBool where kol = Kol . O.pgBool
 -- | Note: Portability wise, it's best to be explicit about the size, that's why
 -- there is no instance for 'Int'
-instance ToKol Int32 O.PGInt4 where kol = kolFromColumn . O.pgInt4 . fromIntegral
+instance ToKol Int32 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
 -- | Note: Portability wise, it's best to be explicit about the size, that's why
 -- there is no instance for 'Int'
-instance ToKol Int64 O.PGInt8 where kol = kolFromColumn . O.pgInt8
-instance ToKol Float O.PGFloat4 where kol = kolFromColumn . pgFloat4
-instance ToKol Float O.PGFloat8 where kol = kolFromColumn . pgFloat8
-instance ToKol Double O.PGFloat8 where kol = kolFromColumn . O.pgDouble
-instance ToKol Data.Text.Text O.PGText where kol = kolFromColumn . O.pgStrictText
-instance ToKol Data.Text.Lazy.Text O.PGText where kol = kolFromColumn . O.pgLazyText
-instance ToKol Data.ByteString.ByteString O.PGBytea where kol = kolFromColumn . O.pgStrictByteString
-instance ToKol Data.ByteString.Lazy.ByteString O.PGBytea where kol = kolFromColumn . O.pgLazyByteString
-instance ToKol Data.Time.UTCTime O.PGTimestamptz where kol = kolFromColumn . O.pgUTCTime
-instance ToKol Data.Time.LocalTime O.PGTimestamp where kol = kolFromColumn . O.pgLocalTime
-instance ToKol Data.Time.TimeOfDay O.PGTime where kol = kolFromColumn . O.pgTimeOfDay
-instance ToKol Data.Time.Day O.PGDate where kol = kolFromColumn . O.pgDay
-instance ToKol Data.UUID.UUID O.PGUuid where kol = kolFromColumn . O.pgUUID
-instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = kolFromColumn . O.pgCiStrictText
-instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = kolFromColumn . O.pgCiLazyText
-instance ToKol Data.Aeson.Value O.PGJson where kol = kolFromColumn . O.pgLazyJSON . Data.Aeson.encode
-instance ToKol Data.Aeson.Value O.PGJsonb where kol = kolFromColumn . O.pgLazyJSONB . Data.Aeson.encode
+instance ToKol Int64 O.PGInt8 where kol = Kol . O.pgInt8
+instance ToKol Float O.PGFloat4 where kol = Kol . pgFloat4
+instance ToKol Float O.PGFloat8 where kol = Kol . pgFloat8
+instance ToKol Double O.PGFloat8 where kol = Kol . O.pgDouble
+instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
+instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
+instance ToKol Data.ByteString.ByteString O.PGBytea where kol = Kol . O.pgStrictByteString
+instance ToKol Data.ByteString.Lazy.ByteString O.PGBytea where kol = Kol . O.pgLazyByteString
+instance ToKol Data.Time.UTCTime O.PGTimestamptz where kol = Kol . O.pgUTCTime
+instance ToKol Data.Time.LocalTime O.PGTimestamp where kol = Kol . O.pgLocalTime
+instance ToKol Data.Time.TimeOfDay O.PGTime where kol = Kol . O.pgTimeOfDay
+instance ToKol Data.Time.Day O.PGDate where kol = Kol . O.pgDay
+instance ToKol Data.UUID.UUID O.PGUuid where kol = Kol . O.pgUUID
+instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = Kol . O.pgCiStrictText
+instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = Kol . O.pgCiLazyText
+instance ToKol Data.Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Data.Aeson.encode
+instance ToKol Data.Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Data.Aeson.encode
 
 ---
 
 -- | Like @('O.Column' ('O.Nullable' ('PgType' a)))@, but with @('PgType' a)@
 -- guaranteed to be not-'O.Nullable'.
 --
--- Build safely using 'koln', 'koln', 'kolnFromColumn'.
+-- Build safely using 'koln' or 'Koln'.
 --
 -- We do not use @('O.Column' ('O.Nullable' ('PgType' a)))@, but instead we use
 -- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
@@ -270,14 +263,7 @@ instance ToKol Data.Aeson.Value O.PGJsonb where kol = kolFromColumn . O.pgLazyJS
 -- /Notice that 'Koln' is very different from 'Col': 'Col' is used to describe/
 -- /the properties of a column at compile time. 'Koln' is used at runtime/
 -- /for manipulating with values stored in columns./
-data Koln a = PgNewtype a => UnsafeKoln (O.Column (O.Nullable (PgType a)))
-  -- ^ Build safely using 'koln'.
-
-unKoln :: PgNewtype a => Koln a -> O.Column (O.Nullable (PgType a))
-unKoln (UnsafeKoln cna) = cna
-
-kolnFromColumn :: PgNewtype a => O.Column (O.Nullable (PgType a)) -> Koln a
-kolnFromColumn = UnsafeKoln
+data Koln a = PgNewtype a => Koln { unKoln :: O.Column (O.Nullable (PgType a)) }
 
 class PgNewtype pg => ToKoln hs pg where
   -- | Build a 'Koln'.
@@ -302,15 +288,15 @@ instance forall hs pg. (ToKol hs pg, PgNewtype pg) => ToKoln (Maybe hs) pg where
 
 -- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
 nul :: PgNewtype a => Koln a
-nul = UnsafeKoln O.null
+nul = Koln O.null
 
 -- | Like 'maybe'. Case analysis for 'Koln'.
 --
 -- If @('Koln' a)@ is @NULL@, then evaluate to the first argument,
 -- otherwise it applies the given function to the underlying @('Kol' a)@.
 matchKoln :: (PgNewtype a, PgNewtype b) => Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
-matchKoln kb0 f kna = UnsafeKol $
-  O.matchNullable (unKol kb0) (unKol . f . UnsafeKol) (unKoln kna)
+matchKoln kb0 f kna = Kol $
+  O.matchNullable (unKol kb0) (unKol . f . Kol) (unKoln kna)
 
 -- | Like 'fmap' for 'Maybe'.
 --
@@ -324,15 +310,15 @@ mapKoln f kna = bindKoln kna (koln . f)
 -- Apply the given function to the underlying @('Kol' a)@ only as long as the
 -- given @('Koln' a)@ is not @NULL@, otherwise, evaluates to @NULL@.
 bindKoln :: (PgNewtype a, PgNewtype b) => Koln a -> (Kol a -> Koln b) -> Koln b
-bindKoln kna f = UnsafeKoln $
-  O.matchNullable O.null (unKoln . f . UnsafeKol) (unKoln kna)
+bindKoln kna f = Koln $
+  O.matchNullable O.null (unKoln . f . Kol) (unKoln kna)
 
 -- | Like @(('<|>') :: 'Maybe' a -> 'Maybe' a -> 'Maybe' a)@.
 --
 -- Evaluates to the first argument if it is not @NULL@, otherwise
 -- evaluates to the second argument.
 altKoln :: (PgNewtype a) => Koln a -> Koln a -> Koln a
-altKoln kna0 kna1 = UnsafeKoln $
+altKoln kna0 kna1 = Koln $
   O.matchNullable (unKoln kna1) O.toNullable (unKoln kna0)
 
 -- | Converts an unary function on Opaleye's 'O.Nullable' 'O.Column'
@@ -344,7 +330,7 @@ liftKoln1
   :: (PgNewtype a, PgNewtype b)
   => (O.Column (O.Nullable (PgType a)) -> O.Column (O.Nullable (PgType b)))
   -> (Koln a -> Koln b) -- ^
-liftKoln1 f = \kna -> kolnFromColumn (f (unKoln kna))
+liftKoln1 f = \kna -> Koln (f (unKoln kna))
 
 -- | Converts a binary function on Opaleye's 'O.Nullable' 'O.Column's
 -- to a binary function on 'Koln's.
@@ -357,14 +343,14 @@ liftKoln2
       -> O.Column (O.Nullable (PgType b))
       -> O.Column (O.Nullable (PgType c)))
   -> (Koln a -> Koln b -> Koln c) -- ^
-liftKoln2 f = \kna knb -> kolnFromColumn (f (unKoln kna) (unKoln knb))
+liftKoln2 f = \kna knb -> Koln (f (unKoln kna) (unKoln knb))
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-} forall p x a.
     ( P.Profunctor p, PgNewtype a
     , PP.Default p x (O.Column (O.Nullable (PgType a)))
     ) => PP.Default p x (Koln a) where
-  def = P.rmap kolnFromColumn (PP.def :: p x (O.Column (O.Nullable (PgType a))))
+  def = P.rmap Koln (PP.def :: p x (O.Column (O.Nullable (PgType a))))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
@@ -379,7 +365,7 @@ instance
     ( P.Profunctor p, PgNewtype a, PgNewtype b
     , PP.Default p (O.Column (O.Nullable (PgType a))) (O.Column (O.Nullable (PgType b)))
     ) => PP.Default p (Koln a) (Koln b) where
-  def = P.dimap unKoln kolnFromColumn (PP.def :: p (O.Column (O.Nullable (PgType a))) (O.Column (O.Nullable (PgType b))))
+  def = P.dimap unKoln Koln (PP.def :: p (O.Column (O.Nullable (PgType a))) (O.Column (O.Nullable (PgType b))))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
@@ -837,19 +823,19 @@ update _ = update'
 
 -- | Column properties: Write (no default), Read (not nullable).
 colProps_wr :: PgNewtype a => String -> O.TableProperties (Kol a) (Kol a)
-colProps_wr = P.dimap unKol kolFromColumn . O.required
+colProps_wr = P.dimap unKol Kol . O.required
 
 -- | Column properties: Write (no default), Read (nullable).
 colProps_wrn :: PgNewtype a => String -> O.TableProperties (Koln a) (Koln a)
-colProps_wrn = P.dimap unKoln kolnFromColumn . O.required
+colProps_wrn = P.dimap unKoln Koln . O.required
 
 -- | Column properties: Write (optional default), Read (not nullable).
 colProps_wdr :: PgNewtype a => String -> O.TableProperties (WDef (Kol a)) (Kol a)
-colProps_wdr = P.dimap (wdef Nothing Just . fmap unKol) kolFromColumn . O.optional
+colProps_wdr = P.dimap (wdef Nothing Just . fmap unKol) Kol . O.optional
 
 -- | Column properties: Write (optional default), Read (nullable).
 colProps_wdrn :: PgNewtype a => String -> O.TableProperties (WDef (Koln a)) (Koln a)
-colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) kolnFromColumn . O.optional
+colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) Koln . O.optional
 
 --------------------------------------------------------------------------------
 
@@ -1143,7 +1129,7 @@ instance PgNewtype a => GetKoln (Tagged (TC t c) (Koln a)) a where getKoln = unT
 
 -- | Like Opaleye's 'O.isNull', but works for any 'GetKoln'.
 isNull :: GetKoln w a => w -> Kol O.PGBool
-isNull = UnsafeKol . O.isNull . unKoln . getKoln
+isNull = Kol . O.isNull . unKoln . getKoln
 
 -- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
 -- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @TRUE@.
