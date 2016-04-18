@@ -913,6 +913,8 @@ col _ = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 -- | Like 'col', but the column is tagged with 'TC'.
 --
 -- Mnemonic: the COLumn, Tagged.
+--
+-- TODO: Do we really need this? Can it be removed?
 colt :: forall t c xs xs' a a'
       . HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
