@@ -81,7 +81,6 @@ import           Control.Lens
 import qualified Data.Time as Time
 import           Data.Time (Day, LocalTime)
 import           Data.Int
-import qualified Opaleye as O
 import           Opaleye.SOT
 import           Prelude hiding (id)
 
@@ -95,7 +94,7 @@ data Db1
 
 newtype DepartmentId = DepartmentId { unDepartmentId :: Int32 }
 instance Wrapped DepartmentId where { type Unwrapped DepartmentId = Int32; _Wrapped' = iso unDepartmentId DepartmentId }
-instance ToKol DepartmentId O.PGInt4
+instance ToKol DepartmentId PGInt4
 
 data TDepartment
 instance Tabla TDepartment where
@@ -103,15 +102,15 @@ instance Tabla TDepartment where
   type SchemaName TDepartment = "public"
   type TableName TDepartment = "department"
   type Cols TDepartment =
-    [ 'Col "department_id" 'WD 'R O.PGInt4 DepartmentId
-    , 'Col "name" 'W 'R O.PGText String
+    [ 'Col "department_id" 'WD 'R PGInt4 DepartmentId
+    , 'Col "name" 'W 'R PGText String
     ]
 
 ---
 
 newtype BranchId = BranchId { unBranchId :: Int32 }
 instance Wrapped BranchId where { type Unwrapped BranchId = Int32; _Wrapped' = iso unBranchId BranchId }
-instance ToKol BranchId O.PGInt4
+instance ToKol BranchId PGInt4
 
 data TBranch
 instance Tabla TBranch where
@@ -119,19 +118,19 @@ instance Tabla TBranch where
   type SchemaName TBranch = "public"
   type TableName TBranch = "branch"
   type Cols TBranch =
-    [ 'Col "branch_id" 'WD 'R O.PGInt4 BranchId
-    , 'Col "name" 'W 'R O.PGText String
-    , 'Col "address" 'W 'RN O.PGText String
-    , 'Col "city" 'W 'RN O.PGText String
-    , 'Col "state" 'W 'RN O.PGText String
-    , 'Col "zip" 'W 'RN O.PGText String
+    [ 'Col "branch_id" 'WD 'R PGInt4 BranchId
+    , 'Col "name" 'W 'R PGText String
+    , 'Col "address" 'W 'RN PGText String
+    , 'Col "city" 'W 'RN PGText String
+    , 'Col "state" 'W 'RN PGText String
+    , 'Col "zip" 'W 'RN PGText String
     ]
 
 ---
 
 newtype EmployeeId = EmployeeId { unEmployeeId :: Int32 }
 instance Wrapped EmployeeId where { type Unwrapped EmployeeId = Int32; _Wrapped' = iso unEmployeeId EmployeeId }
-instance ToKol EmployeeId O.PGInt4
+instance ToKol EmployeeId PGInt4
 
 data TEmployee
 instance Tabla TEmployee where
@@ -139,22 +138,22 @@ instance Tabla TEmployee where
   type SchemaName TEmployee = "public"
   type TableName TEmployee = "employee"
   type Cols TEmployee =
-    [ 'Col "employee_id" 'WD 'R O.PGInt4 EmployeeId
-    , 'Col "fname" 'W 'R O.PGText String
-    , 'Col "lname" 'W 'R O.PGText String
-    , 'Col "start_date" 'W 'R O.PGDate Day
-    , 'Col "end_date" 'W 'RN O.PGDate Day
-    , 'Col "superior_employee_id" 'W 'RN O.PGInt4 EmployeeId
-    , 'Col "department_id" 'W 'RN O.PGInt4 DepartmentId
-    , 'Col "title" 'W 'RN O.PGText String
-    , 'Col "assigned_branch_id" 'W 'RN O.PGInt4 BranchId
+    [ 'Col "employee_id" 'WD 'R PGInt4 EmployeeId
+    , 'Col "fname" 'W 'R PGText String
+    , 'Col "lname" 'W 'R PGText String
+    , 'Col "start_date" 'W 'R PGDate Day
+    , 'Col "end_date" 'W 'RN PGDate Day
+    , 'Col "superior_employee_id" 'W 'RN PGInt4 EmployeeId
+    , 'Col "department_id" 'W 'RN PGInt4 DepartmentId
+    , 'Col "title" 'W 'RN PGText String
+    , 'Col "assigned_branch_id" 'W 'RN PGInt4 BranchId
     ]
 
 ---
 
 newtype ProductTypeId = ProductTypeId { unProductTypeId :: String }
 instance Wrapped ProductTypeId where { type Unwrapped ProductTypeId = String; _Wrapped' = iso unProductTypeId ProductTypeId }
-instance ToKol ProductTypeId O.PGText
+instance ToKol ProductTypeId PGText
 
 data TProductType
 instance Tabla TProductType where
@@ -162,15 +161,15 @@ instance Tabla TProductType where
   type SchemaName TProductType = "public"
   type TableName TProductType = "product_type"
   type Cols TProductType =
-    [ 'Col "product_type_cd" 'W 'R O.PGText ProductTypeId
-    , 'Col "name" 'W 'R O.PGText String
+    [ 'Col "product_type_cd" 'W 'R PGText ProductTypeId
+    , 'Col "name" 'W 'R PGText String
     ]
 
 ---
 
 newtype ProductId = ProductId { unProductId :: String }
 instance Wrapped ProductId where { type Unwrapped ProductId = String; _Wrapped' = iso unProductId ProductId }
-instance ToKol ProductId O.PGText
+instance ToKol ProductId PGText
 
 data TProduct
 instance Tabla TProduct where
@@ -178,18 +177,18 @@ instance Tabla TProduct where
   type SchemaName TProduct = "public"
   type TableName TProduct = "product"
   type Cols TProduct =
-    [ 'Col "product_cd" 'W 'R O.PGText ProductId
-    , 'Col "name" 'W 'R O.PGText String
-    , 'Col "product_type_cd" 'W 'R O.PGText ProductTypeId
-    , 'Col "date_offered" 'W 'RN O.PGDate Day
-    , 'Col "date_retired" 'W 'RN O.PGDate Day
+    [ 'Col "product_cd" 'W 'R PGText ProductId
+    , 'Col "name" 'W 'R PGText String
+    , 'Col "product_type_cd" 'W 'R PGText ProductTypeId
+    , 'Col "date_offered" 'W 'RN PGDate Day
+    , 'Col "date_retired" 'W 'RN PGDate Day
     ]
 
 ---
 
 newtype CustomerId = CustomerId { unCustomerId :: Int32 }
 instance Wrapped CustomerId where { type Unwrapped CustomerId = Int32; _Wrapped' = iso unCustomerId CustomerId }
-instance ToKol CustomerId O.PGInt4
+instance ToKol CustomerId PGInt4
 
 data CustomerType
    = CustomerType_I
@@ -201,7 +200,7 @@ _CustomerType_Char = prism'
   (\case { CustomerType_I -> 'I'; CustomerType_B -> 'B' })
   (\case { 'I' -> Just CustomerType_I; 'B' -> Just CustomerType_B; _ -> Nothing })
 
-instance ToKol CustomerType O.PGText where kol = kol . review _CustomerType_Char
+instance ToKol CustomerType PGText where kol = kol . review _CustomerType_Char
 
 data TCustomer
 instance Tabla TCustomer where
@@ -209,13 +208,13 @@ instance Tabla TCustomer where
   type SchemaName TCustomer = "public"
   type TableName TCustomer = "customer"
   type Cols TCustomer =
-    [ 'Col "customer_id" 'WD 'R O.PGInt4 CustomerId
-    , 'Col "fed_id" 'W 'R O.PGText String -- I have no idea what "fed" is supposed to mean.
-    , 'Col "cust_type_cd" 'W 'R O.PGText CustomerType
-    , 'Col "address" 'W 'RN O.PGText String
-    , 'Col "city" 'W 'RN O.PGText String
-    , 'Col "state" 'W 'RN O.PGText String
-    , 'Col "postal_code" 'W 'RN O.PGText String
+    [ 'Col "customer_id" 'WD 'R PGInt4 CustomerId
+    , 'Col "fed_id" 'W 'R PGText String -- I have no idea what "fed" is supposed to mean.
+    , 'Col "cust_type_cd" 'W 'R PGText CustomerType
+    , 'Col "address" 'W 'RN PGText String
+    , 'Col "city" 'W 'RN PGText String
+    , 'Col "state" 'W 'RN PGText String
+    , 'Col "postal_code" 'W 'RN PGText String
     ]
 
 ---
@@ -226,17 +225,17 @@ instance Tabla TIndividual where
   type SchemaName TIndividual = "public"
   type TableName TIndividual = "individual"
   type Cols TIndividual =
-    [ 'Col "customer_id" 'W 'R O.PGInt4 CustomerId
-    , 'Col "fname" 'W 'R O.PGText String
-    , 'Col "lname" 'W 'R O.PGText String
-    , 'Col "birth_date" 'W 'RN O.PGDate Day
+    [ 'Col "customer_id" 'W 'R PGInt4 CustomerId
+    , 'Col "fname" 'W 'R PGText String
+    , 'Col "lname" 'W 'R PGText String
+    , 'Col "birth_date" 'W 'RN PGDate Day
     ]
 
 ---
 
 newtype BizStateId = BizStateId { unBizStateId :: String }
 instance Wrapped BizStateId where { type Unwrapped BizStateId = String; _Wrapped' = iso unBizStateId BizStateId }
-instance ToKol BizStateId O.PGText
+instance ToKol BizStateId PGText
 
 data TBusiness
 instance Tabla TBusiness where
@@ -244,17 +243,17 @@ instance Tabla TBusiness where
   type SchemaName TBusiness = "public"
   type TableName TBusiness = "business"
   type Cols TBusiness =
-    [ 'Col "customer_id" 'W 'R O.PGInt4 CustomerId
-    , 'Col "name" 'W 'R O.PGText String
-    , 'Col "state_id" 'W 'R O.PGText BizStateId
-    , 'Col "incorp_date" 'W 'RN O.PGDate Day
+    [ 'Col "customer_id" 'W 'R PGInt4 CustomerId
+    , 'Col "name" 'W 'R PGText String
+    , 'Col "state_id" 'W 'R PGText BizStateId
+    , 'Col "incorp_date" 'W 'RN PGDate Day
     ]
 
 ---
 
 newtype OfficerId = OfficerId { unOfficerId :: Int32 }
 instance Wrapped OfficerId where { type Unwrapped OfficerId = Int32; _Wrapped' = iso unOfficerId OfficerId }
-instance ToKol OfficerId O.PGInt4
+instance ToKol OfficerId PGInt4
 
 data TOfficer
 instance Tabla TOfficer where
@@ -262,20 +261,20 @@ instance Tabla TOfficer where
   type SchemaName TOfficer = "public"
   type TableName TOfficer = "officer"
   type Cols TOfficer =
-    [ 'Col "officer_id" 'WD 'R O.PGInt4 OfficerId
-    , 'Col "customer_id" 'W 'R O.PGInt4 CustomerId
-    , 'Col "fname" 'W 'R O.PGText String
-    , 'Col "lname" 'W 'R O.PGText String
-    , 'Col "title" 'W 'RN O.PGText String
-    , 'Col "start_date" 'W 'R O.PGDate Day
-    , 'Col "end_date" 'W 'RN O.PGDate Day
+    [ 'Col "officer_id" 'WD 'R PGInt4 OfficerId
+    , 'Col "customer_id" 'W 'R PGInt4 CustomerId
+    , 'Col "fname" 'W 'R PGText String
+    , 'Col "lname" 'W 'R PGText String
+    , 'Col "title" 'W 'RN PGText String
+    , 'Col "start_date" 'W 'R PGDate Day
+    , 'Col "end_date" 'W 'RN PGDate Day
     ]
 
 ---
 
 newtype AccountId = AccountId { unAccountId :: Int32 }
 instance Wrapped AccountId where { type Unwrapped AccountId = Int32; _Wrapped' = iso unAccountId AccountId }
-instance ToKol AccountId O.PGInt4
+instance ToKol AccountId PGInt4
 
 data AccountStatus
    = AccountStatus_Active
@@ -293,7 +292,7 @@ _AccountStatus_String = prism'
          "FROZEN" -> Just AccountStatus_Frozen
          _ -> Nothing)
 
-instance ToKol AccountStatus O.PGText where kol = kol . review _AccountStatus_String
+instance ToKol AccountStatus PGText where kol = kol . review _AccountStatus_String
 
 data TAccount
 instance Tabla TAccount where
@@ -301,24 +300,24 @@ instance Tabla TAccount where
   type SchemaName TAccount = "public"
   type TableName TAccount = "account"
   type Cols TAccount =
-    [ 'Col "account_id" 'WD 'R O.PGInt4 AccountId
-    , 'Col "product_cd" 'W 'R O.PGText ProductId
-    , 'Col "customer_id" 'W 'R O.PGInt4 CustomerId
-    , 'Col "open_date" 'W 'R O.PGDate Day
-    , 'Col "close_date" 'W 'RN O.PGDate Day
-    , 'Col "last_activity_date" 'W 'RN O.PGDate Day
-    , 'Col "status" 'W 'R O.PGText AccountStatus
-    , 'Col "open_branch_id" 'W 'RN O.PGInt4 BranchId
-    , 'Col "open_employee_id" 'W 'RN O.PGInt4 EmployeeId
-    , 'Col "avail_balance" 'W 'RN O.PGFloat4 Float
-    , 'Col "pending_balance" 'W 'RN O.PGFloat4 Float
+    [ 'Col "account_id" 'WD 'R PGInt4 AccountId
+    , 'Col "product_cd" 'W 'R PGText ProductId
+    , 'Col "customer_id" 'W 'R PGInt4 CustomerId
+    , 'Col "open_date" 'W 'R PGDate Day
+    , 'Col "close_date" 'W 'RN PGDate Day
+    , 'Col "last_activity_date" 'W 'RN PGDate Day
+    , 'Col "status" 'W 'R PGText AccountStatus
+    , 'Col "open_branch_id" 'W 'RN PGInt4 BranchId
+    , 'Col "open_employee_id" 'W 'RN PGInt4 EmployeeId
+    , 'Col "avail_balance" 'W 'RN PGFloat4 Float
+    , 'Col "pending_balance" 'W 'RN PGFloat4 Float
     ]
 
 ---
 
 newtype TransactionId = TransactionId { unTransactionId :: Int32 }
 instance Wrapped TransactionId where { type Unwrapped TransactionId = Int32; _Wrapped' = iso unTransactionId TransactionId }
-instance ToKol TransactionId O.PGInt4
+instance ToKol TransactionId PGInt4
 
 data TransactionType
    = TransactionType_Debit
@@ -333,7 +332,7 @@ _TransactionType_String = prism'
          "CDT" -> Just TransactionType_Credit
          _ -> Nothing)
 
-instance ToKol TransactionType O.PGText where kol = kol . review _TransactionType_String
+instance ToKol TransactionType PGText where kol = kol . review _TransactionType_String
 
 data TTransaction
 instance Tabla TTransaction where
@@ -341,14 +340,14 @@ instance Tabla TTransaction where
   type SchemaName TTransaction = "public"
   type TableName TTransaction = "transaction"
   type Cols TTransaction =
-   '[ 'Col "txn_id" 'WD 'R O.PGInt4 TransactionId
-    , 'Col "txn_date" 'W 'R O.PGTimestamp LocalTime
-    , 'Col "account_id" 'W 'R O.PGInt4 AccountId
-    , 'Col "txn_type_cd" 'W 'RN O.PGText TransactionType
-    , 'Col "amount" 'W 'R O.PGFloat4 Float
-    , 'Col "teller_employee_id" 'W 'RN O.PGInt4 EmployeeId
-    , 'Col "execution_branch_id" 'W 'RN O.PGInt4 BranchId
-    , 'Col "funds_avail_date" 'W 'RN O.PGTimestamp LocalTime
+   '[ 'Col "txn_id" 'WD 'R PGInt4 TransactionId
+    , 'Col "txn_date" 'W 'R PGTimestamp LocalTime
+    , 'Col "account_id" 'W 'R PGInt4 AccountId
+    , 'Col "txn_type_cd" 'W 'RN PGText TransactionType
+    , 'Col "amount" 'W 'R PGFloat4 Float
+    , 'Col "teller_employee_id" 'W 'RN PGInt4 EmployeeId
+    , 'Col "execution_branch_id" 'W 'RN PGInt4 BranchId
+    , 'Col "funds_avail_date" 'W 'RN PGTimestamp LocalTime
     ]
 
 --------------------------------------------------------------------------------
@@ -359,48 +358,41 @@ instance Tabla TTransaction where
 --------------------------------------------------------------------------------
 
 -- | Order by field, desc.
-q_TAccount_desc :: O.Query (PgR TAccount)
+q_TAccount_desc :: Query (PgR TAccount)
 q_TAccount_desc =
-  O.orderBy (descnf (view (col (C::C "avail_balance"))))
-            (O.queryTable table') -- Here: table' == table TAccount, inferred.
+  orderBy (descnf (view (col (C::C "avail_balance"))))
+          (queryTabla') -- Here: table' == table TAccount, inferred.
 
 -- | Order by multiple fields, asc.
-q_TAccount_asc_multi :: O.Query (PgR TAccount)
+q_TAccount_asc_multi :: Query (PgR TAccount)
 q_TAccount_asc_multi =
-  O.orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
-                     (asc   (view (col (C::C "product_cd")))))
-            (queryTabla') -- Here: table' == table TAccount, inferred.
-q_TEmployee_1 :: O.Query (PgR TEmployee)
+  orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
+                   (asc   (view (col (C::C "product_cd")))))
+          (queryTabla') -- Here: table' == table TAccount, inferred.
+q_TEmployee_1 :: Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
   e <- queryTabla' -< () -- Here: table' == table TEmployee, inferred.
   restrict -< isNull (e ^. col (C::C "end_date"))
-  restrict <<< nullFalse -< ou
+  restrict <<< nullFalse -< lor
      (lt (koln (Time.fromGregorian 2003 1 1))
          (e ^. col (C::C "start_date")))
      (eq (koln "Teller")
          (e ^. col (C::C "title")))
   id -< e
 
-q_TEmployee_TDepartment_join :: O.Query (PgR TEmployee, PgR TDepartment)
+q_TEmployee_TDepartment_join :: Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
   e <- queryTabla' -< () -- inferred
   d <- queryTabla' -< () -- inferred
   restrict <<< nullFalse -< eq
      (e ^. col (C::C "department_id")) -- tnc
      (d ^. col (C::C "department_id")) -- tc
-     -- Comparing the two columns above doesn't compile without the
-     -- 'Comparable' instance below. Yay for not allowing
-     -- comparissons/joins between unrelated columns!
   id -< (e,d)
 
-instance Comparable TEmployee "department_id" TDepartment "department_id"
-
-q_TAccount_TIndividual_leftJoin :: O.Query (PgR TAccount, PgRN TIndividual)
+q_TAccount_TIndividual_leftJoin :: Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
   leftJoin
    (queryTabla (T::T TAccount))    -- Can't be inferred.
    (queryTabla (T::T TIndividual)) -- Can't be inferred.
    (\(a,i) -> eq (a ^. col (C::C "customer_id"))
                  (i ^. col (C::C "customer_id")))
-
-instance Comparable TAccount "customer_id" TIndividual "customer_id"

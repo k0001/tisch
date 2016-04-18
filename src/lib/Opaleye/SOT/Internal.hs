@@ -14,6 +14,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -61,60 +62,65 @@ import qualified Opaleye.Internal.TableMaker as OI
 
 -------------------------------------------------------------------------------
 
--- | Horrible hack to workaround the current represenation for nullable columns.
+-- | Hack to workaround the current represenation for nullable columns.
 -- See 'Koln'.
-type family NotNullable (x :: *) :: Constraint where
-  NotNullable (O.Nullable x) = "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
+type family NotNullable (x :: k) :: Constraint where
+  NotNullable (O.Nullable x) =
+     "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
   NotNullable x = ()
 
--- | Only instances of 'PGType' can be arguments to 'Kol' or 'Koln'
-class NotNullable x => PGType (x :: *)
-instance PGType O.PGBool
-instance PGType O.PGDate
-instance PGType O.PGFloat4
-instance PGType O.PGFloat8
-instance PGType O.PGInt8
-instance PGType O.PGInt4
-instance PGType O.PGInt2
-instance PGType O.PGNumeric
-instance PGType O.PGText
-instance PGType O.PGTime
-instance PGType O.PGTimestamp
-instance PGType O.PGTimestamptz
-instance PGType O.PGUuid
-instance PGType O.PGCitext
-instance PGType O.PGBytea
-instance PGType O.PGJson
-instance PGType O.PGJsonb
--- TODO: instance PGType (PGArray a)
+-- | Only 'PgType' instances are allowed as indexes to 'Kol' and 'Koln'
+class NotNullable a => PgType (a :: k)
+instance PgType O.PGBool
+instance PgType O.PGBytea
+instance PgType O.PGCitext
+instance PgType O.PGDate
+instance PgType O.PGFloat4
+instance PgType O.PGFloat8
+instance PgType O.PGInt2
+instance PgType O.PGInt4
+instance PgType O.PGInt8
+instance PgType O.PGJsonb
+instance PgType O.PGJson
+instance PgType O.PGNumeric
+instance PgType O.PGText
+instance PgType O.PGTimestamptz
+instance PgType O.PGTimestamp
+instance PgType O.PGTime
+instance PgType O.PGUuid
 
 -------------------------------------------------------------------------------
 
--- | Like Opaleye's @('O.Column' a)@, but guaranteed to be not 'O.Nullable'.
--- If you need to have a 'O.Nullable' column type, use 'Koln' instead.
+-- | Like @opaleye@'s @('O.Column' a)@, but with @a@ guaranteed to be not
+-- 'O.Nullable'. If you need to have a 'O.Nullable' column type, use 'Koln'
+-- instead.
 --
--- Build using 'kol', view using 'unKol'.
---
--- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where
--- we drift a bit appart from Opaleye, but hopefully not for a long time.
--- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+-- Build using 'kol' or 'Kol'.
 --
 -- /Notice that 'Kol' is very different from 'Col': 'Col' is used to describe/
 -- /the properties of a column at compile time. 'Kol' is used at runtime/
 -- /for manipulating with values stored in columns./
-data Kol a = PGType a => UnsafeKol (O.Column a)
-  -- ^ Build safely using 'kol'.
+--
+-- We do not use @('O.Column' a)@, instead we use @('Kol' a)@ This is where we
+-- drift a bit appart from Opaleye. See
+-- https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+--
+-- Also, even if the @a@ in @'Kol' a@ is never used at the term level, its
+-- kind is unfortunately restriced to @*@ by Opaleye.
+data Kol (a :: *) = PgType a => Kol { unKol :: O.Column a }
 
-unKol :: Kol a -> O.Column a
-unKol (UnsafeKol ca) = ca
+deriving instance Show (O.Column a) => Show (Kol a)
 
 -- | Converts an unary function on Opaleye's 'O.Column' to an unary
 -- function on 'Kol'.
 --
 -- /Hint/: You can further compose the result of this function with 'op1'
 -- to widen the range of accepted argument types.
-liftKol1 :: PGType b => (O.Column a -> O.Column b) -> (Kol a -> Kol b)
-liftKol1 f = \ka -> kol (f (unKol ka))
+liftKol1
+  :: (PgType a, PgType b)
+  => (O.Column a -> O.Column b)
+  -> (Kol a -> Kol b) -- ^
+liftKol1 f = Kol . f . unKol
 
 -- | Converts a binary function on Opaleye's 'O.Column's to an binary
 -- function on 'Koln'.
@@ -122,36 +128,39 @@ liftKol1 f = \ka -> kol (f (unKol ka))
 -- /Hint/: You can further compose the result of this function with 'op2'
 -- to widen the range of accepted argument types.
 liftKol2
-  :: PGType c
+  :: (PgType a, PgType b, PgType c)
   => (O.Column a -> O.Column b -> O.Column c)
   -> (Kol a -> Kol b -> Kol c)
-liftKol2 f = \ka kb -> kol (f (unKol ka) (unKol kb))
+liftKol2 f = \ka kb -> Kol (f (unKol ka) (unKol kb))
 
-instance ( Profunctor p, PP.Default p (O.Column a) (O.Column b)
-         ) => PP.Default p (Kol a) (O.Column b) where
+instance
+    ( PgType a
+    , Profunctor p, PP.Default p (O.Column a) (O.Column b)
+    ) => PP.Default p (Kol a) (O.Column b) where
   def = P.lmap unKol PP.def
 
 instance forall p a b.
-    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), PGType b
+    ( PgType b, Profunctor p, PP.Default p (O.Column a) (O.Column b)
     ) => PP.Default p (O.Column a) (Kol b) where
-  def = P.rmap kol (PP.def :: p (O.Column a) (O.Column b))
+  def = P.rmap Kol (PP.def :: p (O.Column a) (O.Column b))
 
 instance forall p a b.
-    ( Profunctor p, PP.Default p (O.Column a) (O.Column b), PGType b
+    ( PgType a, PgType b
+    , Profunctor p, PP.Default p (O.Column a) (O.Column b)
     ) => PP.Default p (Kol a) (Kol b) where
-  def = P.dimap unKol kol (PP.def :: p (O.Column a) (O.Column b))
+  def = P.dimap unKol Kol (PP.def :: p (O.Column a) (O.Column b))
 
 instance
-    ( PP.Default O.QueryRunner (O.Column a) b
+    ( PgType a, PP.Default O.QueryRunner (O.Column a) b
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
 
-instance (PGType a, Fractional (O.Column a)) => Fractional (Kol a) where
-  fromRational = UnsafeKol . fromRational
+instance (PgType a, Fractional (O.Column a)) => Fractional (Kol a) where
+  fromRational = Kol . fromRational
   (/) = liftKol2 (/)
 
-instance (PGType a, Num (O.Column a)) => Num (Kol a) where
-  fromInteger = UnsafeKol . fromInteger
+instance (PgType a, Num (O.Column a)) => Num (Kol a) where
+  fromInteger = Kol . fromInteger
   (*) = liftKol2 (*)
   (+) = liftKol2 (+)
   (-) = liftKol2 (-)
@@ -161,15 +170,14 @@ instance (PGType a, Num (O.Column a)) => Num (Kol a) where
 
 -- | Build a 'Kol'.
 --
--- You need to provide an instance for every Haskell type you plan to
+-- You need to provide a 'ToKol' instance for every Haskell type you plan to
 -- convert to its PostgreSQL representation as 'Kol'.
 --
---
 -- A a default implementation of 'kol' is available for 'Wrapped'
--- instances.
+-- instances:
 --
 -- @
--- default 'kol' :: ('Wrapped' hs, 'ToKol' ('Unwrapped' hs) pg) => hs -> 'Kol' pg
+-- default 'kol' :: ('Wrapped' a, 'ToKol' ('Unwrapped' a) b) => a -> 'Kol' b
 -- 'kol' = 'kol' . 'view' '_Wrapped''
 -- @
 --
@@ -178,159 +186,125 @@ instance (PGType a, Num (O.Column a)) => Num (Kol a) where
 -- here: we could just rely on Opaleye's 'O.Constant'. However, as of today,
 -- Opaleye's 'O.Constant' provides some undesired support which we
 -- deliberately want to avoid here. Namely, we don't want to support
--- converting 'Int' to 'O.PGInt4'. As soon as that is fixed upstream,
+-- converting 'Int' to 'O.PGInt4'. If this is fixed upstream,
 -- we might go back to relying on 'O.Constant' if suitable. See
 -- https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
-class ToKol hs pg where
-  -- | Build a 'Kol'.
-  --
-  -- You can use this function to convert an Opaleye 'O.Column' to a 'Kol',
-  -- or to convert a constant Haskell value (say, a 'Bool') to its equivalent
+class PgType b => ToKol (a :: *) (b :: *) where
+  -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
   -- PostgreSQL representation as a @('Kol' 'O.PGBool')@.
   --
   -- Some example simplified types:
   --
   -- @
-  -- 'kol' :: 'PGType' a => 'O.Column' a -> 'Kol' a
   -- 'kol' :: 'Bool' -> 'Kol' 'O.PGBool'
   -- 'kol' :: 'Int32' -> 'Kol' 'O.PGInt4'
   -- @
-  kol :: hs -> Kol pg
-  default kol :: (Wrapped hs, ToKol (Unwrapped hs) pg) => hs -> Kol pg
+  kol :: a -> Kol b
+  default kol :: (Wrapped a, ToKol (Unwrapped a) b) => a -> Kol b
   kol = kol . view _Wrapped'
-  {-# INLINE kol #-}
 
--- | Compatibility with Opaleye's 'O.Column'.
-instance PGType pg => ToKol (O.Column pg) pg where
-  kol = UnsafeKol
-  {-# INLINE kol#-}
-
-instance ToKol hs pg => ToKol (Tagged t hs) pg
-instance ToKol [Char] O.PGText where kol = kol . O.pgString
-instance ToKol Char O.PGText where kol = kol . (:[])
-instance ToKol Bool O.PGBool where kol = kol . O.pgBool
--- | Note: Portability wise, it's best to be explicit about the size, that's why
--- there is no instance for 'Int'
-instance ToKol Int32 O.PGInt4 where kol = kol . O.pgInt4 . fromIntegral
--- | Note: Portability wise, it's best to be explicit about the size, that's why
--- there is no instance for 'Int'
-instance ToKol Int64 O.PGInt8 where kol = kol . O.pgInt8
-instance ToKol Float O.PGFloat4 where kol = kol . pgFloat4
-instance ToKol Float O.PGFloat8 where kol = kol . pgFloat8
-instance ToKol Double O.PGFloat8 where kol = kol . O.pgDouble
-instance ToKol Data.Text.Text O.PGText where kol = kol . O.pgStrictText
-instance ToKol Data.Text.Lazy.Text O.PGText where kol = kol . O.pgLazyText
-instance ToKol Data.ByteString.ByteString O.PGBytea where kol = kol . O.pgStrictByteString
-instance ToKol Data.ByteString.Lazy.ByteString O.PGBytea where kol = kol . O.pgLazyByteString
-instance ToKol Data.Time.UTCTime O.PGTimestamptz where kol = kol . O.pgUTCTime
-instance ToKol Data.Time.LocalTime O.PGTimestamp where kol = kol . O.pgLocalTime
-instance ToKol Data.Time.TimeOfDay O.PGTime where kol = kol . O.pgTimeOfDay
-instance ToKol Data.Time.Day O.PGDate where kol = kol . O.pgDay
-instance ToKol Data.UUID.UUID O.PGUuid where kol = kol . O.pgUUID
-instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = kol . O.pgCiStrictText
-instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = kol . O.pgCiLazyText
-instance ToKol Data.Aeson.Value O.PGJson where kol = kol . O.pgLazyJSON . Data.Aeson.encode
-instance ToKol Data.Aeson.Value O.PGJsonb where kol = kol . O.pgLazyJSONB . Data.Aeson.encode
+instance ToKol String O.PGText where kol = Kol . O.pgString
+instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
+instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
+instance ToKol Char O.PGText where kol = Kol . O.pgString . (:[])
+instance ToKol Bool O.PGBool where kol = Kol . O.pgBool
+instance ToKol Int32 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
+instance ToKol Int32 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
+instance ToKol Int64 O.PGInt8 where kol = Kol . O.pgInt8
+instance ToKol Float O.PGFloat4 where kol = Kol . pgFloat4
+instance ToKol Float O.PGFloat8 where kol = Kol . pgFloat8
+instance ToKol Double O.PGFloat8 where kol = Kol . O.pgDouble
+instance ToKol Data.ByteString.ByteString O.PGBytea where kol = Kol . O.pgStrictByteString
+instance ToKol Data.ByteString.Lazy.ByteString O.PGBytea where kol = Kol . O.pgLazyByteString
+instance ToKol Data.Time.UTCTime O.PGTimestamptz where kol = Kol . O.pgUTCTime
+instance ToKol Data.Time.LocalTime O.PGTimestamp where kol = Kol . O.pgLocalTime
+instance ToKol Data.Time.TimeOfDay O.PGTime where kol = Kol . O.pgTimeOfDay
+instance ToKol Data.Time.Day O.PGDate where kol = Kol . O.pgDay
+instance ToKol Data.UUID.UUID O.PGUuid where kol = Kol . O.pgUUID
+instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = Kol . O.pgCiStrictText
+instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = Kol . O.pgCiLazyText
+instance ToKol Data.Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Data.Aeson.encode
+instance ToKol Data.Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Data.Aeson.encode
 
 ---
 
--- | Like @('O.Column' ('O.Nullable' a))@, but the @a@ is guaranteed to
--- be not-'O.Nullable'.
+-- | Like @opaleye@'s @('O.Column' ('O.Nullable' a))@, but with @a@ guaranteed
+-- to be not-'O.Nullable'.
 --
--- Build safely using 'koln', view using 'unKoln'.
+-- Think of @'Koln' a@ as @'Maybe' ('Kol' a)@, with 'nul' being analogous to
+-- 'Nothing' and 'koln' being analogous to 'Just'.
 --
--- We do not use @('O.Column' ('O.Nullable' a))@, but instead we use
--- @('Koln' a)@. This is where we drift a bit appart from Opaleye, but
--- hopefully not for a long time.
--- See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
---
--- Think of @('Koln' a)@ as @('Maybe' a)@, where
--- @('Nothing' == 'nul')@ and @('Just' a == 'O.Column' a)@.
+-- Build safely using 'nul', 'koln', 'fromKol' or 'Koln'.
 --
 -- /Notice that 'Koln' is very different from 'Col': 'Col' is used to describe/
 -- /the properties of a column at compile time. 'Koln' is used at runtime/
 -- /for manipulating with values stored in columns./
-data Koln a = PGType a => UnsafeKoln (O.Column (O.Nullable a))
-  -- ^ Build safely using 'koln'.
+--
+-- We do not use @'O.Column' ('O.Nullable' a)@, but instead we use
+-- @('Koln' a)@. This is where we drift a bit appart from Opaleye.
+-- see https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+--
+-- Also, even if the @a@ in @'Koln' a@ is never used at the term level, its
+-- kind is unfortunately restriced to @*@ by Opaleye.
+data Koln (a :: *) = PgType a => Koln { unKoln :: O.Column (O.Nullable a) }
 
-unKoln :: Koln a -> O.Column (O.Nullable a)
-unKoln (UnsafeKoln cna) = cna
+deriving instance Show (O.Column (O.Nullable a)) => Show (Koln a)
 
-class ToKoln hs pg where
-  -- | Build a 'Koln'.
-  --
-  -- @
-  -- 'koln' :: 'Kol' a -> 'Koln' a
-  -- 'koln' :: 'PGType' a => 'O.Column' ('O.Nullable' a) -> 'Koln' a
-  -- 'koln' :: 'ToKol' hs pg => hs -> 'Koln' pg
-  -- 'koln' :: 'ToKol' hs pg => 'Maybe' hs -> 'Koln' pg -- @NULL@ if 'Nothing'
-  -- @
-  koln :: hs -> Koln pg
--- | Compatibility with Opaleye's 'O.Column'.
-instance PGType pg => ToKoln (O.Column (O.Nullable pg)) pg where
-  koln = UnsafeKoln
-  {-# INLINE koln #-}
-instance PGType pg => ToKoln (Kol pg) pg where
-  koln = kolnFromKol
-  {-# INLINE koln #-}
--- | Converted to @NULL@ if 'Nothing'.
-instance forall hs pg. (ToKol hs pg, PGType pg) => ToKoln (Maybe hs) pg where
-  koln = maybe nul (koln . (kol :: hs -> Kol pg))
-  {-# INLINE koln #-}
-instance {-# OVERLAPPABLE #-} forall hs pg. (ToKol hs pg, PGType pg) => ToKoln hs pg where
-  koln = koln . (kol :: hs -> Kol pg)
-  {-# INLINE koln #-}
+-- | Build a 'Koln' from a Haskell term. This is like the 'Just' constructor for
+-- 'Maybe'
+koln :: ToKol a b => a -> Koln b
+koln = fromKol . kol
 
--- | Like 'koln', but with a more restricted type.
-kolnFromKol :: PGType pg => Kol pg -> Koln pg
-kolnFromKol = UnsafeKoln . O.toNullable . unKol
-{-# INLINE kolnFromKol #-}
+-- | PostgreSQL's @NULL@ value. This is like the 'Nothing' constructor for
+-- 'Maybe'
+nul :: PgType a => Koln a
+nul = Koln O.null
 
--- | Billon dollar mistake in French, so as to avoid clashing with 'Prelude.null'.
-nul :: PGType a => Koln a
-nul = UnsafeKoln O.null
+-- | Convert a 'Kol' to a 'Koln'.
+fromKol :: PgType a => Kol a -> Koln a
+fromKol = Koln . O.toNullable . unKol
 
--- | Like 'maybe'. Case analysis for 'Koln'.
+-- | Case analysis for 'Koln'. Like 'maybe' for 'Maybe'.
 --
 -- If @('Koln' a)@ is @NULL@, then evaluate to the first argument,
 -- otherwise it applies the given function to the underlying @('Kol' a)@.
-matchKoln :: (PGType a, PGType b) => Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
-matchKoln kb0 f kna = UnsafeKol $
-  O.matchNullable (unKol kb0) (unKol . f . UnsafeKol) (unKoln kna)
+matchKoln :: (PgType a, PgType b) => Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
+matchKoln kb0 f kna = Kol $
+  O.matchNullable (unKol kb0) (unKol . f . Kol) (unKoln kna)
 
 -- | Like 'fmap' for 'Maybe'.
 --
 -- Apply the given function to the underlying @('Kol' a)@ only as long as the
 -- given @('Koln' a)@ is not @NULL@, otherwise, evaluates to @NULL@.
-mapKoln :: (PGType a, PGType b) => (Kol a -> Kol b) -> Koln a -> Koln b
-mapKoln f kna = bindKoln kna (koln . f)
+mapKoln :: (PgType a, PgType b) => (Kol a -> Kol b) -> Koln a -> Koln b
+mapKoln f kna = bindKoln kna (fromKol . f)
 
 -- | Monadic bind like the one for 'Maybe'.
 --
 -- Apply the given function to the underlying @('Kol' a)@ only as long as the
 -- given @('Koln' a)@ is not @NULL@, otherwise, evaluates to @NULL@.
-bindKoln :: (PGType a, PGType b) => Koln a -> (Kol a -> Koln b) -> Koln b
-bindKoln kna f = UnsafeKoln $
-  O.matchNullable O.null (unKoln . f . UnsafeKol) (unKoln kna)
+bindKoln :: (PgType a, PgType b) => Koln a -> (Kol a -> Koln b) -> Koln b
+bindKoln kna f = Koln $
+  O.matchNullable O.null (unKoln . f . Kol) (unKoln kna)
 
--- | Like @(('<|>') :: 'Maybe' a -> 'Maybe' a -> 'Maybe' a)@.
+-- | Like @('<|>') :: 'Maybe' a -> 'Maybe' a -> 'Maybe' a@.
 --
 -- Evaluates to the first argument if it is not @NULL@, otherwise
 -- evaluates to the second argument.
-altKoln :: (PGType a) => Koln a -> Koln a -> Koln a
-altKoln kna0 kna1 = UnsafeKoln $
+altKoln :: (PgType a) => Koln a -> Koln a -> Koln a
+altKoln kna0 kna1 = Koln $
   O.matchNullable (unKoln kna1) O.toNullable (unKoln kna0)
 
--- | Converts an unary function on Opaleye's 'O.Nullable' 'O.Column'
+-- | Converts an unary function on @opaleye@'s 'O.Nullable' 'O.Column'
 -- to an unary function on 'Koln'.
 --
 -- /Hint/: You can further compose the result of this function with 'op1'
 -- to widen the range of accepted argument types.
 liftKoln1
-  :: PGType b
+  :: (PgType a, PgType b)
   => (O.Column (O.Nullable a) -> O.Column (O.Nullable b))
   -> (Koln a -> Koln b) -- ^
-liftKoln1 f = \kna -> koln (f (unKoln kna))
+liftKoln1 f = Koln . f . unKoln
 
 -- | Converts a binary function on Opaleye's 'O.Nullable' 'O.Column's
 -- to a binary function on 'Koln's.
@@ -338,55 +312,69 @@ liftKoln1 f = \kna -> koln (f (unKoln kna))
 -- /Hint/: You can further compose the result of this function with 'op2'
 -- to widen the range of accepted argument types.
 liftKoln2
-  :: PGType c
-  => (O.Column (O.Nullable a)
-      -> O.Column (O.Nullable b)
-      -> O.Column (O.Nullable c))
+  :: (PgType a, PgType b, PgType c)
+  => (O.Column (O.Nullable a) -> O.Column (O.Nullable b) -> O.Column (O.Nullable c))
   -> (Koln a -> Koln b -> Koln c) -- ^
-liftKoln2 f = \kna knb -> koln (f (unKoln kna) (unKoln knb))
+liftKoln2 f = \kna knb -> Koln (f (unKoln kna) (unKoln knb))
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-} forall p x a.
-    ( P.Profunctor p, PGType a
+    ( P.Profunctor p, PgType a
     , PP.Default p x (O.Column (O.Nullable a))
     ) => PP.Default p x (Koln a) where
-  def = P.rmap koln (PP.def :: p x (O.Column (O.Nullable a)))
+  def = P.rmap Koln (PP.def :: p x (O.Column (O.Nullable a)))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-}
-    ( P.Profunctor p
+    ( P.Profunctor p, PgType a
     , PP.Default p (O.Column (O.Nullable a)) x
     ) => PP.Default p (Koln a) x where
   def = P.lmap unKoln PP.def
   {-# INLINE def #-}
 
 instance
-    ( P.Profunctor p, PGType b
+    ( P.Profunctor p, PgType a, PgType b
     , PP.Default p (O.Column (O.Nullable a)) (O.Column (O.Nullable b))
     ) => PP.Default p (Koln a) (Koln b) where
-  def = P.dimap unKoln koln (PP.def :: p (O.Column (O.Nullable a)) (O.Column (O.Nullable b)))
+  def = P.dimap unKoln Koln (PP.def :: p (O.Column (O.Nullable a)) (O.Column (O.Nullable b)))
   {-# INLINE def #-}
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-}
-    ( O.QueryRunnerColumnDefault pg hs, PGType pg
+    ( O.QueryRunnerColumnDefault pg hs
     ) => O.QueryRunnerColumnDefault pg (Maybe hs) where
   queryRunnerColumnDefault = OI.QueryRunnerColumn u (fmap (fmap (fmap Just)) fp)
     where OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
 
-instance (PGType a, Fractional (Kol a)) => Fractional (Koln a) where
-  fromRational = kolnFromKol . fromRational
-  (/) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka / kb)))
+instance (PgType a, Fractional (Kol a)) => Fractional (Koln a) where
+  fromRational = fromKol . fromRational
+  (/) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka / kb)))
 
-instance (PGType a, Num (Kol a)) => Num (Koln a) where
-  fromInteger = kolnFromKol . fromInteger
-  (*) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka * kb)))
-  (+) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka + kb)))
-  (-) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> kolnFromKol (ka - kb)))
+instance (PgType a, Num (Kol a)) => Num (Koln a) where
+  fromInteger = fromKol . fromInteger
+  (*) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka * kb)))
+  (+) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka + kb)))
+  (-) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka - kb)))
   abs = mapKoln abs
   negate = mapKoln negate
   signum = mapKoln signum
+
+-------------------------------------------------------------------------------
+
+-- | @'PgTypeCast' a b@ says that the 'PgType' @a@ can be safely coerced to the
+-- 'PgType' @b@'.
+--
+-- To perform the actual coercion, use 'kolCast' or 'kolnCast'.
+class (PgType a, PgType b) => PgTypeCast (a :: ka) (b :: kb) where
+-- | Identity.
+instance (PgType a) => PgTypeCast a a
+
+kolCast :: PgTypeCast a b => Kol a -> Kol b
+kolCast = liftKol1 O.unsafeCoerceColumn
+
+kolnCast :: PgTypeCast a b => Koln a -> Koln b
+kolnCast = mapKoln kolCast
 
 -------------------------------------------------------------------------------
 
@@ -621,7 +609,7 @@ type PgW t = Rec t (Cols_PgW t)
 type ITabla t
   = ( GHC.KnownSymbol (SchemaName t)
     , GHC.KnownSymbol (TableName t)
-    , All PGType (List.Map Col_PgTypeSym0 (Cols t))
+    , All PgType (List.Map Col_PgTypeSym0 (Cols t))
     , HDistributeProxy (Cols t)
     , HL.HMapAux HList (FnCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
     , HL.HMapAux HList (HL.HFmap FnPgWfromHsIField) (Cols_HsI t) (Cols_PgW t)
@@ -646,9 +634,6 @@ type ITabla t
 --
 -- The @t@ type is only used as a tag for the purposes of uniquely identifying
 -- this 'Tabla'.
-
--- Implementation detail: By restricting @'Database' t@ to @*@ we simplify
--- the implementation of 'Comparable'.
 class ITabla t => Tabla (t :: k) where
   -- | Some kind of unique identifier used for telling appart the database where
   -- this table exists from other databases, so as to avoid accidentally mixing
@@ -766,13 +751,13 @@ mkHsI k = Tagged
 data FnPgWfromHsIField = FnPgWfromHsIField
 instance HL.ApplyAB FnPgWfromHsIField x x where
   applyAB _ = id
-instance ToKol hs pg => HL.ApplyAB FnPgWfromHsIField hs (Kol pg) where
+instance (ToKol a b) => HL.ApplyAB FnPgWfromHsIField a (Kol b) where
   applyAB _ = kol
-instance (ToKol hs pg, PGType pg) => HL.ApplyAB FnPgWfromHsIField (WDef hs) (WDef (Kol pg)) where
+instance (ToKol a b) => HL.ApplyAB FnPgWfromHsIField (WDef a) (WDef (Kol b)) where
   applyAB _ = fmap kol
-instance (ToKol hs pg, PGType pg) => HL.ApplyAB FnPgWfromHsIField (Maybe hs) (Koln pg) where
+instance (ToKol a b) => HL.ApplyAB FnPgWfromHsIField (Maybe a) (Koln b) where
   applyAB _ = maybe nul koln
-instance (ToKol hs pg, PGType pg) => HL.ApplyAB FnPgWfromHsIField (WDef (Maybe hs)) (WDef (Koln pg)) where
+instance (ToKol a b) => HL.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
   applyAB _ = fmap (maybe nul koln)
 
 -- | You'll need to use this function to convert a 'HsI' to a 'PgW' when using 'O.runInsert'.
@@ -805,9 +790,9 @@ toPgW _ = toPgW'
 data FnPgWfromPgRField = FnPgWfromPgRField
 instance HL.ApplyAB FnPgWfromPgRField x x where
   applyAB _ = id
-instance PGType pg => HL.ApplyAB FnPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
+instance PgType pg => HL.ApplyAB FnPgWfromPgRField (Kol pg) (WDef (Kol pg)) where
   applyAB _ = WVal
-instance PGType pg => HL.ApplyAB FnPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
+instance PgType pg => HL.ApplyAB FnPgWfromPgRField (Koln pg) (WDef (Koln pg)) where
   applyAB _ = WVal
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
@@ -825,20 +810,20 @@ update _ = update'
 --------------------------------------------------------------------------------
 
 -- | Column properties: Write (no default), Read (not nullable).
-colProps_wr :: PGType a => String -> O.TableProperties (Kol a) (Kol a)
-colProps_wr = P.dimap unKol kol . O.required
+colProps_wr :: PgType a => String -> O.TableProperties (Kol a) (Kol a)
+colProps_wr = P.dimap unKol Kol . O.required
 
 -- | Column properties: Write (no default), Read (nullable).
-colProps_wrn :: PGType a => String -> O.TableProperties (Koln a) (Koln a)
-colProps_wrn = P.dimap (unsafeUnNullableColumn . unKoln) koln . O.required
+colProps_wrn :: PgType a => String -> O.TableProperties (Koln a) (Koln a)
+colProps_wrn = P.dimap unKoln Koln . O.required
 
 -- | Column properties: Write (optional default), Read (not nullable).
-colProps_wdr :: PGType a => String -> O.TableProperties (WDef (Kol a)) (Kol a)
-colProps_wdr = P.dimap (wdef Nothing Just . fmap unKol) kol . O.optional
+colProps_wdr :: PgType a => String -> O.TableProperties (WDef (Kol a)) (Kol a)
+colProps_wdr = P.dimap (wdef Nothing Just . fmap unKol) Kol . O.optional
 
 -- | Column properties: Write (optional default), Read (nullable).
-colProps_wdrn :: PGType a => String -> O.TableProperties (WDef (Koln a)) (Koln a)
-colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) koln . O.optional
+colProps_wdrn :: PgType a => String -> O.TableProperties (WDef (Koln a)) (Koln a)
+colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) Koln . O.optional
 
 --------------------------------------------------------------------------------
 
@@ -857,19 +842,19 @@ class ICol_Props (col :: Col GHC.Symbol WD RN * *) where
   colProps :: Tabla t => Proxy t -> Proxy col -> Col_Props t col
 
 -- | 'colProps' is equivalent 'colProps_wr'.
-instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'W 'R p h) where
+instance forall n p h. (GHC.KnownSymbol n, PgType p) => ICol_Props ('Col n 'W 'R p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wr (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wrn'.
-instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'W 'RN p h) where
+instance forall n p h. (GHC.KnownSymbol n, PgType p) => ICol_Props ('Col n 'W 'RN p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wrn (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdr'.
-instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD 'R p h) where
+instance forall n p h. (GHC.KnownSymbol n, PgType p) => ICol_Props ('Col n 'WD 'R p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wdr (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdrn'.
-instance forall n p h. (GHC.KnownSymbol n, PGType p) => ICol_Props ('Col n 'WD 'RN p h) where
+instance forall n p h. (GHC.KnownSymbol n, PgType p) => ICol_Props ('Col n 'WD 'RN p h) where
   colProps _ = \_ -> ppaUnTagged (colProps_wdrn (GHC.symbolVal (Proxy :: Proxy n)))
   {-# INLINE colProps #-}
 
@@ -914,49 +899,26 @@ queryTabla :: Tabla t => T t -> O.Query (PgR t)
 queryTabla _ = queryTabla'
 
 --------------------------------------------------------------------------------
--- RunXXX functions
 
-
---------------------------------------------------------------------------------
-
--- | Provide 'Comparable' instances for every two columns that you want to be
--- able to compare (e.g., using 'eq').
-class
-  ( Tabla t1
-  , Tabla t2
-  , HasColName t1 c1
-  , HasColName t2 c2
-  , Database t1 ~ Database t2
-  , Col_PgType (Col_ByName t1 c1) ~ Col_PgType (Col_ByName t2 c2)
-  ) => Comparable t1 c1 t2 c2
-
--- | Trivial. Same database, same table, same column.
-instance (Tabla t, HasColName t c) => Comparable t c t c
-
---------------------------------------------------------------------------------
-
--- | Lens to the value of a column.
+-- | Lens to a column.
 --
--- Mnemonic: the COLumn.
-col :: HL.HLensCxt (TC t c) HL.Record xs xs' a a'
+-- Mnemonic: The COLumn.
+col :: forall t c xs xs' a a'
+    .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
     => C c
-    -> Lens (Rec t xs) (Rec t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
-col prx = cola prx . _Unwrapped
+    -> Lens (Rec t xs) (Rec t xs') a a'
+col _ = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 {-# INLINE col #-}
 
--- | Lens to the value of a column without the 'TC' tag.
+-- | Like 'col', but the column is tagged with 'TC'.
 --
--- Most of the time you'll want to use 'col' instead, but this might be more useful
--- when trying to change the type of @a@ during an update, or when implementing
--- 'unHsR'.
---
--- Mnemonic: The COLumn's A.
-cola :: forall t c xs xs' a a'
-     .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
+-- Mnemonic: the COLumn, Tagged.
+colt :: forall t c xs xs' a a'
+      . HL.HLensCxt (TC t c) HL.Record xs xs' a a'
      => C c
-     -> Lens (Rec t xs) (Rec t xs') a a'
-cola = \_ -> _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
-{-# INLINE cola #-}
+     -> Lens (Rec t xs) (Rec t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
+colt prx = col prx . _Unwrapped
+{-# INLINE colt #-}
 
 --------------------------------------------------------------------------------
 -- Unary operations on columns
@@ -1014,18 +976,6 @@ type Op_eq x a b c = Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c
 -- @
 --
 -- Any of the above combinations with the arguments fliped is accepted too.
--- Additionally, a 'Comparable' constraint will be required if you try to
--- compare two 'Tabla'-aware columns directly; that is, a 'Kol' or a 'Koln'
--- wrapped in a @('TC' t c)@, such as those obtained with @('view' '.' 'col')@:
---
--- Simplified type signature just so that you get an idea:
---
--- @
--- 'eq' :: 'Comparable' t1 c1 t2 c2
---    => 'Tagged' ('TC' t1 c1) a
---    -> 'Tagged' ('TC' t2 c2) b
---    -> 'Koln' 'O.PGBool'
--- @
 --
 -- /Important/: Opaleye's 'O.Column' is deliberately not supported. Use 'kol'
 -- or 'koln' to convert a 'O.Column' to a 'Kol' or 'Koln' respectively.
@@ -1141,26 +1091,26 @@ land = op2 (liftKol2 (O..&&))
 -- This class makes it possible to accept both @('Kol' a)@ and
 -- @('Tagged' ('TC' t c) ('Kol' a))@ as arguments in various @opaleye-sot@
 -- functions.
-class GetKol (w :: *) (a :: *) | w -> a where getKol :: w -> Kol a
+class PgType a => GetKol w a | w -> a where getKol :: w -> Kol a
 -- | Identity.
-instance GetKol (Kol a) a where getKol = id
-instance GetKol (Tagged (TC t c) (Kol a)) a where getKol = unTagged
+instance PgType a => GetKol (Kol a) a where getKol = id
+instance PgType a => GetKol (Tagged (TC t c) (Kol a)) a where getKol = unTagged
 
 -- | Look up a 'Koln' inside some kind of wrapper.
 --
 -- This class makes it possible to accept both @('Koln' a)@ and
 -- @('Tagged' ('TC' t c) ('Koln' a))@ as arguments in various @opaleye-sot@
 -- functions.
-class GetKoln w a | w -> a where getKoln :: w -> Koln a
+class PgType a => GetKoln w a | w -> a where getKoln :: w -> Koln a
 -- | Identity.
-instance GetKoln (Koln a) a where getKoln = id
-instance GetKoln (Tagged (TC t c) (Koln a)) a where getKoln = unTagged
+instance PgType a => GetKoln (Koln a) a where getKoln = id
+instance PgType a => GetKoln (Tagged (TC t c) (Koln a)) a where getKoln = unTagged
 
 --------------------------------------------------------------------------------
 
 -- | Like Opaleye's 'O.isNull', but works for any 'GetKoln'.
 isNull :: GetKoln w a => w -> Kol O.PGBool
-isNull = UnsafeKol . O.isNull . unKoln . getKoln
+isNull = Kol . O.isNull . unKoln . getKoln
 
 -- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
 -- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @TRUE@.
@@ -1388,7 +1338,7 @@ type Op1 a b fa fb xa xb = Op1' a b fa fb xa xb
 -- We use the instances of this class to predicatably generalize the
 -- type of negative and positive arguments to unary functions on 'Kol' or
 -- 'Koln'.
-class (PGType a, PGType b) => Op1' a b fa fb xa xb | fa -> a, fb -> b, xa -> a, xb -> b, xa fa fb -> xb where
+class (PgType a, PgType b) => Op1' a b fa fb xa xb | fa -> a, fb -> b, xa -> a, xb -> b, xa fa fb -> xb where
   -- | Generalize the negative and positive arguments of the given function
   -- so that it works for as many combinations of @('Kol' x)@, @('Koln' x)@,
   -- @('Tagged' ('TC' t c) ('Kol' x))@ or @('Tagged' ('TC' t c) ('Koln' x))@ as
@@ -1399,27 +1349,27 @@ class (PGType a, PGType b) => Op1' a b fa fb xa xb | fa -> a, fb -> b, xa -> a, 
 -- to keep track of them, so I write all the possible combinations explicitely.
 
 -- | kk -> kk
-instance (PGType a, PGType b) => Op1' a b (Kol a) (Kol b) (Kol a) (Kol b) where op1 f ka = f ka
+instance (PgType a, PgType b) => Op1' a b (Kol a) (Kol b) (Kol a) (Kol b) where op1 f ka = f ka
 -- | kk -> nn
-instance (PGType a, PGType b) => Op1' a b (Kol a) (Kol b) (Koln a) (Koln b) where op1 f na = mapKoln f na
+instance (PgType a, PgType b) => Op1' a b (Kol a) (Kol b) (Koln a) (Koln b) where op1 f na = mapKoln f na
 -- | kk -> tx
 instance (Op1' a b (Kol a) (Kol b) xa xb) => Op1' a b (Kol a) (Kol b) (Tagged (TC t c) xa) xb where op1 f (Tagged xa) = op1 f xa
 -- | kn -> kn
-instance (PGType a, PGType b) => Op1' a b (Kol a) (Koln b) (Kol a) (Koln b) where op1 f ka = f ka
+instance (PgType a, PgType b) => Op1' a b (Kol a) (Koln b) (Kol a) (Koln b) where op1 f ka = f ka
 -- | kn -> nn
-instance (PGType a, PGType b) => Op1' a b (Kol a) (Koln b) (Koln a) (Koln b) where op1 f na = bindKoln na f
+instance (PgType a, PgType b) => Op1' a b (Kol a) (Koln b) (Koln a) (Koln b) where op1 f na = bindKoln na f
 -- | kn -> tn
 instance (Op1' a b (Kol a) (Koln b) xa (Koln b)) => Op1' a b (Kol a) (Koln b) (Tagged (TC t c) xa) (Koln b) where op1 f (Tagged xa) = op1 f xa
 -- | nk -> kk
-instance (PGType a, PGType b) => Op1' a b (Koln a) (Kol b) (Kol a) (Kol b) where op1 f ka = f (koln ka)
+instance (PgType a, PgType b) => Op1' a b (Koln a) (Kol b) (Kol a) (Kol b) where op1 f ka = f (fromKol ka)
 -- | nk -> nk
-instance (PGType a, PGType b) => Op1' a b (Koln a) (Kol b) (Koln a) (Kol b) where op1 f na = f na
+instance (PgType a, PgType b) => Op1' a b (Koln a) (Kol b) (Koln a) (Kol b) where op1 f na = f na
 -- | nk -> tk
 instance (Op1' a b (Koln a) (Kol b) xa (Kol b)) => Op1' a b (Koln a) (Kol b) (Tagged (TC t c) xa) (Kol b) where op1 f (Tagged xa) = op1 f xa
 -- | nn -> kn
-instance (PGType a, PGType b) => Op1' a b (Koln a) (Koln b) (Kol a) (Koln b) where op1 f ka = f (koln ka)
+instance (PgType a, PgType b) => Op1' a b (Koln a) (Koln b) (Kol a) (Koln b) where op1 f ka = f (fromKol ka)
 -- | nn -> nn
-instance (PGType a, PGType b) => Op1' a b (Koln a) (Koln b) (Koln a) (Koln b) where op1 f na = f na
+instance (PgType a, PgType b) => Op1' a b (Koln a) (Koln b) (Koln a) (Koln b) where op1 f na = f na
 -- | nn -> tn
 instance (Op1' a b (Koln a) (Koln b) xa (Koln b)) => Op1' a b (Koln a) (Koln b) (Tagged (TC t c) xa) (Koln b) where op1 f (Tagged xa) = op1 f xa
 
@@ -1438,29 +1388,27 @@ type Op2 a b c fa fb fc xa xb xc = Op2' a b c fa fb fc xa xb xc
 --
 -- We use the instances of this class to predicatably generalize the
 -- type of negative and positive arguments to unary functions on 'Kol' or
--- 'Koln'. Additionaly, if the @xa@ and @xb@ are 'Tagged' with 'TC',
--- then a 'Comparable' constraint will be required on them.
-class (PGType a, PGType b, PGType c) => Op2' a b c fa fb fc xa xb xc | fa -> a, fb -> b, fc -> c, xa -> a, xb -> b, xc -> c, xa xb fa fb fc -> xc where
+-- 'Koln'.
+class (PgType a, PgType b, PgType c) => Op2' a b c fa fb fc xa xb xc | fa -> a, fb -> b, fc -> c, xa -> a, xb -> b, xc -> c, xa xb fa fb fc -> xc where
   -- | Generalize the negative and positive arguments of the given function
   -- so that it works for as many combinations of @('Kol' x)@, @('Koln' x)@,
   -- @('Tagged' ('TC' t c) ('Kol' x))@ or @('Tagged' ('TC' t c) ('Koln' x))@ as
-  -- possible. If @xa@ and @xb@ are 'Tagged' with 'TC', then a 'Comparable'
-  -- constraint will be required on them.
+  -- possible.
   op2 :: (fa -> fb -> fc) -> (xa -> xb -> xc)
 
 -- Note: possibly some of these instances could be generalized, but it's hard
 -- to keep track of them, so I write all the possible combinations explicitely.
 
 -- | kkk -> kkk -- @k@ means 'Kol'
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f ka kb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f ka kb
 -- | kkk -> knn -- @n@ means 'Koln'
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = mapKoln (f ka) nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = mapKoln (f ka) nb
 -- | kkk -> ktx -- @t@ means 'Tagged' with 'TC', @x@ means any.
 instance (Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) xb xc) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where op2 f ka (Tagged xb) = op2 f ka xb
 -- | kkk -> nkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Kol b) (Koln c) where op2 f na kb = mapKoln (flip f kb) na
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Kol b) (Koln c) where op2 f na kb = mapKoln (flip f kb) na
 -- | kkk -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (\ka -> mapKoln (f ka) nb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (\ka -> mapKoln (f ka) nb)
 -- | kkk -> ntn
 instance (Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
 -- | kkk -> tkx
@@ -1468,18 +1416,18 @@ instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa (Kol b) xc) => Op2' a b c (Kol a
 -- | kkk -> tnk
 instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | kkk -> ttx
-instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Op2' a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa xb xc) => Op2' a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | kkn -> kkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f ka kb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f ka kb
 -- | kkn -> knn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = bindKoln nb (f ka)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = bindKoln nb (f ka)
 -- | kkn -> ktn
 instance (Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
 -- | kkn -> nkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = bindKoln na (flip f kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = bindKoln na (flip f kb)
 -- | kkn -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (\ka -> bindKoln nb (f ka))
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (\ka -> bindKoln nb (f ka))
 -- | kkn -> ntn
 instance (Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
 -- | kkn -> tkn
@@ -1487,18 +1435,18 @@ instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b c
 -- | kkn -> tnn
 instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | kkn -> ttn
-instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2' a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | knk -> kkk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f ka (koln kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f ka (fromKol kb)
 -- | knk -> knk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where op2 f ka nb = f ka nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where op2 f ka nb = f ka nb
 -- | knk -> ktk
 instance (Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where op2 f ka (Tagged xb) = op2 f ka xb
 -- | knk -> nkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Kol b) (Koln c) where op2 f na kb = mapKoln (flip f (koln kb)) na
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Kol b) (Koln c) where op2 f na kb = mapKoln (flip f (fromKol kb)) na
 -- | knk -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = mapKoln (flip f nb) na
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = mapKoln (flip f nb) na
 -- | knk -> ntn
 instance (Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
 -- | knk -> tkx
@@ -1506,18 +1454,18 @@ instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa (Kol b) xc) => Op2' a b c (Kol 
 -- | knk -> tnx
 instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | knk -> ttx
-instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Op2' a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa xb xc) => Op2' a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | knn -> kkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f ka (koln kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f ka (fromKol kb)
 -- | knn -> knn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = f ka nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = f ka nb
 -- | knn -> ktn
 instance (Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
 -- | knn -> nkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = bindKoln na (flip f (koln kb))
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = bindKoln na (flip f (fromKol kb))
 -- | knn -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (flip f nb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (flip f nb)
 -- | knn -> ntn
 instance (Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
 -- | knn -> tkn
@@ -1525,18 +1473,18 @@ instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b 
 -- | knn -> tnn
 instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | knn -> ttn
-instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2' a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | nkk -> kkk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f (koln ka) kb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f (fromKol ka) kb
 -- | nkk -> knn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = mapKoln (f (koln ka)) nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = mapKoln (f (fromKol ka)) nb
 -- | nkk -> ktx
 instance (Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) xb xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where op2 f ka (Tagged xb) = op2 f ka xb
 -- | nkk -> nkk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Kol b) (Kol c) where op2 f na kb = f na kb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Kol b) (Kol c) where op2 f na kb = f na kb
 -- | nkk -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = mapKoln (f na) nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = mapKoln (f na) nb
 -- | nkk -> ntx
 instance (Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) xb xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) xc where op2 f na (Tagged xb) = op2 f na xb
 -- | nkk -> tkk
@@ -1544,18 +1492,18 @@ instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa (Kol b) xc) => Op2' a b c (Koln
 -- | nkk -> tnn
 instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Op2' a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | nkk -> ttx
-instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa xb xc, Comparable ta ca tb cb) => Op2' a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa xb xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | nkn -> kkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f (koln ka) kb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f (fromKol ka) kb
 -- | nkn -> knn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = bindKoln nb (f (koln ka))
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = bindKoln nb (f (fromKol ka))
 -- | nkn -> ktn
 instance (Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
 -- | nkn -> nkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = f na kb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = f na kb
 -- | nkn -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln nb (f na)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln nb (f na)
 -- | nkn -> ntn
 instance (Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
 -- | nkn -> tkn
@@ -1563,18 +1511,18 @@ instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b 
 -- | nkn -> tnn
 instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | nkn -> ttn
-instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2' a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa xb (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | nnk -> kkk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f (koln ka) (koln kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f (fromKol ka) (fromKol kb)
 -- | nnk -> knk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where op2 f ka nb = f (koln ka) nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where op2 f ka nb = f (fromKol ka) nb
 -- | nnk -> ktk
 instance (Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where op2 f ka (Tagged xb) = op2 f ka xb
 -- | nnk -> nkk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Kol b) (Kol c) where op2 f na kb = f na (koln kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Kol b) (Kol c) where op2 f na kb = f na (fromKol kb)
 -- | nnk -> nnk
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Koln b) (Kol c) where op2 f na nb = f na nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Koln b) (Kol c) where op2 f na nb = f na nb
 -- | nnk -> ntk
 instance (Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) xb (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Kol c) where op2 f na (Tagged xb) = op2 f na xb
 -- | nnk -> tkk
@@ -1582,18 +1530,18 @@ instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa (Kol b) (Kol c)) => Op2' a b c
 -- | nnk -> tnk
 instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa (Koln b) (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Kol c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | nnk -> ttk
-instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa xb (Kol c), Comparable ta ca tb cb) => Op2' a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Kol c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa xb (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Kol c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 
 -- | nnn -> kkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f (koln ka) (koln kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f (fromKol ka) (fromKol kb)
 -- | nnn -> knn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = f (koln ka) nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = f (fromKol ka) nb
 -- | nnn -> ktn
 instance (Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
 -- | nnn -> nkn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = f na (koln kb)
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = f na (fromKol kb)
 -- | nnn -> nnn
-instance (PGType a, PGType b, PGType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = f na nb
+instance (PgType a, PgType b, PgType c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = f na nb
 -- | nnn -> ntn
 instance (Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
 -- | nnn -> tkn
@@ -1601,5 +1549,5 @@ instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b
 -- | nnk -> tnn
 instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
 -- | nnn -> ttn
-instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c), Comparable ta ca tb cb) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
+instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
 

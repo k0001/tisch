@@ -46,17 +46,18 @@ module Opaleye.SOT
  , update
 
    -- * Kol
- , Kol
- , unKol
+ , Kol(..)
+ , kolCast
  , ToKol(..)
  , liftKol1
  , liftKol2
 
    -- * Koln
- , NotNullable
- , Koln
- , unKoln
+ , Koln(..)
  , koln
+ , nul
+ , fromKol
+ , kolnCast
  , matchKoln
  , isNull
  , mapKoln
@@ -66,6 +67,8 @@ module Opaleye.SOT
  , liftKoln2
 
    -- * Querying
+ , O.Query
+ , O.QueryArr
  , leftJoin
  , leftJoinExplicit
  , restrict
@@ -82,8 +85,9 @@ module Opaleye.SOT
  , gte, Op_gte
    -- * Selecting
  , col
- , cola
+ , colt
    -- * Ordering
+ , O.orderBy
  , asc
  , ascnf
  , ascnl
@@ -96,8 +100,6 @@ module Opaleye.SOT
  , wdef
 
    -- * Types
- , Comparable
- , PGType
  , Col(..)
  , C(..)
  , T(..)
@@ -122,6 +124,29 @@ module Opaleye.SOT
  , Cols_PgRN
  , Cols_PgW
 
+   -- ** Column types
+ , NotNullable
+ , PgType
+ , PgTypeCast
+ , O.PGOrd
+ , O.PGBool
+ , O.PGBytea
+ , O.PGCitext
+ , O.PGDate
+ , O.PGFloat4
+ , O.PGFloat8
+ , O.PGInt2
+ , O.PGInt4
+ , O.PGInt8
+ , O.PGJsonb
+ , O.PGJson
+ , O.PGNumeric
+ , O.PGText
+ , O.PGTimestamptz
+ , O.PGTimestamp
+ , O.PGTime
+ , O.PGUuid
+
    -- * Miscellaneous
  , op1
  , op2
@@ -129,3 +154,4 @@ module Opaleye.SOT
 
 import           Opaleye.SOT.Internal
 import           Opaleye.SOT.Run
+import qualified Opaleye as O
