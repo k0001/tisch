@@ -660,12 +660,12 @@ class ITabla t => Tabla (t :: k) where
 class Tabla t => UnHsR t (a :: *) where
   -- | Convert an Opaleye-compatible Haskell representation of @a@ to @a@.
   --
-  -- For your convenience, you are encouraged to use 'cola', but you may also use
+  -- For your convenience, you are encouraged to use 'col', but you may also use
   -- other tools from "Data.HList.Record" as you see fit:
   --
   -- @
-  -- 'unHsR'' r = Person (r '^.' 'cola' ('C' :: 'C' "name"))
-  --                   (r '^.' 'cola' ('C' :: 'C' "age"))
+  -- 'unHsR'' r = Person (r '^.' 'col' ('C' :: 'C' "name"))
+  --                   (r '^.' 'col' ('C' :: 'C' "age"))
   -- @
   --
   -- Hint: If the type checker is having trouble inferring @('HsR' t)@,
