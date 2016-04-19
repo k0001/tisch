@@ -1,9 +1,13 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -35,6 +39,9 @@ module Opaleye.SOT.Run
   , runInsert
   , runInsert'
   , runInsert1
+  , runInsertTabla
+  , runInsertTabla'
+  , runInsertTabla1
     -- ** Returning
   , runInsertReturning
   , runInsertReturning'
@@ -49,20 +56,34 @@ module Opaleye.SOT.Run
   , runDeleteTabla'
     -- * Exception
   , ErrNumRows(..)
+    -- * Parsing results
+  , O.QueryRunnerColumnDefault(..)
+  , qrcFromField
+  , qrcFieldParser
+  , qrcFieldParserMap
+  , qrcMap
+  , qrcMapMay
+  , qrcPrism
+  , qrcWrapped
   ) where
 
+import           Control.Lens
 import           Control.Monad (when)
 import           Control.Monad.IO.Class
 import qualified Control.Monad.Catch as Cx
 import           Data.Int
+import           Data.Foldable
 import qualified Data.List.NonEmpty as NEL
+import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product.Default as PP
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString.Char8 as B8
 import qualified Database.PostgreSQL.Simple as Pg
+import qualified Database.PostgreSQL.Simple.FromField as Pg
 import qualified Database.PostgreSQL.Simple.Transaction as Pg
 import           GHC.Exts (Constraint)
 import qualified Opaleye as O
+import qualified Opaleye.Internal.Unpackspec as OI
 import qualified Opaleye.Internal.RunQuery as OI
 
 import           Opaleye.SOT.Internal
@@ -243,30 +264,46 @@ withSavepoint (Conn conn) f = Cx.mask $ \restore -> do
 
 -- | Query and fetch zero or more resulting rows.
 runQuery
- :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
- => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v -> m [r] -- ^
-runQuery (Conn conn) f q =
-  liftIO $ traverse (either Cx.throwM return . f) =<< O.runQuery conn q
+ :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r, Allow 'Fetch ps)
+ => Conn ps -> O.Query v -> m [r] -- ^
+runQuery (Conn conn) = liftIO . O.runQuery conn
 
 -- | Query and fetch zero or one resulting row.
 --
 -- Throws 'ErrNumRows' if there is more than one row in the result.
 runQuery1
- :: forall v hs r m ps
-  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs, Allow 'Fetch ps)
- => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Query v
- -> m (Maybe r) -- ^
-runQuery1 pc f q = do
-    rs <- runQuery pc f q
+ :: forall v r m ps
+  . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r, Allow 'Fetch ps)
+ => Conn ps -> O.Query v -> m (Maybe r) -- ^
+runQuery1 pc q = do
+    rs <- runQuery pc q
     case rs of
       [r] -> return (Just r)
       []  -> return Nothing
       _   -> Cx.throwM (ErrNumRows 1 (fromIntegral (length rs)) sql)
   where
-    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
+    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v r
           in  O.showSqlForPostgresExplicit u q
 
 --------------------------------------------------------------------------------
+
+-- | Like 'runInsert', but easier to use if you are querying a single 'Tabla'.
+runInsertTabla
+  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
+  => Conn ps -> T t -> f (HsI t) -> m () -- ^
+runInsertTabla conn t = runInsert conn (table t) . map pgWfromHsI . toList
+
+-- | Like 'runInsert1', but easier to use if you are querying a single 'Tabla'.
+runInsertTabla1
+  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t)
+  => Conn ps -> T t -> HsI t -> m () -- ^
+runInsertTabla1 conn t = runInsert1 conn (table t) . pgWfromHsI
+
+-- | Like 'runInsert'', but easier to use if you are querying a single 'Tabla'.
+runInsertTabla'
+  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
+  => Conn ps -> T t -> f (HsI t) -> m Int64 -- ^
+runInsertTabla' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
 
 -- | Insert many rows.
 --
@@ -274,22 +311,24 @@ runQuery1 pc f q = do
 -- the number of passed in rows. Use 'runInsert'' if you don't want this
 -- behavior.
 runInsert
-  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
-  => Conn ps -> O.Table w v -> [w] -> m () -- ^
-runInsert _ _ [] = return ()
-runInsert conn t ws = do
+  :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Foldable f)
+  => Conn ps -> O.Table w v -> f w -> m () -- ^
+runInsert conn t fs = case toList fs of
+  [] -> return ()
+  ws -> do
     nAffected <- runInsert' conn t ws
     let nExpected = fromIntegral (length ws) :: Int64
     when (nExpected /= nAffected) $ do
+       let sql = O.arrangeInsertManySql t (NEL.fromList ws)
        Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
-  where
-    sql = O.arrangeInsertManySql t (NEL.fromList ws)
 
 -- | Like 'runInsert', but doesn't check the number of affected rows.
 runInsert'
-  :: (MonadIO m, Allow 'Insert ps)
-  => Conn ps -> O.Table w v -> [w] -> m Int64 -- ^
-runInsert' (Conn conn) t ws = liftIO (O.runInsertMany conn t ws)
+  :: (MonadIO m, Allow 'Insert ps, Foldable f)
+  => Conn ps -> O.Table w v -> f w -> m Int64 -- ^
+runInsert' (Conn conn) t fs = case toList fs of
+  [] -> return 0
+  ws -> liftIO (O.runInsertMany conn t ws)
 
 -- | Insert one row.
 --
@@ -308,47 +347,45 @@ runInsert1 pc t w = runInsert pc t [w]
 -- the number of passed in rows. Use 'runInsertReturning'' if you don't want
 -- this behavior.
 runInsertReturning
-  :: forall m ps w v hs r
-   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
-      Allow ['Insert, 'Fetch] ps)
-  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> [w]
-  -> m [r] -- ^
-runInsertReturning conn f t ws = do
-   rs <- runInsertReturning' conn f t ws
-   let nExpected = fromIntegral (length ws) :: Int64
-       nAffected = fromIntegral (length rs) :: Int64
-   if nExpected == nAffected
-      then return rs
-      else Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
-  where
-    sql = let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v hs
-          in  O.arrangeInsertManyReturningSql u t (NEL.fromList ws) id
+  :: forall m ps w v r f
+   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r,
+      Allow ['Insert, 'Fetch] ps, Foldable f)
+  => Conn ps -> O.Table w v -> f w -> m [r] -- ^
+runInsertReturning conn t fs = case toList fs of
+  [] -> return []
+  ws -> do
+    rs <- runInsertReturning' conn t ws
+    let nExpected = fromIntegral (length ws) :: Int64
+        nAffected = fromIntegral (length rs) :: Int64
+    if nExpected == nAffected
+       then return rs
+       else do
+         let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v r
+             sql = O.arrangeInsertManyReturningSql u t (NEL.fromList ws) id
+         Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
 -- Like 'runInsertReturning', except it doesn't check for the number of
 -- actually affected rows.
 runInsertReturning'
-  :: (MonadIO m, PP.Default O.QueryRunner v hs, Allow ['Insert, 'Fetch] ps)
-  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> [w]
-  -> m [r] -- ^
-runInsertReturning' _ _ _ [] = return []
-runInsertReturning' (Conn conn) f t ws = liftIO $ do
-   xs <- O.runInsertManyReturning conn t ws id
-   traverse (either Cx.throwM return . f) xs
-
+  :: (MonadIO m, PP.Default O.QueryRunner v r, Allow ['Insert, 'Fetch] ps,
+      Foldable f)
+  => Conn ps -> O.Table w v -> f w -> m [r] -- ^
+runInsertReturning' (Conn conn) t fs = case toList fs of
+   [] -> return []
+   ws -> liftIO $ O.runInsertManyReturning conn t ws id
 
 -- | Insert one row, returning data from the one row actually inserted.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
 -- the one. Use 'runInsertReturning'' if you don't want this behavior.
 runInsertReturning1
-  :: forall m v hs w r ps
-   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v hs,
+  :: forall m v w r ps
+   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r,
       Allow ['Insert, 'Fetch] ps)
-  => Conn ps -> (hs -> Either Cx.SomeException r) -> O.Table w v -> w
-  -> m r -- ^
-runInsertReturning1 pc f t w = do
+  => Conn ps -> O.Table w v -> w -> m r -- ^
+runInsertReturning1 pc t w = do
    -- pattern matching on [r] is safe here, see runInsertReturningMany
-   [r] <- runInsertReturning pc f t [w]
+   [r] <- runInsertReturning pc t [w]
    return r
 
 --------------------------------------------------------------------------------
@@ -380,7 +417,7 @@ runUpdateTabla' pc = runUpdateTabla pc (T::T t)
 runUpdateTabla
   :: (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Update ps)
   => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m () -- ^
-runUpdateTabla pc t upd = runUpdate pc (table t) (upd . update')
+runUpdateTabla pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
 
 --------------------------------------------------------------------------------
 
@@ -425,3 +462,45 @@ data ErrNumRows = ErrNumRows
   , _errNumRowsSQL      :: Maybe String -- ^ Nothing means empty query.
   } deriving (Typeable, Show)
 instance Cx.Exception ErrNumRows
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This might belong in Opaleye
+
+qrcFromField :: Pg.FromField b => O.QueryRunnerColumn a b
+qrcFromField = O.fieldQueryRunnerColumn
+
+qrcFieldParser :: Pg.FieldParser b -> O.QueryRunnerColumn a b
+qrcFieldParser = OI.QueryRunnerColumn (P.rmap (const ()) OI.unpackspecColumn)
+
+qrcFieldParserMap
+  :: OI.QueryRunnerColumnDefault a b
+  => (Pg.FieldParser b -> Pg.FieldParser b')
+  -> O.QueryRunnerColumn a b'
+qrcFieldParserMap g =
+  let OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
+   in OI.QueryRunnerColumn u (g fp)
+
+qrcMap
+  :: OI.QueryRunnerColumnDefault a b
+  => (b -> b') -> O.QueryRunnerColumn a b'
+qrcMap g = qrcFieldParserMap (fmap (fmap (fmap g)))
+
+qrcMapMay
+  :: (OI.QueryRunnerColumnDefault a b, Show b, Typeable b')
+  => (b -> Maybe b') -> O.QueryRunnerColumn a b'
+qrcMapMay g = qrcFieldParserMap $ \fp0 -> \f mb -> do
+   b <- fp0 f mb
+   case g b of
+      Just b' -> return b'
+      Nothing -> Pg.returnError Pg.ConversionFailed f (show b)
+
+qrcPrism
+  :: (OI.QueryRunnerColumnDefault a b, Show b, Typeable b')
+  => Prism' b b' -> O.QueryRunnerColumn a b'
+qrcPrism p = qrcMapMay (preview p)
+
+qrcWrapped
+  :: (Wrapped b, OI.QueryRunnerColumnDefault a (Unwrapped b))
+  => OI.QueryRunnerColumn a b
+qrcWrapped = qrcMap (review _Wrapped')

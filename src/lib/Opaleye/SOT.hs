@@ -23,31 +23,23 @@ module Opaleye.SOT
 
    -- * Defining a 'Tabla'
  , Tabla(..)
- , UnHsR(..)
- , unHsR
- , unHsR_
- , ToHsI(..)
- , toHsI
- , mkHsI
- , toPgW'
- , toPgW
 
    -- * Working with 'Tabla'
- , table'
  , table
- , queryTabla'
  , queryTabla
  , HsR
  , HsI
+ , mkHsI
  , PgR
  , PgRN
  , PgW
- , update'
- , update
+ , pgWfromHsI
+ , pgWfromPgR
 
    -- * Kol
  , Kol(..)
- , kolCast
+ , kolCoerce
+ , unsafeCoerceKol
  , ToKol(..)
  , liftKol1
  , liftKol2
@@ -57,7 +49,6 @@ module Opaleye.SOT
  , koln
  , nul
  , fromKol
- , kolnCast
  , matchKoln
  , isNull
  , mapKoln
@@ -126,8 +117,10 @@ module Opaleye.SOT
 
    -- ** Column types
  , NotNullable
- , PgType
- , PgTypeCast
+ , PgTyped(..)
+ , KolCoerce
+ , PgNum
+ , PgFractional
  , O.PGOrd
  , O.PGBool
  , O.PGBytea

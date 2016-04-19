@@ -45,16 +45,19 @@ instance Tabla TTest where
                     , 'Col "c4" 'WD 'RN O.PGInt8 Int64 ]
 
 data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
-instance UnHsR TTest TestR where
-  unHsR' = \r -> return $ TestR
-     (r ^. col (C::C "c1"))
-     (r ^. col (C::C "c2"))
-     (r ^. col (C::C "c3"))
-     (r ^. col (C::C "c4"))
+
+testR_fromHsR :: HsR TTest -> TestR
+testR_fromHsR = \r -> TestR
+   (r ^. col (C::C "c1"))
+   (r ^. col (C::C "c2"))
+   (r ^. col (C::C "c3"))
+   (r ^. col (C::C "c4"))
 
 data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
-instance ToHsI TTest TestW where
-  toHsI' (TestW c1 c2 c3 c4) = mkHsI $ \set_ -> HL.hBuild
+
+testW_toHsI :: TestW -> HsI TTest
+testW_toHsI (TestW c1 c2 c3 c4)
+  = mkHsI T $ \set_ -> HL.hBuild
      (set_ (C::C "c1") c1)
      (set_ (C::C "c2") c2)
      (set_ (C::C "c3") c3)
@@ -76,8 +79,8 @@ types = seq x () where
 
 query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
-   t1 <- queryTabla' -< ()
-   t2 <- queryTabla' -< ()
+   t1 <- queryTabla T -< ()
+   t2 <- queryTabla T -< ()
    restrict -< eq
       (view (col (C::C "c1")) t1)
       (view (col (C::C "c1")) t2)
@@ -106,9 +109,8 @@ outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
 update1 :: Allow 'Update ps => Conn ps -> IO ()
-update1 c = runUpdate c table' update' fil
-  where fil :: PgR TTest -> Kol O.PGBool
-        fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
+update1 c = runUpdateTabla c (T::T TTest) id fil
+  where fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
 
 outQuery1 :: Pg.Connection
           -> IO [(HsR TTest, HsR TTest, HsR TTest, Maybe (HsR TTest))]
