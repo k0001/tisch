@@ -641,28 +641,28 @@ type family HasColName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]
 -- | Payload for @('HsR' t)@
 type Cols_HsR t = List.Map (Col_HsRFieldSym1 t) (Cols t)
 type Col_HsRField t (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsRType col)
+  = TCa t (Col_Name col) (Col_HsRType col)
 data Col_HsRFieldSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
 
 -- | Payload for @('HsI' t)@
 type Cols_HsI t = List.Map (Col_HsIFieldSym1 t) (Cols t)
 type Col_HsIField t (col :: Col GHC.Symbol WD RN * *)
-  = Tagged (TC t (Col_Name col)) (Col_HsIType col)
+  = TCa t (Col_Name col) (Col_HsIType col)
 data Col_HsIFieldSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_HsIFieldSym1 t) col = Col_HsIField t col
 
 -- | Payload for @('PgR' t)@
 type Cols_PgR t = List.Map (Col_PgRSym1 t) (Cols t)
 type family Col_PgR t (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgR t ('Col n w r p h) = Tagged (TC t n) (Col_PgRType ('Col n w r p h))
+  Col_PgR t ('Col n w r p h) = TCa t n (Col_PgRType ('Col n w r p h))
 data Col_PgRSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
 
 -- | Payload for @('PgRN' t)@
 type Cols_PgRN t = List.Map (Col_PgRNSym1 t) (Cols t)
 type family Col_PgRN t (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRN t ('Col n w r p h) = Tagged (TC t n) (Col_PgRNType ('Col n w r p h))
+  Col_PgRN t ('Col n w r p h) = TCa t n (Col_PgRNType ('Col n w r p h))
 data Col_PgRNSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 
@@ -670,7 +670,7 @@ type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
 -- payload for @('PgW' t)@.
 type Cols_PgW t = List.Map (Col_PgWSym1 t) (Cols t)
 type family Col_PgW t (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgW t ('Col n w r p h) = Tagged (TC t n) (Col_PgWType ('Col n w r p h))
+  Col_PgW t ('Col n w r p h) = TCa t n (Col_PgWType ('Col n w r p h))
 data Col_PgWSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
 type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
 
@@ -683,6 +683,8 @@ data T (t :: k) = Tabla t => T
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in a specific table in a specific schema.
 data TC (t :: k) (c :: GHC.Symbol) = Tabla t => TC
+
+type TCa (t :: k) (c :: GHC.Symbol) = Tagged (TC t c)
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
@@ -799,7 +801,7 @@ class ITabla t => Tabla (t :: k) where
 mkHsI
   :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
   => T t
-  -> ((forall c a. (C c -> a -> Tagged (TC t c) a)) -> HList xs)
+  -> ((forall c a. (C c -> a -> TCa t c a)) -> HList xs)
   -> HsI t -- ^
 mkHsI (T::T t) k
   = Tagged
@@ -944,18 +946,6 @@ col :: forall t c xs xs' a a'
 col _ = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
 {-# INLINE col #-}
 
--- | Like 'col', but the column is tagged with 'TC'.
---
--- Mnemonic: the COLumn, Tagged.
---
--- TODO: Do we really need this? Can it be removed?
-colt :: forall t c xs xs' a a'
-      . HL.HLensCxt (TC t c) HL.Record xs xs' a a'
-     => C c
-     -> Lens (Rec t xs) (Rec t xs') (Tagged (TC t c) a) (Tagged (TC t c) a')
-colt prx = col prx . _Unwrapped
-{-# INLINE colt #-}
-
 --------------------------------------------------------------------------------
 
 -- | Like 'Prelude.bool', @'matchBool' f t x@ evaluates to @f@ if @x@ is false,
@@ -1068,34 +1058,12 @@ gte = liftKol2 (O..>=)
 
 --------------------------------------------------------------------------------
 
--- | Look up a 'Kol' inside some kind of wrapper.
---
--- This class makes it possible to accept both @('Kol' a)@ and
--- @('Tagged' ('TC' t c) ('Kol' a))@ as arguments in various @opaleye-sot@
--- functions.
-class PgTyped a => GetKol w a | w -> a where getKol :: w -> Kol a
--- | Identity.
-instance PgTyped a => GetKol (Kol a) a where getKol = id
-instance PgTyped a => GetKol (Tagged (TC t c) (Kol a)) a where getKol = unTagged
+-- | Whether a 'Koln' is 'nul' (@NULL@).
+isNull :: PgTyped a => Koln a -> Kol O.PGBool
+isNull = Kol . O.isNull . unKoln
 
--- | Look up a 'Koln' inside some kind of wrapper.
---
--- This class makes it possible to accept both @('Koln' a)@ and
--- @('Tagged' ('TC' t c) ('Koln' a))@ as arguments in various @opaleye-sot@
--- functions.
-class PgTyped a => GetKoln w a | w -> a where getKoln :: w -> Koln a
--- | Identity.
-instance PgTyped a => GetKoln (Koln a) a where getKoln = id
-instance PgTyped a => GetKoln (Tagged (TC t c) (Koln a)) a where getKoln = unTagged
-
---------------------------------------------------------------------------------
-
--- | Like Opaleye's 'O.isNull', but works for any 'GetKoln'.
-isNull :: GetKoln w a => w -> Kol O.PGBool
-isNull = Kol . O.isNull . unKoln . getKoln
-
--- | Flatten @('Koln' 'O.PGBool')@ or compatible (see 'GetKoln') to
--- @('Kol' 'O.PGBool')@. An outer @NULL@ is converted to @TRUE@.
+-- | Convert a @'Koln' 'O.PGBool'@ to a @('Kol' 'O.PGBool')@. An outer @NULL@ is
+-- converted to @TRUE@.
 --
 -- This can be used as a function or as a 'O.QueryArr', whatever works best
 -- for you. The 'O.QueryArr' support is often convenient when working with
@@ -1109,71 +1077,62 @@ isNull = Kol . O.isNull . unKoln . getKoln
 --
 -- @
 -- 'nullTrue' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
--- 'nullTrue' :: 'Koln' ('Tagged' ('TC' t c) 'O.PGBool') -> 'Kol' 'O.PGBool'
 -- 'nullTrue' :: 'O.QueryArr' ('Koln' 'O.PGBool') ('Kol' 'O.PGBool')
--- 'nullTrue' :: 'O.QueryArr' ('Koln' ('Tagged' ('TC' t c) 'O.PGBool')) ('Kol' 'O.PGBool')
 -- @
-nullTrue :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
-nullTrue = arr $ matchKoln (kol True) id . getKoln
+nullTrue :: (Arrow f) => f (Koln O.PGBool) (Kol O.PGBool)
+nullTrue = arr $ matchKoln (kol True) id
 
 -- | Like 'nullTrue', but an outer @NULL@ is converted to @FALSE@.
-nullFalse :: (Arrow f, GetKoln w O.PGBool) => f w (Kol O.PGBool)
-nullFalse = arr $ matchKoln (kol False) id . getKoln
+nullFalse :: (Arrow f) => f (Koln O.PGBool) (Kol O.PGBool)
+nullFalse = arr $ matchKoln (kol False) id
 
--- | Like Opaleye's 'O.restric', but takes a 'Kol' as input.
---
--- @
--- 'restrict' :: 'O.QueryArr' ('Kol' 'O.PGBool') ()
--- 'restrict' :: 'O.QueryArr' ('Kol' ('Tagged' ('TC' t c) 'O.PGBool')) ()
--- @
-restrict :: GetKol w O.PGBool => O.QueryArr w ()
-restrict = O.restrict <<^ unKol <<^ getKol
+-- | Like @opaleye@'s 'O.restric', but takes a 'Kol' as input.
+restrict :: O.QueryArr (Kol O.PGBool) ()
+restrict = O.restrict <<^ unKol
 
--- | Like Opaleye's 'O.leftJoin', but the predicate is expected to
--- return a @('GetKol' w 'O.PGBool')@.
+-- | Like @opaleye@'s 'O.leftJoin', but the predicate is expected to
+-- return a @'Kol' 'O.PGBool'@.
 leftJoin
   :: ( PP.Default O.Unpackspec a a
      , PP.Default O.Unpackspec b b
-     , PP.Default OI.NullMaker b nb
-     , GetKol gkb O.PGBool )
-   => O.Query a -> O.Query b -> ((a, b) -> gkb) -> O.Query (a, nb) -- ^
+     , PP.Default OI.NullMaker b nb )
+   => O.Query a -> O.Query b -> ((a, b) -> Kol O.PGBool) -> O.Query (a, nb) -- ^
 leftJoin = leftJoinExplicit PP.def PP.def PP.def
 
 -- | Like Opaleye's 'O.leftJoinExplicit', but the predicate is expected to
--- return a @('GetKol' w 'O.PGBool')@.
+-- return a @'Kol' 'O.PGBool'@.
 leftJoinExplicit
-  :: GetKol gkb O.PGBool
-  => O.Unpackspec a a -> O.Unpackspec b b -> OI.NullMaker b nb
-  -> O.Query a -> O.Query b -> ((a, b) -> gkb) -> O.Query (a, nb) -- ^
+  :: O.Unpackspec a a -> O.Unpackspec b b -> OI.NullMaker b nb
+  -> O.Query a -> O.Query b -> ((a, b) -> Kol O.PGBool) -> O.Query (a, nb) -- ^
 leftJoinExplicit ua ub nmb qa qb fil =
-  O.leftJoinExplicit ua ub nmb qa qb (unKol . getKol . fil)
+  O.leftJoinExplicit ua ub nmb qa qb (unKol . fil)
 
 --------------------------------------------------------------------------------
 -- Ordering
 
 -- | Ascending order, no @NULL@s involved.
-asc :: (GetKol w b, O.PGOrd (PgType b)) => (a -> w) -> O.Order a
-asc f = O.asc (unKol . getKol . f)
+asc :: PgOrd b => (a -> Kol b) -> O.Order a
+asc f = O.asc (unKol . f)
 
 -- | Ascending order, @NULL@s last.
-ascnl :: (GetKoln w b, O.PGOrd (PgType b)) => (a -> w) -> O.Order a
-ascnl f = O.asc (unsafeUnNullableColumn . unKoln . getKoln . f)
+ascnl :: PgOrd b => (a -> Koln b) -> O.Order a
+ascnl f = O.asc (unsafeUnNullableColumn . unKoln . f)
 
 -- | Ascending order, @NULL@s first.
-ascnf :: (GetKoln w b, O.PGOrd (PgType b)) => (a -> w) -> O.Order a
-ascnf f = O.ascNullsFirst (unsafeUnNullableColumn . unKoln . getKoln . f)
+ascnf :: PgOrd b => (a -> Koln b) -> O.Order a
+ascnf f = O.ascNullsFirst (unsafeUnNullableColumn . unKoln . f)
 
 -- | Descending order, no @NULL@s involved.
-desc :: (GetKol w b, O.PGOrd (PgType b)) => (a -> w) -> O.Order a
-desc f = O.desc (unKol . getKol . f)
+desc :: PgOrd b => (a -> Kol b) -> O.Order a
+desc f = O.desc (unKol . f)
 
 -- | Descending order, @NULL@s first.
-descnf :: (GetKoln w b, O.PGOrd (PgType b)) => (a -> w) -> O.Order a
-descnf f = O.desc (unsafeUnNullableColumn . unKoln . getKoln . f)
+descnf :: PgOrd b => (a -> Koln b) -> O.Order a
+descnf f = O.desc (unsafeUnNullableColumn . unKoln . f)
 
 -- | Descending order, @NULL@s last.
-descnl :: (GetKoln w b, O.PGOrd (PgType b)) => (a -> w) -> O.Order a
-descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . getKoln . f)
+descnl :: PgOrd b => (a -> Koln b) -> O.Order a
+descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . f)
 
 --------------------------------------------------------------------------------
 
@@ -1208,23 +1167,23 @@ instance
 
 --------------------------------------------------------------------------------
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged ta a) (Tagged tb b) where
   def = ppaUnTagged PP.def
   {-# INLINE def #-}
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance PP.ProductProfunctor p => PP.Default p (HList '[]) (HList '[]) where
   def = ppa HNil
   {-# INLINE def #-}
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance
     ( PP.ProductProfunctor p, PP.Default p a1 b1, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HList (a1 ': as)) (HList (b1 ': bs)) where
   def = P.dimap (\(HCons x xs) -> (x,xs)) (uncurry HCons) (PP.def PP.***! PP.def)
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HL.Record as) (HL.Record bs) where
@@ -1233,19 +1192,19 @@ instance
 
 -- Maybes on the rhs
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance
     ( PP.ProductProfunctor p, PP.Default p a (Maybe b)
     ) => PP.Default p (Tagged ta a) (Maybe (Tagged tb b)) where
   def = P.dimap unTagged (fmap Tagged) PP.def
   {-# INLINE def #-}
 
--- | Orphan. 'Opaleye.SOT.Internal'. Defaults to 'Just'.
+-- | Orphan. "Opaleye.SOT.Internal". Defaults to 'Just'.
 instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
   def = P.rmap Just PP.def
   {-# INLINE def #-}
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance
     ( PP.ProductProfunctor p
     , PP.Default p a (Maybe b)
@@ -1255,7 +1214,7 @@ instance
                 (\(mb, mbs) -> HCons <$> mb <*> mbs)
                 (PP.def PP.***! PP.def)
 
--- | Orphan. 'Opaleye.SOT.Internal'.
+-- | Orphan. "Opaleye.SOT.Internal".
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (Maybe (HList bs))
     ) => PP.Default p (HL.Record as) (Maybe (HL.Record bs)) where

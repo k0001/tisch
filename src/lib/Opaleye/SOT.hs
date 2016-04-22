@@ -81,7 +81,6 @@ module Opaleye.SOT
  , gte
    -- * Selecting
  , col
- , colt
    -- * Ordering
  , O.orderBy
  , asc
@@ -100,6 +99,7 @@ module Opaleye.SOT
  , C(..)
  , T(..)
  , TC(..)
+ , TCa
  , RN(..)
  , WD(..)
 

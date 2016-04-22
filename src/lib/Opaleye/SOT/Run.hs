@@ -322,7 +322,8 @@ runInsert conn t fs = case toList fs of
        let sql = O.arrangeInsertManySql t (NEL.fromList ws)
        Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
--- | Like 'runInsert', but doesn't check the number of affected rows.
+-- | Like 'runInsert', but doesn't check the number of affected rows. Returns
+-- the number of affected rows.
 runInsert'
   :: (MonadIO m, Allow 'Insert ps, Foldable f)
   => Conn ps -> O.Table w v -> f w -> m Int64 -- ^
@@ -390,66 +391,64 @@ runInsertReturning1 pc t w = do
 
 --------------------------------------------------------------------------------
 
--- | Like Opaleye's 'O.runUpdate', but the predicate is expected to
--- return a @('GetKol' w 'O.PGBool')@.
+-- | Like @opaleye@'s 'O.runUpdate', but the predicate is expected to
+-- return a @'Kol' 'O.PGBool'@. Returns the number of affected rows.
 --
 -- It is recommended that you use 'runUpdateTabla' if you are trying to update
 -- a table that is an instance of 'Tabla'. The result is the same, but
 -- this function might be less convenient to use.
 runUpdate
-  :: (MonadIO m, GetKol gkb O.PGBool, Allow 'Update ps)
-  => Conn ps -> O.Table w r -> (r -> w) -> (r -> gkb) -> m () -- ^
-runUpdate (Conn conn) t upd fil =
-  () <$ liftIO (O.runUpdate conn t upd (unKol . getKol . fil))
+  :: (MonadIO m, Allow 'Update ps)
+  => Conn ps -> O.Table w r -> (r -> w) -> (r -> Kol O.PGBool) -> m Int64 -- ^
+runUpdate (Conn conn) t upd fil = liftIO (O.runUpdate conn t upd (unKol . fil))
 
 -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
 runUpdateTabla'
-  :: forall t m gkb ps
-   . (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Update ps)
+  :: forall t m ps
+   . (Tabla t, MonadIO m, Allow 'Update ps)
   => Conn ps
-  -> (PgW t -> PgW t) -- ^ Upgrade current values to new values.
-  -> (PgR t -> gkb)   -- ^ Whether a row should be updated.
-  -> m ()             -- ^ Number of updated rows.
+  -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
+  -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
+  -> m Int64                 -- ^ Number of updated rows.
 runUpdateTabla' pc = runUpdateTabla pc (T::T t)
 
 -- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
 -- it can't be inferred.
 runUpdateTabla
-  :: (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Update ps)
-  => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> gkb) -> m () -- ^
+  :: (Tabla t, MonadIO m, Allow 'Update ps)
+  => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> Kol O.PGBool) -> m Int64 -- ^
 runUpdateTabla pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
 
 --------------------------------------------------------------------------------
 
--- | Like Opaleye's 'O.runDelete', but the predicate is expected to return
--- a @('GetKol' w 'O.PGBool')@.
+-- | Like @opaleye@'s 'O.runDelete', but the predicate is expected to return
+-- a @'Kol' 'O.PGBool'@. Returns the number of affected rows.
 --
 -- It is recommended that you use 'runDeleteTabla' if you are trying to update
 -- a table that is an instance of 'Tabla', the result is the same, but
 -- this function might be less convenient to use.
 runDelete
-  :: (MonadIO m, GetKol gkb O.PGBool, Allow 'Delete ps)
-  => Conn ps -> O.Table w r -> (r -> gkb) -> m () -- ^
-runDelete (Conn conn) t fil =
-  () <$ liftIO (O.runDelete conn t (unKol . getKol . fil))
+  :: (MonadIO m, Allow 'Delete ps)
+  => Conn ps -> O.Table w r -> (r -> Kol O.PGBool) -> m Int64 -- ^
+runDelete (Conn conn) t fil = liftIO (O.runDelete conn t (unKol . fil))
 
 -- | Like 'runDelete', but specifically designed to work well with 'Tabla'.
 runDeleteTabla'
-  :: forall t m gkb ps
-   . (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Delete ps)
+  :: forall t m ps
+   . (Tabla t, MonadIO m, Allow 'Delete ps)
   => Conn ps
-  -> (PgR t -> gkb) -- ^ Whether a row should be deleted.
-  -> m ()
+  -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
+  -> m Int64
 runDeleteTabla' pc = runDeleteTabla pc (T::T t)
 
 -- | Like 'runDeleteTabla'', but takes @t@ explicitely for the times when it
 -- can't be inferred.
 runDeleteTabla
-  :: (Tabla t, MonadIO m, GetKol gkb O.PGBool, Allow 'Delete ps)
+  :: (Tabla t, MonadIO m, Allow 'Delete ps)
   => Conn ps
   -> T t
-  -> (PgR t -> gkb) -- ^ Whether a row should be deleted.
-  -> m ()
+  -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
+  -> m Int64
 runDeleteTabla pc t = runDelete pc (table t)
 
 --------------------------------------------------------------------------------

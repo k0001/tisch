@@ -108,7 +108,7 @@ query3 = proc () -> do
 outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
-update1 :: Allow 'Update ps => Conn ps -> IO ()
+update1 :: Allow 'Update ps => Conn ps -> IO Int64
 update1 c = runUpdateTabla c (T::T TTest) id fil
   where fil = \v -> eq (kol True) (view (col (C::C "c1")) v)
 
