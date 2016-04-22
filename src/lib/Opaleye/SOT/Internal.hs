@@ -1280,14 +1280,7 @@ class (KolLike fa, KolLike fb, KolLike ga, KolLike gb) =>
 instance Op1_ Kol  Kol  Kol  Kol  where op1 f ga = f ga
 instance Op1_ Kol  Kol  Koln Koln where op1 f ga = mapKoln f ga
 -- The 'Op1_' instances above are sufficient for the tools offered by this
--- module. Do we need to export the following ones?
---
--- instance Op1_ Kol  Koln Kol  Koln where op1 f ga = f ga
--- instance Op1_ Kol  Koln Koln Koln where op1 f ga = bindKoln ga f
--- instance Op1_ Koln Kol  Kol  Kol  where op1 f ga = f (fromKol ga)
--- instance Op1_ Koln Kol  Koln Kol  where op1 f ga = f ga
--- instance Op1_ Koln Koln Kol  Koln where op1 f ga = f (fromKol ga)
--- instance Op1_ Koln Koln Koln Koln where op1 f ga = f ga
+-- module. Do we need to export the more?
 
 ---
 
@@ -1314,42 +1307,12 @@ class (KolLike fa, KolLike fb, KolLike fc) =>
       => (fa a -> fb b -> fc c)
       -> (ga a -> gb b -> gc c)
 
-instance Op2_ Kol  Kol  Kol  Kol  Kol  Kol  where op2 f ga gb = f ga gb
-instance Op2_ Kol  Kol  Kol  Kol  Koln Koln where op2 f ga gb = mapKoln (f ga) gb
-instance Op2_ Kol  Kol  Kol  Koln Kol  Koln where op2 f ga gb = mapKoln (flip f gb) ga
-instance Op2_ Kol  Kol  Kol  Koln Koln Koln where op2 f ga gb = bindKoln ga (flip mapKoln gb . f)
-
+instance Op2_ Kol  Kol  Kol  Kol  Kol  Kol  where op2 f fa fb = f fa fb
+instance Op2_ Kol  Kol  Kol  Kol  Koln Koln where op2 f fa gb = bindKoln gb (\fb -> fromKol (f fa fb))
+instance Op2_ Kol  Kol  Kol  Koln Kol  Koln where op2 f ga fb = bindKoln ga (\fa -> fromKol (f fa fb))
+instance Op2_ Kol  Kol  Kol  Koln Koln Koln where op2 f ga gb = bindKoln ga (\fa -> bindKoln gb (\fb -> fromKol (f fa fb)))
 -- The 'Op2_' instances above are sufficient for the tools offered by this
--- module. Do we need to export the following ones?
---
--- instance Op2_ Kol  Kol  Koln Kol  Kol  Koln where op2 f ga gb = f ga gb
--- instance Op2_ Kol  Kol  Koln Kol  Koln Koln where op2 f ga gb = bindKoln gb (f ga)
--- instance Op2_ Kol  Kol  Koln Koln Kol  Koln where op2 f ga gb = bindKoln ga (flip f gb)
--- instance Op2_ Kol  Kol  Koln Koln Koln Koln where op2 f ga gb = bindKoln ga (bindKoln gb . f)
--- instance Op2_ Kol  Koln Kol  Kol  Kol  Kol  where op2 f ga gb = f ga (fromKol gb)
--- instance Op2_ Kol  Koln Kol  Kol  Koln Kol  where op2 f ga gb = f ga gb
--- instance Op2_ Kol  Koln Kol  Koln Kol  Koln where op2 f ga gb = mapKoln (flip f (fromKol gb)) ga
--- instance Op2_ Kol  Koln Kol  Koln Koln Koln where op2 f ga gb = mapKoln (flip f gb) ga
--- instance Op2_ Kol  Koln Koln Kol  Kol  Koln where op2 f ga gb = f ga (fromKol gb)
--- instance Op2_ Kol  Koln Koln Kol  Koln Koln where op2 f ga gb = f ga gb
--- instance Op2_ Kol  Koln Koln Koln Kol  Koln where op2 f ga gb = bindKoln ga (flip f (fromKol gb))
--- instance Op2_ Kol  Koln Koln Koln Koln Koln where op2 f ga gb = bindKoln ga (flip f gb)
--- instance Op2_ Koln Kol  Kol  Kol  Kol  Kol  where op2 f ga gb = f (fromKol ga) gb
--- instance Op2_ Koln Kol  Kol  Kol  Koln Koln where op2 f ga gb = mapKoln (f (fromKol ga)) gb
--- instance Op2_ Koln Kol  Kol  Koln Kol  Kol  where op2 f ga gb = f ga gb
--- instance Op2_ Koln Kol  Kol  Koln Koln Koln where op2 f ga gb = mapKoln (f ga) gb
--- instance Op2_ Koln Kol  Koln Kol  Kol  Koln where op2 f ga gb = f (fromKol ga) gb
--- instance Op2_ Koln Kol  Koln Kol  Koln Koln where op2 f ga gb = bindKoln gb (f (fromKol ga))
--- instance Op2_ Koln Kol  Koln Koln Kol  Koln where op2 f ga gb = f ga gb
--- instance Op2_ Koln Kol  Koln Koln Koln Koln where op2 f ga gb = bindKoln gb (f ga)
--- instance Op2_ Koln Koln Kol  Kol  Kol  Kol  where op2 f ga gb = f (fromKol ga) (fromKol gb)
--- instance Op2_ Koln Koln Kol  Kol  Koln Kol  where op2 f ga gb = f (fromKol ga) gb
--- instance Op2_ Koln Koln Kol  Koln Kol  Kol  where op2 f ga gb = f ga (fromKol gb)
--- instance Op2_ Koln Koln Kol  Koln Koln Kol  where op2 f ga gb = f ga gb
--- instance Op2_ Koln Koln Koln Kol  Kol  Koln where op2 f ga gb = f (fromKol ga) (fromKol gb)
--- instance Op2_ Koln Koln Koln Kol  Koln Koln where op2 f ga gb = f (fromKol ga) gb
--- instance Op2_ Koln Koln Koln Koln Kol  Koln where op2 f ga gb = f ga (fromKol gb)
--- instance Op2_ Koln Koln Koln Koln Koln Koln where op2 f ga gb = f ga gb
+-- module. Do we need to export more?
 
 ---
 class (Op3_ Kol Kol Kol Kol g g g g) => Op3' g
