@@ -228,7 +228,7 @@ instance (PgTyped a, Num (Koln a), Fractional (Kol a)) => Fractional (Koln a) wh
 -- /the properties of a column at compile time. 'Kol' is used at runtime/
 -- /for manipulating with values stored in columns./
 --
--- We do not use @('O.Column' x)@, instead we use @('Kol' y)@ where @x ~
+-- We do not use @opaleye@'s @'O.Column' x@, instead we use @'Kol' y@ where @x ~
 -- 'PgType' y@. This is where we drift a bit appart from Opaleye. See
 -- https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 data Kol (a :: k) = PgTyped a => Kol { unKol :: O.Column (PgType a) }
@@ -372,9 +372,9 @@ instance Monoid (Kol O.PGBytea) where
 -- /the properties of a column at compile time. 'Koln' is used at runtime/
 -- /for manipulating with values stored in columns./
 --
--- We do not use @'O.Column' ('O.Nullable' x)@, instead we use @'Koln' y@ where @x ~
--- 'PgType' y@. This is where we drift a bit appart from Opaleye. See
--- https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
+-- We do not use @opaleye@'s @'O.Column' ('O.Nullable' x)@, instead we use
+-- @'Koln' y@ where @x ~ 'PgType' y@. This is where we drift a bit appart from
+-- Opaleye. See https://github.com/tomjaguarpaw/haskell-opaleye/issues/97
 data Koln (a :: k) = PgTyped a => Koln { unKoln :: O.Column (O.Nullable (PgType a)) }
 
 deriving instance Show (O.Column (O.Nullable a)) => Show (Koln a)
@@ -471,7 +471,7 @@ instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
 class (PgTyped a, PgTyped b) => KolCoerce (a :: ka) (b :: kb) where
 -- | Identity.
 instance PgTyped a => KolCoerce a a
--- | Upcast.
+-- | OVERLAPPABLE. Upcast.
 instance {-# OVERLAPPABLE #-} (PgTyped a, PgTyped b, PgType a ~ b) => KolCoerce a b
 
 instance KolCoerce O.PGCitext O.PGText
