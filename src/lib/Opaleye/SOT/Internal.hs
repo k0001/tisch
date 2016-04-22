@@ -415,30 +415,6 @@ altKoln :: (PgTyped a) => Koln a -> Koln a -> Koln a
 altKoln kna0 kna1 = Koln $
   O.matchNullable (unKoln kna1) O.toNullable (unKoln kna0)
 
--- | Converts an unary function on @opaleye@'s 'O.Nullable' 'O.Column'
--- to an unary function on 'Koln'.
---
--- /Hint/: You can further compose the result of this function with 'op1'
--- to widen the range of accepted argument types.
-liftKoln1
-  :: (PgTyped a, PgTyped b)
-  => (O.Column (O.Nullable (PgType a)) -> O.Column (O.Nullable (PgType b)))
-  -> (Koln a -> Koln b) -- ^
-liftKoln1 f = Koln . f . unKoln
-
--- | Converts a binary function on Opaleye's 'O.Nullable' 'O.Column's
--- to a binary function on 'Koln's.
---
--- /Hint/: You can further compose the result of this function with 'op2'
--- to widen the range of accepted argument types.
-liftKoln2
-  :: (PgTyped a, PgTyped b, PgTyped c)
-  => (O.Column (O.Nullable (PgType a)) ->
-      O.Column (O.Nullable (PgType b)) ->
-      O.Column (O.Nullable (PgType c)))
-  -> (Koln a -> Koln b -> Koln c) -- ^
-liftKoln2 f = \kna knb -> Koln (f (unKoln kna) (unKoln knb))
-
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-} forall p x a.
     ( P.Profunctor p, PgTyped a

@@ -56,8 +56,6 @@ module Opaleye.SOT
  , forKoln
  , bindKoln
  , altKoln
- , liftKoln1
- , liftKoln2
 
    -- * Querying
  , O.Query
@@ -125,6 +123,7 @@ module Opaleye.SOT
  , NotNullable
  , PgTyped(..)
  , KolCoerce
+ , KolLike
  , PgNum
  , PgFractional
  , O.PGOrd
