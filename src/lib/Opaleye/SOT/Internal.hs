@@ -1245,8 +1245,8 @@ class (KolLike fa, KolLike fb, KolLike ga, KolLike gb) =>
   -- with @gb@ fully determined by them.
   op1 :: (PgTyped a, PgTyped b) => (fa a -> fb b) -> (ga a -> gb b)
 
-instance Op1_ Kol  Kol  Kol  Kol  where op1 f ga = f ga
-instance Op1_ Kol  Kol  Koln Koln where op1 f ga = mapKoln f ga
+instance Op1_ Kol  Kol  Kol  Kol  where op1 f ka = f ka
+instance Op1_ Kol  Kol  Koln Koln where op1 f na = bindKoln na (\ka -> fromKol (f ka))
 -- The 'Op1_' instances above are sufficient for the tools offered by this
 -- module. Do we need to export the more?
 
@@ -1275,10 +1275,10 @@ class (KolLike fa, KolLike fb, KolLike fc) =>
       => (fa a -> fb b -> fc c)
       -> (ga a -> gb b -> gc c)
 
-instance Op2_ Kol  Kol  Kol  Kol  Kol  Kol  where op2 f fa fb = f fa fb
-instance Op2_ Kol  Kol  Kol  Kol  Koln Koln where op2 f fa gb = bindKoln gb (\fb -> fromKol (f fa fb))
-instance Op2_ Kol  Kol  Kol  Koln Kol  Koln where op2 f ga fb = bindKoln ga (\fa -> fromKol (f fa fb))
-instance Op2_ Kol  Kol  Kol  Koln Koln Koln where op2 f ga gb = bindKoln ga (\fa -> bindKoln gb (\fb -> fromKol (f fa fb)))
+instance Op2_ Kol  Kol  Kol  Kol  Kol  Kol  where op2 f ka kb = f ka kb
+instance Op2_ Kol  Kol  Kol  Kol  Koln Koln where op2 f ka nb = bindKoln nb (\kb -> fromKol (f ka kb))
+instance Op2_ Kol  Kol  Kol  Koln Kol  Koln where op2 f na kb = bindKoln na (\ka -> fromKol (f ka kb))
+instance Op2_ Kol  Kol  Kol  Koln Koln Koln where op2 f na nb = bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (f ka kb)))
 -- The 'Op2_' instances above are sufficient for the tools offered by this
 -- module. Do we need to export more?
 
@@ -1307,14 +1307,14 @@ class (KolLike fa, KolLike fb, KolLike fc, KolLike fd) =>
       => (fa a -> fb b -> fc c -> fd d)
       -> (ga a -> gb b -> gc c -> gd d)
 
-instance Op3_ Kol Kol Kol Kol  Kol  Kol  Kol  Kol  where op3 f fa fb fc = f fa fb fc
-instance Op3_ Kol Kol Kol Kol  Kol  Kol  Koln Koln where op3 f fa fb gc = bindKoln gc (\fc -> fromKol (f fa fb fc))
-instance Op3_ Kol Kol Kol Kol  Kol  Koln Kol  Koln where op3 f fa gb fc = bindKoln gb (\fb -> fromKol (f fa fb fc))
-instance Op3_ Kol Kol Kol Kol  Kol  Koln Koln Koln where op3 f fa gb gc = bindKoln gb (\fb -> bindKoln gc (\fc -> fromKol (f fa fb fc)))
-instance Op3_ Kol Kol Kol Kol  Koln Kol  Kol  Koln where op3 f ga fb fc = bindKoln ga (\fa -> fromKol (f fa fb fc))
-instance Op3_ Kol Kol Kol Kol  Koln Kol  Koln Koln where op3 f ga fb gc = bindKoln ga (\fa -> bindKoln gc (\fc -> fromKol (f fa fb fc)))
-instance Op3_ Kol Kol Kol Kol  Koln Koln Kol  Koln where op3 f ga gb fc = bindKoln ga (\fa -> bindKoln gb (\fb -> fromKol (f fa fb fc)))
-instance Op3_ Kol Kol Kol Kol  Koln Koln Koln Koln where op3 f ga gb gc = bindKoln ga (\fa -> bindKoln gb (\fb -> bindKoln gc (\fc -> fromKol (f fa fb fc))))
+instance Op3_ Kol Kol Kol Kol  Kol  Kol  Kol  Kol  where op3 f ka kb kc = f ka kb kc
+instance Op3_ Kol Kol Kol Kol  Kol  Kol  Koln Koln where op3 f ka kb nc = bindKoln nc (\kc -> fromKol (f ka kb kc))
+instance Op3_ Kol Kol Kol Kol  Kol  Koln Kol  Koln where op3 f ka nb kc = bindKoln nb (\kb -> fromKol (f ka kb kc))
+instance Op3_ Kol Kol Kol Kol  Kol  Koln Koln Koln where op3 f ka nb nc = bindKoln nb (\kb -> bindKoln nc (\kc -> fromKol (f ka kb kc)))
+instance Op3_ Kol Kol Kol Kol  Koln Kol  Kol  Koln where op3 f na kb kc = bindKoln na (\ka -> fromKol (f ka kb kc))
+instance Op3_ Kol Kol Kol Kol  Koln Kol  Koln Koln where op3 f na kb nc = bindKoln na (\ka -> bindKoln nc (\kc -> fromKol (f ka kb kc)))
+instance Op3_ Kol Kol Kol Kol  Koln Koln Kol  Koln where op3 f na nb kc = bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (f ka kb kc)))
+instance Op3_ Kol Kol Kol Kol  Koln Koln Koln Koln where op3 f na nb nc = bindKoln na (\ka -> bindKoln nb (\kb -> bindKoln nc (\kc -> fromKol (f ka kb kc))))
 -- The 'Op3_' instances above are sufficient for the tools offered by this
 -- module. Do we need to export more?
 
