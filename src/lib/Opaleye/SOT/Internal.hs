@@ -701,10 +701,11 @@ type Rec t xs = Tagged (T t) (HL.Record xs)
 -- Mnemonic: Haskell Read.
 type HsR t = Rec t (Cols_HsR t)
 
--- | Output type of 'toHsI', used when inserting a new row to the table.
+-- | @'HsI' t@ is the Haskell representation of Haskell values to be inserted to
+-- the database, as taken by "Opaleye.SOT.Run.runInsertTabla".
 --
--- This type is used internally as an intermediate representation between
--- your own Haskell representation for a to-be-inserted @t@ and @('PgW' t)@.
+-- An @'HsI' t@ can always be converted to a @'PgW' t@ using 'pgWfromHsI', in
+-- case you need that for with the more general "Opaleye.SOT.Run.runInsert".
 --
 -- Mnemonic: Haskell Insert.
 type HsI t = Rec t (Cols_HsI t)
@@ -720,8 +721,10 @@ type PgR t = Rec t (Cols_PgR t)
 -- Mnemonic: PostGresql Read Nulls.
 type PgRN t = Rec t (Cols_PgRN t)
 
--- | Representation of @('ToHsI' t)@ as 'Kols'. To be used when
--- writing to the database.
+-- | Representation of PostgreSQL values to be written to the database. This
+-- type can be used as input for "Opaleye.SOT.Run.runInsert" and similar.
+--
+-- An @'HsI' t@ can always be converted to a @'PgW' t@ using 'pgWfromHsI', in
 --
 -- Mnemonic: PostGresql Write.
 type PgW t = Rec t (Cols_PgW t)
@@ -776,16 +779,23 @@ class ITabla t => Tabla (t :: k) where
 
 --------------------------------------------------------------------------------
 
--- | Convenience intended to be used within 'toHsI'', together with 'HL.hBuild'.
+-- | Helper function to safely build an @'HsI' t@.
+--
+-- The type of this function isn't easy to understand, but an example should
+-- clarify its usage. Here we asume we have a @Person@ datatype and a @TPerson@
+-- which is an instance of 'Tisch'.
 --
 -- @
--- personToHsI (Person name age) = 'mkHsI' $ \\set_ -> 'HL.hBuild'
---     (set_ ('C' :: 'C' "name") name)
---     (set_ ('C' :: 'C' "age") age)
+-- personToHsI :: Person -> HsI TPerson
+-- personToHsI (Person name age) =
+--    'mkHsI' (T :: TPerson) $ \\set_ -> 'HL.hBuild'
+--        (set_ ('C' :: 'C' "name") name)
+--        (set_ ('C' :: 'C' "age") age)
 -- @
-
--- TODO: see if it is posisble to pack 'mkHsI'' and 'HL.hBuild' into
--- a single thing.
+--
+-- You are not required to use this function to build an @'HsI' t@ if working
+-- with the tools from "Data.HList" is sufficient for you. This is just a
+-- convenience.
 mkHsI
   :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
   => T t
