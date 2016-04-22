@@ -346,6 +346,19 @@ instance ToKol Data.Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Data.A
 instance ToKol Data.Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Data.Aeson.encode
 
 ---
+instance Monoid (Kol O.PGText) where
+  mempty = kol ""
+  mappend = liftKol2 (OI.binOp OI.OpCat)
+
+instance Monoid (Kol O.PGCitext) where
+  mempty = kolCoerce (mempty :: Kol O.PGText)
+  mappend ka kb = kolCoerce (mappend (kolCoerce ka) (kolCoerce kb) :: Kol O.PGText)
+
+instance Monoid (Kol O.PGBytea) where
+  mempty = kol Data.ByteString.empty
+  mappend = liftKol2 (OI.binOp OI.OpCat)
+
+---
 -- | Like @opaleye@'s @'O.Column' ('O.Nullable' x)@, but with @x@ guaranteed
 -- to be not-'O.Nullable'.
 --
@@ -446,6 +459,11 @@ instance {-# OVERLAPPABLE #-}
   queryRunnerColumnDefault = OI.QueryRunnerColumn u (fmap (fmap (fmap Just)) fp)
     where OI.QueryRunnerColumn u fp = O.queryRunnerColumnDefault
 
+---
+instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
+  mempty = fromKol mempty
+  mappend = op2 (mappend :: Kol a -> Kol a -> Kol a)
+
 -------------------------------------------------------------------------------
 
 -- | @'KolCoerce' a b@ says that @'Kol' a@ can be safely coerced to @'Kol' b@
@@ -455,6 +473,9 @@ class (PgTyped a, PgTyped b) => KolCoerce (a :: ka) (b :: kb) where
 instance PgTyped a => KolCoerce a a
 -- | Upcast.
 instance {-# OVERLAPPABLE #-} (PgTyped a, PgTyped b, PgType a ~ b) => KolCoerce a b
+
+instance KolCoerce O.PGCitext O.PGText
+instance KolCoerce O.PGText O.PGCitext
 
 kolCoerce :: KolCoerce a b => Kol a -> Kol b
 kolCoerce = unsafeCoerceKol
