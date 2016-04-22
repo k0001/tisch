@@ -133,39 +133,33 @@ type Conn' = Conn ['Fetch, 'Insert, 'Update, 'Delete, 'Transact]
 -- | @'Allow' p ps@ ensures that @p@ is present in @ps@.
 --
 -- The kind of @p@ can be 'Perm' or @['Perm']@.
-type Allow (p :: k) (ps :: [Perm]) = Allow' p ps
-
-type family Allow' (p :: k) (ps :: [Perm]) :: Constraint where
-  Allow' ('[] :: [Perm]) ps = ()
-  Allow' ((p ': ps) :: [Perm]) qs = (Allow' p qs, Allow' ps qs)
-  Allow' (p :: Perm) (p ': ps) = ()
-  Allow' (p :: Perm) (q ': ps) = Allow' p ps
+type family Allow (p :: k) (ps :: [Perm]) :: Constraint where
+  Allow ('[] :: [Perm]) ps = ()
+  Allow ((p ': ps) :: [Perm]) qs = (Allow p qs, Allow ps qs)
+  Allow (p :: Perm) (p ': ps) = ()
+  Allow (p :: Perm) (q ': ps) = Allow p ps
 
 -- | @'Forbid'' p ps@ ensures that @p@ is not present in @ps@.
 --
 -- The kind of @p@ can be 'Perm' or @['Perm']@.
-type Forbid (p :: k) (ps :: [Perm]) = Forbid' p ps
-
-type family Forbid' (p :: k) (ps :: [Perm]) :: Constraint where
-  Forbid' ('[] :: [Perm]) ps = ()
-  Forbid' ((p ': ps) :: [Perm]) qs = (Forbid' p qs, Forbid' ps qs)
-  Forbid' (p :: Perm) (p ': ps) =
-     "Opaleye.SOT.Run.Forbid'" ~
-     "Forbid': The forbidden permission is allowed"
-  Forbid' (p :: Perm) (q ': ps) = Forbid' p ps
-  Forbid' (p :: Perm) '[] = ()
+type family Forbid (p :: k) (ps :: [Perm]) :: Constraint where
+  Forbid ('[] :: [Perm]) ps = ()
+  Forbid ((p ': ps) :: [Perm]) qs = (Forbid p qs, Forbid ps qs)
+  Forbid (p :: Perm) (p ': ps) =
+     "Opaleye.SOT.Run.Forbid" ~
+     "Forbid: The forbidden permission is allowed"
+  Forbid (p :: Perm) (q ': ps) = Forbid p ps
+  Forbid (p :: Perm) '[] = ()
 
 -- | @'DropPerm' p ps@ removes @p@ from @ps@ if present.
 --
 -- The kind of @p@ can be 'Perm' or @['Perm']@.
-type DropPerm (p :: k) (ps :: [Perm]) = DropPerm' p ps
-
-type family DropPerm' (p :: k) (ps :: [Perm]) :: [Perm] where
-  DropPerm' ('[] :: [Perm]) ps = ps
-  DropPerm' ((p ': ps) :: [Perm]) qs = DropPerm' p (DropPerm' ps qs)
-  DropPerm' (p :: Perm) (p ': ps) = DropPerm' p ps
-  DropPerm' (p :: Perm) (q ': ps) = q ': DropPerm' p ps
-  DropPerm' (p :: Perm) '[] = '[]
+type family DropPerm (p :: k) (ps :: [Perm]) :: [Perm] where
+  DropPerm ('[] :: [Perm]) ps = ps
+  DropPerm ((p ': ps) :: [Perm]) qs = DropPerm p (DropPerm ps qs)
+  DropPerm (p :: Perm) (p ': ps) = DropPerm p ps
+  DropPerm (p :: Perm) (q ': ps) = q ': DropPerm p ps
+  DropPerm (p :: Perm) '[] = '[]
 
 -- | Drop a permission from the connection.
 withoutPerm

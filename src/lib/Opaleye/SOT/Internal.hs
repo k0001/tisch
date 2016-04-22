@@ -477,6 +477,8 @@ instance {-# OVERLAPPABLE #-}
 class (PgTyped a, PgTyped b) => KolCoerce (a :: ka) (b :: kb) where
 -- | Identity.
 instance PgTyped a => KolCoerce a a
+-- | Upcast.
+instance {-# OVERLAPPABLE #-} (PgTyped a, PgTyped b, PgType a ~ b) => KolCoerce a b
 
 kolCoerce :: KolCoerce a b => Kol a -> Kol b
 kolCoerce = unsafeCoerceKol
