@@ -38,7 +38,7 @@ module Opaleye.SOT
 
    -- * Kol
  , Kol(..)
- , kolCoerce
+ , kolCast
  , unsafeCoerceKol
  , ToKol(..)
  , liftKol1
@@ -122,7 +122,7 @@ module Opaleye.SOT
    -- ** Column types
  , NotNullable
  , PgTyped(..)
- , KolCoerce
+ , KolCast
  , KolLike
  , PgNum
  , PgFractional

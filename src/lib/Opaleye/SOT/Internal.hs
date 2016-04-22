@@ -75,24 +75,29 @@ type family NotNullable (x :: k) :: Constraint where
 -- You probably won't be adding new 'PgPrimType' instances yourself,
 -- unless you are trying to represent a concrete PostgreSQL data type, but even
 -- then you might get away with creating 'PgTyped' instances instead.
-class NotNullable a => PgPrimType (a :: k)
-instance PgPrimType O.PGBool
-instance PgPrimType O.PGBytea
-instance PgPrimType O.PGCitext
-instance PgPrimType O.PGDate
-instance PgPrimType O.PGFloat4
-instance PgPrimType O.PGFloat8
-instance PgPrimType O.PGInt2
-instance PgPrimType O.PGInt4
-instance PgPrimType O.PGInt8
-instance PgPrimType O.PGJsonb
-instance PgPrimType O.PGJson
-instance PgPrimType O.PGNumeric
-instance PgPrimType O.PGText
-instance PgPrimType O.PGTimestamptz
-instance PgPrimType O.PGTimestamp
-instance PgPrimType O.PGTime
-instance PgPrimType O.PGUuid
+class NotNullable a => PgPrimType (a :: k) where
+  pgPrimTypeName :: proxy a -> String
+
+instance forall a. PgPrimType a => PgPrimType (O.PGArray a) where
+  pgPrimTypeName _ = pgPrimTypeName (Proxy :: Proxy a) ++ "[]"
+
+instance PgPrimType O.PGBool where pgPrimTypeName _ = "boolean"
+instance PgPrimType O.PGBytea where pgPrimTypeName _ = "bytea"
+instance PgPrimType O.PGCitext where pgPrimTypeName _ = "citext"
+instance PgPrimType O.PGDate where pgPrimTypeName _ = "date"
+instance PgPrimType O.PGFloat4 where pgPrimTypeName _ = "float4"
+instance PgPrimType O.PGFloat8 where pgPrimTypeName _ = "float8"
+instance PgPrimType O.PGInt2 where pgPrimTypeName _ = "int2"
+instance PgPrimType O.PGInt4 where pgPrimTypeName _ = "int4"
+instance PgPrimType O.PGInt8 where pgPrimTypeName _ = "int8"
+instance PgPrimType O.PGJsonb where pgPrimTypeName _ = "jsonb"
+instance PgPrimType O.PGJson where pgPrimTypeName _ = "json"
+instance PgPrimType O.PGNumeric where pgPrimTypeName _ = "numeric"
+instance PgPrimType O.PGText where pgPrimTypeName _ = "text"
+instance PgPrimType O.PGTimestamptz where pgPrimTypeName _ = "timestamptz"
+instance PgPrimType O.PGTimestamp where pgPrimTypeName _ = "timestamp"
+instance PgPrimType O.PGTime where pgPrimTypeName _ = "time"
+instance PgPrimType O.PGUuid where pgPrimTypeName _ = "uuid"
 
 -- | Only 'PgTyped' instances are allowed as indexes to 'Kol' and 'Koln'.
 class PgPrimType (PgType a) => PgTyped (a :: k) where
@@ -160,6 +165,7 @@ instance PgTyped O.PGTimestamptz where type PgType O.PGTimestamptz = O.PGTimesta
 instance PgTyped O.PGTimestamp where type PgType O.PGTimestamp = O.PGTimestamp
 instance PgTyped O.PGTime where type PgType O.PGTime = O.PGTime
 instance PgTyped O.PGUuid where type PgType O.PGUuid = O.PGUuid
+instance (PgPrimType a, PgTyped a) => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray a
 
 -------------------------------------------------------------------------------
 
@@ -234,6 +240,9 @@ instance (PgTyped a, Num (Koln a), Fractional (Kol a)) => Fractional (Koln a) wh
 data Kol (a :: k) = PgTyped a => Kol { unKol :: O.Column (PgType a) }
 
 deriving instance (PgTyped a, Show (O.Column (PgType a))) => Show (Kol a)
+
+unsafeCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
+unsafeCoerceKol = liftKol1 O.unsafeCoerceColumn
 
 -- | Converts an unary function on Opaleye's 'O.Column' to an unary function
 -- taking any of 'Kol' and 'Koln' as argument, with the result type fully
@@ -322,6 +331,10 @@ class PgPrimType p => ToKol (a :: *) (p :: *) where
     :: (PgTyped b, PgType b ~ p, Wrapped a, ToKol (Unwrapped a) p) => a -> Kol b
   kol = kol . view _Wrapped'
 
+-- -- | OVERLAPPABLE (due to [Char]).
+-- instance {-# OVERLAPPABLE #-} ToKol a p => ToKol [a] (O.PGArray p) where
+--    kol = ... wait for https://github.com/tomjaguarpaw/haskell-opaleye/pull/154
+
 instance ToKol String O.PGText where kol = Kol . O.pgString
 instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
 instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
@@ -340,6 +353,7 @@ instance ToKol Data.Time.LocalTime O.PGTimestamp where kol = Kol . O.pgLocalTime
 instance ToKol Data.Time.TimeOfDay O.PGTime where kol = Kol . O.pgTimeOfDay
 instance ToKol Data.Time.Day O.PGDate where kol = Kol . O.pgDay
 instance ToKol Data.UUID.UUID O.PGUuid where kol = Kol . O.pgUUID
+instance ToKol (Data.CaseInsensitive.CI String) O.PGCitext where kol = Kol . O.unsafeCoerceColumn . O.pgString . Data.CaseInsensitive.original
 instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = Kol . O.pgCiStrictText
 instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = Kol . O.pgCiLazyText
 instance ToKol Data.Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Data.Aeson.encode
@@ -351,8 +365,8 @@ instance Monoid (Kol O.PGText) where
   mappend = liftKol2 (OI.binOp OI.OpCat)
 
 instance Monoid (Kol O.PGCitext) where
-  mempty = kolCoerce (mempty :: Kol O.PGText)
-  mappend ka kb = kolCoerce (mappend (kolCoerce ka) (kolCoerce kb) :: Kol O.PGText)
+  mempty = kol (Data.CaseInsensitive.mk "")
+  mappend ka kb = unsafeCoerceKol (mappend (unsafeCoerceKol ka) (unsafeCoerceKol kb) :: Kol O.PGText)
 
 instance Monoid (Kol O.PGBytea) where
   mempty = kol Data.ByteString.empty
@@ -466,22 +480,20 @@ instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
 
 -------------------------------------------------------------------------------
 
--- | @'KolCoerce' a b@ says that @'Kol' a@ can be safely coerced to @'Kol' b@
--- using 'kolCoerce'.
-class (PgTyped a, PgTyped b) => KolCoerce (a :: ka) (b :: kb) where
+-- | @'KolCast' a b@ says that @'Kol' a@ can be safely cast to @'Kol' b@
+-- using 'kolCast'.
+class (PgTyped a, PgTyped b) => KolCast (a :: ka) (b :: kb) where
 -- | Identity.
-instance PgTyped a => KolCoerce a a
+instance PgTyped a => KolCast a a
 -- | OVERLAPPABLE. Upcast.
-instance {-# OVERLAPPABLE #-} (PgTyped a, PgTyped b, PgType a ~ b) => KolCoerce a b
+instance {-# OVERLAPPABLE #-} (PgTyped a, PgTyped b, PgType a ~ b) => KolCast a b
 
-instance KolCoerce O.PGCitext O.PGText
-instance KolCoerce O.PGText O.PGCitext
+instance KolCast O.PGCitext O.PGText
+instance KolCast O.PGText O.PGCitext
+instance KolCast O.PGUuid O.PGText
 
-kolCoerce :: KolCoerce a b => Kol a -> Kol b
-kolCoerce = unsafeCoerceKol
-
-unsafeCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
-unsafeCoerceKol = liftKol1 O.unsafeCoerceColumn
+kolCast :: forall a b. KolCast a b => Kol a -> Kol b
+kolCast = liftKol1 (O.unsafeCast (pgPrimTypeName (Proxy :: Proxy (PgType b))))
 
 -------------------------------------------------------------------------------
 
