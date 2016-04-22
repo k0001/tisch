@@ -52,6 +52,7 @@ module Opaleye.SOT
  , matchKoln
  , isNull
  , mapKoln
+ , forKoln
  , bindKoln
  , altKoln
  , liftKoln1
@@ -65,15 +66,19 @@ module Opaleye.SOT
  , restrict
  , nullTrue
  , nullFalse
- , lnot, Op_lnot
- , lor, Op_lor
- , land, Op_land
- , eq, Op_eq
- , eqs, Op_eqs
- , lt, Op_lt
- , lte, Op_lte
- , gt, Op_gt
- , gte, Op_gte
+   -- ** Booleans
+ , lnot
+ , lor
+ , land
+ , matchBool
+   -- ** Equality
+ , eq
+ , member
+   -- ** Comparisons
+ , lt
+ , lte
+ , gt
+ , gte
    -- * Selecting
  , col
  , colt

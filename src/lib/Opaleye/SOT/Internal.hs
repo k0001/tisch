@@ -163,6 +163,12 @@ instance PgTyped O.PGUuid where type PgType O.PGUuid = O.PGUuid
 
 -------------------------------------------------------------------------------
 
+-- | Like @opaleye@'s 'OI.PGOrd', but applies to a 'PgTyped'.
+class (PgTyped a, O.PGOrd (PgType a)) => PgOrd (a :: k)
+instance (PgTyped a, O.PGOrd (PgType a)) => PgOrd a
+
+-------------------------------------------------------------------------------
+
 -- | A @'PgNum' a@ instance gives you a @'Num' ('Kol' a)@ instance for free.
 class (PgTyped a, OI.PGNum (PgType a)) => PgNum (a :: k)
 
@@ -229,38 +235,34 @@ data Kol (a :: k) = PgTyped a => Kol { unKol :: O.Column (PgType a) }
 
 deriving instance (PgTyped a, Show (O.Column (PgType a))) => Show (Kol a)
 
--- | Converts an unary function on Opaleye's 'O.Column' to an unary
--- function on 'Kol'.
---
--- /Hint/: You can further compose the result of this function with 'op1'
--- to widen the range of accepted argument types.
+-- | Converts an unary function on Opaleye's 'O.Column' to an unary function
+-- taking any of 'Kol' and 'Koln' as argument, with the result type fully
+-- determined by it.
 liftKol1
-  :: (PgTyped a, PgTyped b)
+  :: (PgTyped a, PgTyped b, Op1 kol kol')
   => (O.Column (PgType a) -> O.Column (PgType b))
-  -> (Kol a -> Kol b) -- ^
-liftKol1 f = Kol . f . unKol
+  -> (kol a -> kol' b) -- ^
+liftKol1 f = op1 (Kol . f . unKol)
 
--- | Converts a binary function on Opaleye's 'O.Column's to an binary
--- function on 'Kol'.
---
--- /Hint/: You can further compose the result of this function with 'op2'
--- to widen the range of accepted argument types.
+-- | Converts a binary function on Opaleye's 'O.Column's to an binary function
+-- taking any of 'Kol' and 'Koln' as arguments, with the result type fully
+-- determined by them.
 liftKol2
-  :: (PgTyped a, PgTyped b, PgTyped c)
+  :: (PgTyped a, PgTyped b, PgTyped c, Op2 kol kol' kol'')
   => (O.Column (PgType a) -> O.Column (PgType b) -> O.Column (PgType c))
-  -> (Kol a -> Kol b -> Kol c)
-liftKol2 f = \ka kb -> Kol (f (unKol ka) (unKol kb))
+  -> (kol a -> kol' b -> kol'' c)
+liftKol2 f = op2 (\ka kb -> Kol (f (unKol ka) (unKol kb)))
 
--- | Converts a ternary function on Opaleye's 'O.Column's to an binary
--- function on 'Kol'.
+-- | Converts a ternary function on Opaleye's 'O.Column's to an ternary function
+-- on 'Kol'.
 --
 -- /Hint/: You can further compose the result of this function with 'op3'
 -- to widen the range of accepted argument types.
 liftKol3
-  :: (PgTyped a, PgTyped b, PgTyped c, PgTyped d)
+  :: (PgTyped a, PgTyped b, PgTyped c, PgTyped d, Op3 kol kol' kol'' kol''')
   => (O.Column (PgType a) -> O.Column (PgType b) -> O.Column (PgType c) -> O.Column (PgType d))
-  -> (Kol a -> Kol b -> Kol c -> Kol d)
-liftKol3 f = \ka kb kc -> Kol (f (unKol ka) (unKol kb) (unKol kc))
+  -> (kol a -> kol' b -> kol'' c -> kol''' d)
+liftKol3 f = op3 (\ka kb kc -> Kol (f (unKol ka) (unKol kb) (unKol kc)))
 
 instance
     ( PgTyped a
@@ -393,6 +395,10 @@ matchKoln kb0 f kna = Kol $
 mapKoln :: (PgTyped a, PgTyped b) => (Kol a -> Kol b) -> Koln a -> Koln b
 mapKoln f kna = bindKoln kna (fromKol . f)
 
+-- | 'mapKoln' with the arguments flipped.
+forKoln :: (PgTyped a, PgTyped b) => Koln a -> (Kol a -> Kol b) -> Koln b
+forKoln kna f = mapKoln f kna
+
 -- | Monadic bind like the one for 'Maybe'.
 --
 -- Apply the given function to the underlying @('Kol' a)@ only as long as the
@@ -477,6 +483,24 @@ kolCoerce = unsafeCoerceKol
 
 unsafeCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
 unsafeCoerceKol = liftKol1 O.unsafeCoerceColumn
+
+-------------------------------------------------------------------------------
+
+-- | Satisfied if @a@ is one of 'Kol' or 'Koln'. We use this 'Constraint' to
+-- restrict the instances that can exist for typeclasses like 'FromKol'.
+type family KolLike a :: Constraint where
+  KolLike Kol  = ()
+  KolLike Koln = ()
+
+class KolLike f => FromKol f where
+  -- | Like 'fromKol', but generalizing the return type to either 'Kol' or
+  -- 'Koln'.
+  fromKol' :: PgTyped a => Kol a -> f a
+
+-- | @'fromKol'' = 'id'@
+instance FromKol Kol  where fromKol' = id
+-- | @'fromKol'' = 'fromKol'@
+instance FromKol Koln where fromKol' = fromKol
 
 -------------------------------------------------------------------------------
 
@@ -926,173 +950,111 @@ colt prx = col prx . _Unwrapped
 
 -- | Like 'Prelude.bool', @'matchBool' f t x@ evaluates to @f@ if @x@ is false,
 -- otherwise it evaluates to @t@.
-matchBool :: PgTyped a => Kol a -> Kol a -> Kol O.PGBool -> Kol a
-matchBool f t x = liftKol3 O.ifThenElse x t f
+matchBool
+  :: (Op3 kol kol' kol'' kol''', PgTyped a)
+  => kol a -> kol' a -> kol'' O.PGBool -> kol''' a
+matchBool f t x = liftKol3 matchBool' f t x
+  where matchBool' = \f' t' x' -> O.ifThenElse x' t' f'
 
 --------------------------------------------------------------------------------
+-- Booleans.
 
--- Unary operations on columns
-
--- | Constraint on arguments to 'lnot'.
-type Op_lnot a b = Op1' O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) a b
--- | Polymorphic Opaleye's 'O.not'. See 'eq' for the type of arguments this
--- function can take.
+-- | Logical NOT.
 --
--- Mnemonic: Logical NOT.
-lnot :: Op_lnot a b => a -> b
-lnot = op1 (liftKol1 O.not)
+-- Note: This function can take any of 'Kol' and 'Koln' argument, with the
+-- return type being fully determined by it. The valid combinations are:
+--
+-- @
+-- 'lnot' :: 'Kol'  'O.PGBool' -> 'Kol'  'O.PGBool'
+-- 'lnot' :: 'Koln' 'O.PGBool' -> 'Koln' 'O.PGBool'
+-- @
+lnot :: Op1' kol => kol O.PGBool -> kol O.PGBool
+lnot = liftKol1 O.not
+
+-- | Logical OR. See 'eq' for possible argument types.
+lor :: Op2 kol kol' kol'' => kol O.PGBool -> kol' O.PGBool -> kol'' O.PGBool
+lor = liftKol2 (O..||)
+
+-- | Whether any of the given 'O.PGBool's is true.
+--
+-- Notice that 'lor' is more general that 'lors', as it doesn't restrict @kol@.
+--
+-- Mnemonic reminder: Logical ORs.
+lors :: (Op2' kol, FromKol kol, Foldable f) => f (kol O.PGBool) -> kol O.PGBool
+lors = foldl' lor (fromKol' (kol False))
+
+-- Logical AND. See 'eq' for possible argument types.
+land :: Op2 kol kol' kol'' => kol O.PGBool -> kol' O.PGBool -> kol'' O.PGBool
+land = liftKol2 (O..&&)
+
+-- | Whether all of the given 'O.PGBool's are true.
+--
+-- Notice that 'land' is more general that 'lands', as it doesn't restrict
+-- @kol@.
+--
+-- Mnemonic reminder: Logical ANDs.
+lands :: (Op2' kol, FromKol kol, Foldable f) => f (kol O.PGBool) -> kol O.PGBool
+lands = foldl' land (fromKol' (kol True))
 
 --------------------------------------------------------------------------------
--- Binary operations on columns
+-- Equality
 
--- | Constraints on arguments to 'eq'.
+-- | Whether two column values are equal.
 --
--- Given as @a@ and @b@ any combination of @('Kol' x)@, @('Koln' x)@ or their
--- respective wrappings in @('Tagged' ('TC' t c))@, get @c@ as result, which
--- will be @('Koln' 'O.PGBool')@ if there was a @('Koln' x)@ among the given
--- arguments, otherwise it will be @('Kol' 'O.PGBool')@.
+-- Note: This function can take any combination of 'Kol' and 'Koln' arguments,
+-- with the return type being fully determined by them. The valid combinations
+-- are:
 --
--- This type synonym is exported for two reasons:
---
--- 1. It increases the readability of the type of 'eq' and any type errors
---    resulting from its misuse.
---
--- 2. If you are taking any of @a@ or @b@ as arguments to a function
---    where 'eq' is used, then you will need to ensure that some
---    constraints are satisfied by those arguments. Adding 'Op_eq' as a
---    constraint to that function will solve the problem.
---
--- /To keep in mind/: The type @c@ is fully determined by @x@, @a@, and @b@. This
--- has the practical implication that when both @('Kol' z)@ and @('Koln' z)@
--- would be suitable types for @c@, we make a choice and prefer to only support
--- @('Kol' z)@, leaving you to use 'koln' on the return type if you want to
--- convert it to @('Koln' z)@. This little inconvenience, however, significantly
--- improves type inference when using 'eq'.
-type Op_eq x a b c = Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c
-
--- | Polymorphic Opaleye's @('O..==')@.
+-- @
+-- 'eq' :: 'Kol'  x -> 'Kol'  x -> 'Kol'  'O.PGBool'
+-- 'eq' :: 'Kol'  x -> 'Koln' x -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Koln' x -> 'Kol'  x -> 'Koln' 'O.PGBool'
+-- 'eq' :: 'Koln' x -> 'Koln' x -> 'Koln' 'O.PGBool'
+-- @
 --
 -- Mnemonic reminder: EQual.
---
--- @
--- 'eq' :: 'Kol' x -> 'Kol' x -> 'Kol' 'O.PGBool'
--- 'eq' :: 'Kol' x -> 'Koln' x -> 'Koln' 'O.PGBool'
--- 'eq' :: 'Kol' x -> 'Tagged' t ('Kol' x) -> 'Kol' 'O.PGBool'
--- 'eq' :: 'Kol' x -> 'Tagged' t ('Koln' x) -> 'Koln' 'O.PGBool'
--- 'eq' :: 'Koln' x -> 'Kol' x -> 'Koln' 'O.PGBool'
--- 'eq' :: 'Koln' x -> 'Koln' x -> 'Koln' 'O.PGBool'
--- 'eq' :: 'Koln' x -> 'Tagged' t ('Kol' x) -> 'Koln' 'O.PGBool'
--- 'eq' :: 'Koln' x -> 'Tagged' t ('Koln' x) -> 'Koln' 'O.PGBool'
--- @
---
--- Any of the above combinations with the arguments fliped is accepted too.
---
--- /Important/: Opaleye's 'O.Column' is deliberately not supported. Use 'kol'
--- or 'koln' to convert a 'O.Column' to a 'Kol' or 'Koln' respectively.
---
--- /Debugging hint/: If the combination of @a@ and @b@ that you give to 'eq' is
--- unacceptable, you will get an error from the typechecker saying that an
--- 'Op2'' instance is missing. Do not try to add a new instance for 'Op2'', it
--- is an internal class that already supports all the possible combinations of
--- @x@, @a@, @b@, and @c@. Instead, make sure your are not trying to do
--- something funny such as comparing two 'Koln's for equality and expecting a
--- 'Kol' as a result (that is, you would be trying to compare two nullable
--- columns and ignoring the possibilty that one of the arguments might be
--- @NULL@, leading to a @NULL@ result).
-eq :: Op_eq x a b c => a -> b -> c
-eq = go where -- we hide the 'forall' from the type signature
-  go :: forall x a b c. Op_eq x a b c => a -> b -> c
-  go = op2 (liftKol2 (O..==) :: Kol x -> Kol x -> Kol O.PGBool)
+eq :: (PgTyped a, Op2 kol kol' kol'') => kol a -> kol' a -> kol'' O.PGBool
+eq = liftKol2 (O..==)
 
--- | Constraint on arguments to 'eqs'. See 'Op_eq' for a detailed explanation.
-type Op_eqs f x a b c = (Op_eq x a b c, Op_lors c, Functor f, Foldable f)
--- | Like Opaleye's @('O.eqs')@, but can accept more arguments than just 'O.Column'.
--- See 'eq' for a detailed explanation.
+-- | Whether the given value is a member of the given collection.
 --
--- Mnemonic reminder: EQualS.
-eqs :: Op_eqs f x a b c => a -> f b -> c
-eqs a = lors . fmap (eq a)
+-- Notice that a combination 'eq' and 'or' is more general that 'member', as
+-- they don't restrict @kol'@.
+member
+  :: (PgTyped a, Op2 kol kol' kol', Op2' kol', FromKol kol', Foldable f)
+  => kol a -> f (kol' a) -> kol' O.PGBool -- ^
+member a = lors . map (eq a) . toList
 
----
--- | Constraint on arguments to 'lt'. See 'Op_eq' for a detailed explanation.
-type Op_lt x a b c = (O.PGOrd (PgType x), Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
--- | Like Opaleye's @('O..<')@, compares whether the first argument is less
--- than the second argument, but can accept more arguments than just 'O.Column'.
--- See 'eq' for a detailed explanation.
+--------------------------------------------------------------------------------
+-- Ordering
+
+-- | Whether the first argument is less than the second. See 'eq' for possible
+-- argument types.
 --
 -- Mnemonic reminder: Less Than.
-lt :: Op_lt x a b c => a -> b -> c
-lt = go where -- we hide the 'forall' from the type signature
-  go :: forall x a b c. Op_lt x a b c => a -> b -> c
-  go = op2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
+lt :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+lt = liftKol2 (O..<)
 
----
--- | Constraint on arguments to 'lte'. See 'Op_eq' for a detailed explanation.
-type Op_lte x a b c = (O.PGOrd (PgType x), Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
--- | Like Opaleye's @('O..<=')@, compares whether the first argument is less
--- than or equal to the second argument, but can accept more arguments than just
--- 'O.Column'.  See 'eq' for a detailed explanation.
+-- | Whether the first argument is less than or equal to the second. See 'eq'
+-- for possible argument types.
 --
 -- Mnemonic reminder: Less Than or Equal.
-lte :: Op_lte x a b c => a -> b -> c
-lte = go where -- we hide the 'forall' from the type signature
-  go :: forall x a b c. Op_lte x a b c => a -> b -> c
-  go = op2 (liftKol2 (O..<=) :: Kol x -> Kol x -> Kol O.PGBool)
+lte :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+lte = liftKol2 (O..<=)
 
----
--- | Constraint on arguments to 'gt'. See 'Op_eq' for a detailed explanation.
-type Op_gt x a b c = (O.PGOrd (PgType x), Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
--- | Like Opaleye's @('O..>')@, compares whether the first argument is greater
--- than the second argument, but can accept more arguments than just 'O.Column'.
--- See 'eq' for a detailed explanation.
+-- | Whether the first argument is greater than the second. See 'eq' for
+-- possible argument types.
 --
--- Mnemonic reminder: Less Than.
-gt :: Op_gt x a b c => a -> b -> c
-gt = go where -- we hide the 'forall' from the type signature
-  go :: forall x a b c. Op_gt x a b c => a -> b -> c
-  go = op2 (liftKol2 (O..<) :: Kol x -> Kol x -> Kol O.PGBool)
+-- Mnemonic reminder: Greater Than.
+gt :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+gt = liftKol2 (O..>)
 
----
--- | Constraint on arguments to 'gte'. See 'Op_eq' for a detailed explanation.
-type Op_gte x a b c = (O.PGOrd (PgType x), Op2' x x O.PGBool (Kol x) (Kol x) (Kol O.PGBool) a b c)
--- | Like Opaleye's @('O..>=')@, compares whether the first argument is greater
--- than or equal to the second argument, but can accept more arguments than just
--- 'O.Column'.  See 'eq' for a detailed explanation.
+-- | Whether the first argument is greater than or equal to the second. See 'eq'
+-- for possible argument types.
 --
 -- Mnemonic reminder: Greater Than or Equal.
-gte :: Op_gte x a b c => a -> b -> c
-gte = go where -- we hide the 'forall' from the type signature
-  go :: forall x a b c. Op_gte x a b c => a -> b -> c
-  go = op2 (liftKol2 (O..>=) :: Kol x -> Kol x -> Kol O.PGBool)
-
----
--- | Constraint on arguments to 'lor'. See 'Op_eq' for a detailed explanation.
-type Op_lor a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
--- | Like Opaleye's @('O..||')@, but can accept more arguments than just 'O.Column'.
--- See 'eq' for a detailed explanation.
---
--- Mnemonic: Logical OR.
-lor :: Op_lor a b c => a -> b -> c
-lor = op2 (liftKol2 (O..||))
-
----
--- | Internal. We don't export this because 'or' is more general.
-class Op_lors a where
-  -- | Like Opaleye's @('O.lors')@, but can accept more arguments than just
-  -- 'O.Column'. See 'eq' for a detailed explanation.
-  lors :: Foldable f => f a -> a
-instance Op_lors (Kol O.PGBool) where lors = foldl' lor (kol False)
-instance Op_lors (Koln O.PGBool) where lors = foldl' lor (koln False)
-
----
--- | Constraint on arguments to 'land'. See 'Op_eq' for a dlandailed explanation.
-type Op_land a b c = Op2' O.PGBool O.PGBool O.PGBool (Kol O.PGBool) (Kol O.PGBool) (Kol O.PGBool) a b c
--- | Like Opaleye's @('O..&&')@, but can accept more arguments than just 'O.Column'.
--- See 'eq' for a dlandailed explanation.
---
--- Mnemonic: Logical AND.
-land :: Op_land a b c => a -> b -> c
-land = op2 (liftKol2 (O..&&))
+gte :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+gte = liftKol2 (O..>=)
 
 --------------------------------------------------------------------------------
 
@@ -1231,7 +1193,7 @@ instance
 instance
     ( ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
     ) => ProductProfunctorAdaptor p (HL.Record pabs) (HL.Record as) (HL.Record bs) where
-  ppa = P.dimap unRecord HL.Record . ppa . unRecord
+  ppa = P.dimap (\(HL.Record x) -> x) HL.Record . ppa . (\(HL.Record x) -> x)
   {-# INLINE ppa #-}
 
 --------------------------------------------------------------------------------
@@ -1256,7 +1218,7 @@ instance
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (HList bs)
     ) => PP.Default p (HL.Record as) (HL.Record bs) where
-  def = P.dimap unRecord HL.Record PP.def
+  def = P.dimap (\(HL.Record x) -> x) HL.Record PP.def
   {-# INLINE def #-}
 
 -- Maybes on the rhs
@@ -1287,9 +1249,170 @@ instance
 instance
     ( PP.ProductProfunctor p, PP.Default p (HList as) (Maybe (HList bs))
     ) => PP.Default p (HL.Record as) (Maybe (HL.Record bs)) where
-  def = P.dimap unRecord (fmap HL.Record) PP.def
+  def = P.dimap (\(HL.Record x) -> x) (fmap HL.Record) PP.def
   {-# INLINE def #-}
 
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Support for overloaded unary operators working on Kol or Koln
+
+class (Op1_ Kol Kol g g) => Op1' g
+instance (Op1_ Kol Kol g g) => Op1' g
+
+class (Op1_ Kol Kol ga gb) => Op1 ga gb
+instance (Op1_ Kol Kol ga gb) => Op1 ga gb
+
+-- | Instances of this class can be used to convert an unary function @fa a ->
+-- fb b@ to an unary function @ga a -> gb b@, where @fa@, @fb@, and @ga@ can be
+-- any combination of 'Kol' or 'Koln', with @gb@ fully determined by them,
+-- biasing towards 'Kol'.
+--
+-- Thanks to the 'KolLike' superclass and the functional dependency in this
+-- class, it is impossible to add new 'Op1_' instances. All the possible
+-- instances are already exported from this module.
+class (KolLike fa, KolLike fb, KolLike ga, KolLike gb) =>
+      Op1_ fa fb ga gb | fa fb ga -> gb where
+  -- | Convert an unary function @fa a -> fb b@ to an unary function @ga a -> gb
+  -- b@, where @fa@, @fb@, and @ga@ can be any combination of 'Kol' or 'Koln',
+  -- with @gb@ fully determined by them.
+  op1 :: (PgTyped a, PgTyped b) => (fa a -> fb b) -> (ga a -> gb b)
+
+instance Op1_ Kol  Kol  Kol  Kol  where op1 f ga = f ga
+instance Op1_ Kol  Kol  Koln Koln where op1 f ga = mapKoln f ga
+-- The 'Op1_' instances above are sufficient for the tools offered by this
+-- module. Do we need to export the following ones?
+--
+-- instance Op1_ Kol  Koln Kol  Koln where op1 f ga = f ga
+-- instance Op1_ Kol  Koln Koln Koln where op1 f ga = bindKoln ga f
+-- instance Op1_ Koln Kol  Kol  Kol  where op1 f ga = f (fromKol ga)
+-- instance Op1_ Koln Kol  Koln Kol  where op1 f ga = f ga
+-- instance Op1_ Koln Koln Kol  Koln where op1 f ga = f (fromKol ga)
+-- instance Op1_ Koln Koln Koln Koln where op1 f ga = f ga
+
+---
+
+class (Op2_ Kol Kol Kol g g g) => Op2' g
+instance (Op2_ Kol Kol Kol g g g) => Op2' g
+
+class (Op2_ Kol Kol Kol ga gb gc) => Op2 ga gb gc
+instance (Op2_ Kol Kol Kol ga gb gc) => Op2 ga gb gc
+
+-- | Instances of this class can be used to convert a binary function @fa a ->
+-- fb b -> fc c@ to a binary function @ga a -> gb b -> gc c@, where @fa@, @fb@,
+-- @fc@, @ga@ and @gb@ can be any combination of 'Kol' or 'Koln', with @gc@
+-- fully determined by them, biasing towards 'Kol'.
+--
+-- Thanks to the 'KolLike' superclass and the functional dependency in this
+-- class, it is impossible to add new 'Op2_' instances. All the possible
+-- instances are already exported from this module.
+class (KolLike fa, KolLike fb, KolLike fc) =>
+      Op2_ fa fb fc ga gb gc | fa fb fc ga gb -> gc where
+  -- | Convert a binary function @fa a -> fb b -> fc c@ to a binary function
+  -- @ga a -> gb b -> gc c@, where @fa@, @fb@, @fc@, @ga@ and @gb@ can be any
+  -- combination of 'Kol' or 'Koln', with @gc@ fully determined by them.
+  op2 :: (PgTyped a, PgTyped b, PgTyped c)
+      => (fa a -> fb b -> fc c)
+      -> (ga a -> gb b -> gc c)
+
+instance Op2_ Kol  Kol  Kol  Kol  Kol  Kol  where op2 f ga gb = f ga gb
+instance Op2_ Kol  Kol  Kol  Kol  Koln Koln where op2 f ga gb = mapKoln (f ga) gb
+instance Op2_ Kol  Kol  Kol  Koln Kol  Koln where op2 f ga gb = mapKoln (flip f gb) ga
+instance Op2_ Kol  Kol  Kol  Koln Koln Koln where op2 f ga gb = bindKoln ga (flip mapKoln gb . f)
+
+-- The 'Op2_' instances above are sufficient for the tools offered by this
+-- module. Do we need to export the following ones?
+--
+-- instance Op2_ Kol  Kol  Koln Kol  Kol  Koln where op2 f ga gb = f ga gb
+-- instance Op2_ Kol  Kol  Koln Kol  Koln Koln where op2 f ga gb = bindKoln gb (f ga)
+-- instance Op2_ Kol  Kol  Koln Koln Kol  Koln where op2 f ga gb = bindKoln ga (flip f gb)
+-- instance Op2_ Kol  Kol  Koln Koln Koln Koln where op2 f ga gb = bindKoln ga (bindKoln gb . f)
+-- instance Op2_ Kol  Koln Kol  Kol  Kol  Kol  where op2 f ga gb = f ga (fromKol gb)
+-- instance Op2_ Kol  Koln Kol  Kol  Koln Kol  where op2 f ga gb = f ga gb
+-- instance Op2_ Kol  Koln Kol  Koln Kol  Koln where op2 f ga gb = mapKoln (flip f (fromKol gb)) ga
+-- instance Op2_ Kol  Koln Kol  Koln Koln Koln where op2 f ga gb = mapKoln (flip f gb) ga
+-- instance Op2_ Kol  Koln Koln Kol  Kol  Koln where op2 f ga gb = f ga (fromKol gb)
+-- instance Op2_ Kol  Koln Koln Kol  Koln Koln where op2 f ga gb = f ga gb
+-- instance Op2_ Kol  Koln Koln Koln Kol  Koln where op2 f ga gb = bindKoln ga (flip f (fromKol gb))
+-- instance Op2_ Kol  Koln Koln Koln Koln Koln where op2 f ga gb = bindKoln ga (flip f gb)
+-- instance Op2_ Koln Kol  Kol  Kol  Kol  Kol  where op2 f ga gb = f (fromKol ga) gb
+-- instance Op2_ Koln Kol  Kol  Kol  Koln Koln where op2 f ga gb = mapKoln (f (fromKol ga)) gb
+-- instance Op2_ Koln Kol  Kol  Koln Kol  Kol  where op2 f ga gb = f ga gb
+-- instance Op2_ Koln Kol  Kol  Koln Koln Koln where op2 f ga gb = mapKoln (f ga) gb
+-- instance Op2_ Koln Kol  Koln Kol  Kol  Koln where op2 f ga gb = f (fromKol ga) gb
+-- instance Op2_ Koln Kol  Koln Kol  Koln Koln where op2 f ga gb = bindKoln gb (f (fromKol ga))
+-- instance Op2_ Koln Kol  Koln Koln Kol  Koln where op2 f ga gb = f ga gb
+-- instance Op2_ Koln Kol  Koln Koln Koln Koln where op2 f ga gb = bindKoln gb (f ga)
+-- instance Op2_ Koln Koln Kol  Kol  Kol  Kol  where op2 f ga gb = f (fromKol ga) (fromKol gb)
+-- instance Op2_ Koln Koln Kol  Kol  Koln Kol  where op2 f ga gb = f (fromKol ga) gb
+-- instance Op2_ Koln Koln Kol  Koln Kol  Kol  where op2 f ga gb = f ga (fromKol gb)
+-- instance Op2_ Koln Koln Kol  Koln Koln Kol  where op2 f ga gb = f ga gb
+-- instance Op2_ Koln Koln Koln Kol  Kol  Koln where op2 f ga gb = f (fromKol ga) (fromKol gb)
+-- instance Op2_ Koln Koln Koln Kol  Koln Koln where op2 f ga gb = f (fromKol ga) gb
+-- instance Op2_ Koln Koln Koln Koln Kol  Koln where op2 f ga gb = f ga (fromKol gb)
+-- instance Op2_ Koln Koln Koln Koln Koln Koln where op2 f ga gb = f ga gb
+
+---
+class (Op3_ Kol Kol Kol Kol g g g g) => Op3' g
+instance (Op3_ Kol Kol Kol Kol g g g g) => Op3' g
+
+class (Op3_ Kol Kol Kol Kol ga gb gc gd) => Op3 ga gb gc gd
+instance (Op3_ Kol Kol Kol Kol ga gb gc gd) => Op3 ga gb gc gd
+
+-- | Instances of this class can be used to convert a ternary function @fa a ->
+-- fb b -> fc c -> fd d@ to a ternary function @ga a -> gb b -> gc c -> gd d@,
+-- where @fa@, @fb@, @fc@, @fd@, @ga@, @gb@ and @gc@ can be any combination of
+-- 'Kol' or 'Koln', with @gd@ fully determined by them, biasing towards 'Kol'.
+--
+-- Thanks to the 'KolLike' superclass and the functional dependency in this
+-- class, it is impossible to add new 'Op3_' instances. All the possible
+-- instances are already exported from this module.
+class (KolLike fa, KolLike fb, KolLike fc, KolLike fd) =>
+      Op3_ fa fb fc fd ga gb gc gd | fa fb fc fd ga gb gc -> gd where
+  -- | Convert a ternary function @fa a -> fb b -> fc c -> fd d@ to a ternary
+  -- function @ga a -> gb b -> gc c -> gd d@, where @fa@, @fb@, @fc@, @fd@,
+  -- @ga@, @gb@ and @gc@ can be any combination of 'Kol' or 'Koln', with @gd@
+  -- fully determined by them.
+  op3 :: (PgTyped a, PgTyped b, PgTyped c, PgTyped d)
+      => (fa a -> fb b -> fc c -> fd d)
+      -> (ga a -> gb b -> gc c -> gd d)
+
+instance Op3_ Kol Kol Kol Kol  Kol  Kol  Kol  Kol  where op3 f fa fb fc = f fa fb fc
+instance Op3_ Kol Kol Kol Kol  Kol  Kol  Koln Koln where op3 f fa fb gc = bindKoln gc (\fc -> fromKol (f fa fb fc))
+instance Op3_ Kol Kol Kol Kol  Kol  Koln Kol  Koln where op3 f fa gb fc = bindKoln gb (\fb -> fromKol (f fa fb fc))
+instance Op3_ Kol Kol Kol Kol  Kol  Koln Koln Koln where op3 f fa gb gc = bindKoln gb (\fb -> bindKoln gc (\fc -> fromKol (f fa fb fc)))
+instance Op3_ Kol Kol Kol Kol  Koln Kol  Kol  Koln where op3 f ga fb fc = bindKoln ga (\fa -> fromKol (f fa fb fc))
+instance Op3_ Kol Kol Kol Kol  Koln Kol  Koln Koln where op3 f ga fb gc = bindKoln ga (\fa -> bindKoln gc (\fc -> fromKol (f fa fb fc)))
+instance Op3_ Kol Kol Kol Kol  Koln Koln Kol  Koln where op3 f ga gb fc = bindKoln ga (\fa -> bindKoln gb (\fb -> fromKol (f fa fb fc)))
+instance Op3_ Kol Kol Kol Kol  Koln Koln Koln Koln where op3 f ga gb gc = bindKoln ga (\fa -> bindKoln gb (\fb -> bindKoln gc (\fc -> fromKol (f fa fb fc))))
+-- The 'Op3_' instances above are sufficient for the tools offered by this
+-- module. Do we need to export more?
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This belongs in Opaleye
+
+unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
+unsafeUnNullableColumn = O.unsafeCoerceColumn
+
+pgFloat4 :: Float -> O.Column O.PGFloat4
+pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
+
+pgFloat8 :: Float -> O.Column O.PGFloat8
+pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double
+
+-- | Orphan. "Opaleye.SOT.Internal".
+instance OI.QueryRunnerColumnDefault O.PGFloat4 Float where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+
+-- | Orphan. "Opaleye.SOT.Internal".
+instance OI.PGFractional O.PGFloat4 where
+  pgFromRational = pgFloat4 . fromRational
+
+-- | Orphan. "Opaleye.SOT.Internal".
+instance OI.PGNum O.PGFloat4 where
+  pgFromInteger = pgFloat4 . fromInteger
+
+--------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 -- Misc
 
@@ -1312,267 +1435,3 @@ instance HDistributeProxy ('[] :: [k]) where
 instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x ': xs) where
   hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
 
----
-
-unRecord :: HL.Record xs -> HList xs
-unRecord = \(HL.Record x) -> x
-{-# INLINE unRecord #-}
-
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
--- Belongs in Opaleye
-
-unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
-unsafeUnNullableColumn = O.unsafeCoerceColumn
-
-pgFloat4 :: Float -> O.Column O.PGFloat4
-pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
-
-pgFloat8 :: Float -> O.Column O.PGFloat8
-pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double
-
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
--- Support for overloaded unary operators working on Kol or Koln
-
--- |This is just a synonym for 'Op1'' in order to reduce the noise in the
--- Hadocks.
-type Op1 a b fa fb xa xb = Op1' a b fa fb xa xb
-
--- | Internal. Do not add any new 'Op1'' instances.
---
--- Instances of this class can be used to convert an unary function
--- @(fa -> fb)@ to an unary function @(xa -> xb)@, provided the functional
--- dependencies are satisfied.
---
--- We use the instances of this class to predicatably generalize the
--- type of negative and positive arguments to unary functions on 'Kol' or
--- 'Koln'.
-class (PgTyped a, PgTyped b) => Op1' a b fa fb xa xb | fa -> a, fb -> b, xa -> a, xb -> b, xa fa fb -> xb where
-  -- | Generalize the negative and positive arguments of the given function
-  -- so that it works for as many combinations of @('Kol' x)@, @('Koln' x)@,
-  -- @('Tagged' ('TC' t c) ('Kol' x))@ or @('Tagged' ('TC' t c) ('Koln' x))@ as
-  -- possible.
-  op1 :: (fa -> fb) -> (xa -> xb)
-
--- Note: possibly some of these instances could be generalized, but it's hard
--- to keep track of them, so I write all the possible combinations explicitely.
-
--- | kk -> kk
-instance (PgTyped a, PgTyped b) => Op1' a b (Kol a) (Kol b) (Kol a) (Kol b) where op1 f ka = f ka
--- | kk -> nn
-instance (PgTyped a, PgTyped b) => Op1' a b (Kol a) (Kol b) (Koln a) (Koln b) where op1 f na = mapKoln f na
--- | kk -> tx
-instance (Op1' a b (Kol a) (Kol b) xa xb) => Op1' a b (Kol a) (Kol b) (Tagged (TC t c) xa) xb where op1 f (Tagged xa) = op1 f xa
--- | kn -> kn
-instance (PgTyped a, PgTyped b) => Op1' a b (Kol a) (Koln b) (Kol a) (Koln b) where op1 f ka = f ka
--- | kn -> nn
-instance (PgTyped a, PgTyped b) => Op1' a b (Kol a) (Koln b) (Koln a) (Koln b) where op1 f na = bindKoln na f
--- | kn -> tn
-instance (Op1' a b (Kol a) (Koln b) xa (Koln b)) => Op1' a b (Kol a) (Koln b) (Tagged (TC t c) xa) (Koln b) where op1 f (Tagged xa) = op1 f xa
--- | nk -> kk
-instance (PgTyped a, PgTyped b) => Op1' a b (Koln a) (Kol b) (Kol a) (Kol b) where op1 f ka = f (fromKol ka)
--- | nk -> nk
-instance (PgTyped a, PgTyped b) => Op1' a b (Koln a) (Kol b) (Koln a) (Kol b) where op1 f na = f na
--- | nk -> tk
-instance (Op1' a b (Koln a) (Kol b) xa (Kol b)) => Op1' a b (Koln a) (Kol b) (Tagged (TC t c) xa) (Kol b) where op1 f (Tagged xa) = op1 f xa
--- | nn -> kn
-instance (PgTyped a, PgTyped b) => Op1' a b (Koln a) (Koln b) (Kol a) (Koln b) where op1 f ka = f (fromKol ka)
--- | nn -> nn
-instance (PgTyped a, PgTyped b) => Op1' a b (Koln a) (Koln b) (Koln a) (Koln b) where op1 f na = f na
--- | nn -> tn
-instance (Op1' a b (Koln a) (Koln b) xa (Koln b)) => Op1' a b (Koln a) (Koln b) (Tagged (TC t c) xa) (Koln b) where op1 f (Tagged xa) = op1 f xa
-
---------------------------------------------------------------------------------
--- Support for overloaded binary operators working on Kol or Koln
-
--- |This is just a synonym for 'Op2'' in order to reduce the noise in the
--- Hadocks.
-type Op2 a b c fa fb fc xa xb xc = Op2' a b c fa fb fc xa xb xc
-
--- | Internal. Do not add any new 'Op2'' instances.
---
--- Instances of this class can be used to convert an unary function
--- @(fa -> fb)@ to an unary function @(xa -> xb)@, provided the functional
--- dependencies are satisfied.
---
--- We use the instances of this class to predicatably generalize the
--- type of negative and positive arguments to unary functions on 'Kol' or
--- 'Koln'.
-class (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c fa fb fc xa xb xc | fa -> a, fb -> b, fc -> c, xa -> a, xb -> b, xc -> c, xa xb fa fb fc -> xc where
-  -- | Generalize the negative and positive arguments of the given function
-  -- so that it works for as many combinations of @('Kol' x)@, @('Koln' x)@,
-  -- @('Tagged' ('TC' t c) ('Kol' x))@ or @('Tagged' ('TC' t c) ('Koln' x))@ as
-  -- possible.
-  op2 :: (fa -> fb -> fc) -> (xa -> xb -> xc)
-
--- Note: possibly some of these instances could be generalized, but it's hard
--- to keep track of them, so I write all the possible combinations explicitely.
-
--- | kkk -> kkk -- @k@ means 'Kol'
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f ka kb
--- | kkk -> knn -- @n@ means 'Koln'
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = mapKoln (f ka) nb
--- | kkk -> ktx -- @t@ means 'Tagged' with 'TC', @x@ means any.
-instance (Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) xb xc) => Op2' a b c (Kol a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where op2 f ka (Tagged xb) = op2 f ka xb
--- | kkk -> nkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Kol b) (Koln c) where op2 f na kb = mapKoln (flip f kb) na
--- | kkk -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (\ka -> mapKoln (f ka) nb)
--- | kkk -> ntn
-instance (Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
--- | kkk -> tkx
-instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa (Kol b) xc) => Op2' a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) xc  where op2 f (Tagged xa) kb = op2 f xa kb
--- | kkk -> tnk
-instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | kkk -> ttx
-instance (Op2' a b c (Kol a) (Kol b) (Kol c) xa xb xc) => Op2' a b c (Kol a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | kkn -> kkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f ka kb
--- | kkn -> knn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = bindKoln nb (f ka)
--- | kkn -> ktn
-instance (Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
--- | kkn -> nkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = bindKoln na (flip f kb)
--- | kkn -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (\ka -> bindKoln nb (f ka))
--- | kkn -> ntn
-instance (Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
--- | kkn -> tkn
-instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c) where op2 f (Tagged xa) kb = op2 f xa kb
--- | kkn -> tnn
-instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | kkn -> ttn
-instance (Op2' a b c (Kol a) (Kol b) (Koln c) xa xb (Koln c)) => Op2' a b c (Kol a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | knk -> kkk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f ka (fromKol kb)
--- | knk -> knk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where op2 f ka nb = f ka nb
--- | knk -> ktk
-instance (Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Op2' a b c (Kol a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where op2 f ka (Tagged xb) = op2 f ka xb
--- | knk -> nkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Kol b) (Koln c) where op2 f na kb = mapKoln (flip f (fromKol kb)) na
--- | knk -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = mapKoln (flip f nb) na
--- | knk -> ntn
-instance (Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
--- | knk -> tkx
-instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa (Kol b) xc) => Op2' a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) xc  where op2 f (Tagged xa) kb = op2 f xa kb
--- | knk -> tnx
-instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | knk -> ttx
-instance (Op2' a b c (Kol a) (Koln b) (Kol c) xa xb xc) => Op2' a b c (Kol a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | knn -> kkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f ka (fromKol kb)
--- | knn -> knn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = f ka nb
--- | knn -> ktn
-instance (Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
--- | knn -> nkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = bindKoln na (flip f (fromKol kb))
--- | knn -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln na (flip f nb)
--- | knn -> ntn
-instance (Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
--- | knn -> tkn
-instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c) where op2 f (Tagged xa) kb = op2 f xa kb
--- | knn -> tnn
-instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | knn -> ttn
-instance (Op2' a b c (Kol a) (Koln b) (Koln c) xa xb (Koln c)) => Op2' a b c (Kol a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | nkk -> kkk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f (fromKol ka) kb
--- | nkk -> knn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = mapKoln (f (fromKol ka)) nb
--- | nkk -> ktx
-instance (Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) xb xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) xc where op2 f ka (Tagged xb) = op2 f ka xb
--- | nkk -> nkk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Kol b) (Kol c) where op2 f na kb = f na kb
--- | nkk -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Koln b) (Koln c) where op2 f na nb = mapKoln (f na) nb
--- | nkk -> ntx
-instance (Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) xb xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) xc where op2 f na (Tagged xb) = op2 f na xb
--- | nkk -> tkk
-instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa (Kol b) xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) xc  where op2 f (Tagged xa) kb = op2 f xa kb
--- | nkk -> tnn
-instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa (Koln b) (Koln c)) => Op2' a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | nkk -> ttx
-instance (Op2' a b c (Koln a) (Kol b) (Kol c) xa xb xc) => Op2' a b c (Koln a) (Kol b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) xc where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | nkn -> kkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f (fromKol ka) kb
--- | nkn -> knn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = bindKoln nb (f (fromKol ka))
--- | nkn -> ktn
-instance (Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
--- | nkn -> nkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = f na kb
--- | nkn -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = bindKoln nb (f na)
--- | nkn -> ntn
-instance (Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
--- | nkn -> tkn
-instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c) where op2 f (Tagged xa) kb = op2 f xa kb
--- | nkn -> tnn
-instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | nkn -> ttn
-instance (Op2' a b c (Koln a) (Kol b) (Koln c) xa xb (Koln c)) => Op2' a b c (Koln a) (Kol b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | nnk -> kkk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Kol b) (Kol c) where op2 f ka kb = f (fromKol ka) (fromKol kb)
--- | nnk -> knk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Koln b) (Kol c) where op2 f ka nb = f (fromKol ka) nb
--- | nnk -> ktk
-instance (Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) xb (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Kol a) (Tagged (TC tb cb) xb) (Kol c) where op2 f ka (Tagged xb) = op2 f ka xb
--- | nnk -> nkk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Kol b) (Kol c) where op2 f na kb = f na (fromKol kb)
--- | nnk -> nnk
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Koln b) (Kol c) where op2 f na nb = f na nb
--- | nnk -> ntk
-instance (Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) xb (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Koln a) (Tagged (TC tb cb) xb) (Kol c) where op2 f na (Tagged xb) = op2 f na xb
--- | nnk -> tkk
-instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa (Kol b) (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Kol b) (Kol c)  where op2 f (Tagged xa) kb = op2 f xa kb
--- | nnk -> tnk
-instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa (Koln b) (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Koln b) (Kol c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | nnk -> ttk
-instance (Op2' a b c (Koln a) (Koln b) (Kol c) xa xb (Kol c)) => Op2' a b c (Koln a) (Koln b) (Kol c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Kol c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
--- | nnn -> kkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Kol b) (Koln c) where op2 f ka kb = f (fromKol ka) (fromKol kb)
--- | nnn -> knn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Koln b) (Koln c) where op2 f ka nb = f (fromKol ka) nb
--- | nnn -> ktn
-instance (Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) xb (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Kol a) (Tagged (TC tb cb) xb) (Koln c) where op2 f ka (Tagged xb) = op2 f ka xb
--- | nnn -> nkn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Kol b) (Koln c) where op2 f na kb = f na (fromKol kb)
--- | nnn -> nnn
-instance (PgTyped a, PgTyped b, PgTyped c) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Koln b) (Koln c) where op2 f na nb = f na nb
--- | nnn -> ntn
-instance (Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) xb (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Koln a) (Tagged (TC tb cb) xb) (Koln c) where op2 f na (Tagged xb) = op2 f na xb
--- | nnn -> tkn
-instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa (Kol b) (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Kol b) (Koln c)  where op2 f (Tagged xa) kb = op2 f xa kb
--- | nnk -> tnn
-instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa (Koln b) (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Koln b) (Koln c) where op2 f (Tagged xa) nb = op2 f xa nb
--- | nnn -> ttn
-instance (Op2' a b c (Koln a) (Koln b) (Koln c) xa xb (Koln c)) => Op2' a b c (Koln a) (Koln b) (Koln c) (Tagged (TC ta ca) xa) (Tagged (TC tb cb) xb) (Koln c) where op2 f (Tagged xa) (Tagged xb) = op2 f xa xb
-
-
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
--- This belongs in Opaleye
-
-instance OI.QueryRunnerColumnDefault O.PGFloat4 Float where
-  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance OI.PGFractional O.PGFloat4 where
-  pgFromRational = pgFloat4 . fromRational
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance OI.PGNum O.PGFloat4 where
-  pgFromInteger = pgFloat4 . fromInteger
