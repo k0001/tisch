@@ -335,6 +335,7 @@ class PgPrimType p => ToKol (a :: *) (p :: *) where
 -- instance {-# OVERLAPPABLE #-} ToKol a p => ToKol [a] (O.PGArray p) where
 --    kol = ... wait for https://github.com/tomjaguarpaw/haskell-opaleye/pull/154
 
+instance ToKol a p => ToKol (Tagged t a) p
 instance ToKol String O.PGText where kol = Kol . O.pgString
 instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
 instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
