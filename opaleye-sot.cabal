@@ -23,6 +23,9 @@ library
       Opaleye.SOT.Run
       Opaleye.SOT.Extra
       Opaleye.SOT.Internal
+      Opaleye.SOT.Internal.Profunctors
+      Opaleye.SOT.Internal.Record
+      Opaleye.SOT.Internal.Singletons
   build-depends:
       -- NOTE: The dependencies without specific version ranges are transitional
       aeson
@@ -30,17 +33,17 @@ library
     , bytestring
     , case-insensitive
     , exceptions >=0.8 && <0.9
-    , HList >=0.4 && <0.5
-    , lens >=4.12 && <4.14
+    , lens >=4.14 && <4.15
     , mtl >=2.2 && <2.3
-    , opaleye >=0.4 && <0.5
+    , opaleye >=0.5 && <0.6
     , postgresql-simple
     , product-profunctors
     , profunctors
     , semigroups
-    , singletons >=1.1 && <2.1
+    , singletons >=2.1 && <2.2
+    , tagged
     , text
-    , transformers >=0.4 && <0.5
+    , transformers >=0.5 && <0.6
     , time
     , uuid
   ghc-options: -Wall -O
@@ -54,7 +57,6 @@ test-suite tests
   ghc-options: -Wall -rtsopts -O0
   build-depends:
       base
-    , HList
     , lens
     , mtl
     , opaleye

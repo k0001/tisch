@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -15,9 +16,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
@@ -29,6 +32,7 @@ import           Control.Lens
 import           Control.Monad (MonadPlus(..))
 import           Control.Monad.Fix (MonadFix(..))
 import           Data.Data (Data)
+import           Data.Kind
 import           Data.Foldable
 import           Data.Typeable (Typeable)
 import qualified Data.Aeson
@@ -41,17 +45,17 @@ import qualified Data.Time
 import qualified Data.UUID
 import           Data.Int
 import           Data.Proxy (Proxy(..))
-import           Data.HList (Tagged(Tagged, unTagged), HList(HCons, HNil))
-import qualified Data.HList as HL
 import qualified Data.Profunctor as P
-import qualified Data.Profunctor.Product as PP
 import qualified Data.Profunctor.Product.Default as PP
-import           Data.Singletons
 import qualified Data.Promotion.Prelude.List as List (Map)
+import           Data.Singletons
+import           Data.Tagged
 import           GHC.Exts (Constraint)
+import qualified GHC.OverloadedLabels as GHC
 import           GHC.Generics (Generic)
 import           GHC.Float (float2Double)
 import qualified GHC.TypeLits as GHC
+import           GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
@@ -60,13 +64,19 @@ import qualified Opaleye.Internal.RunQuery as OI
 import qualified Opaleye.Internal.Join as OI
 import qualified Opaleye.Internal.TableMaker as OI
 
+import qualified Opaleye.SOT.Internal.Profunctors as PP
+import           Opaleye.SOT.Internal.Record (Record(RNil, RCons))
+import qualified Opaleye.SOT.Internal.Record as Record
+import           Opaleye.SOT.Internal.Singletons ((:&&&$$$))
+
 -------------------------------------------------------------------------------
 
 -- | Hack to workaround the current represenation for nullable columns.
 -- See 'Koln'.
 type family NotNullable (x :: k) :: Constraint where
-  NotNullable (O.Nullable x) =
-     "NotNullable" ~ "NotNullable: expected `x` but got `Nullable x`"
+  NotNullable (O.Nullable x) = GHC.TypeError
+    ('GHC.Text "NotNullable got Nullable: " 'GHC.:<>:
+     'GHC.ShowType (O.Nullable x))
   NotNullable x = ()
 
 -- | Only 'PgPrimType' instances are allowed as indexes to @opaleye@'s
@@ -75,8 +85,14 @@ type family NotNullable (x :: k) :: Constraint where
 -- You probably won't be adding new 'PgPrimType' instances yourself,
 -- unless you are trying to represent a concrete PostgreSQL data type, but even
 -- then you might get away with creating 'PgTyped' instances instead.
-class NotNullable a => PgPrimType (a :: k) where
+class PgPrimType (a :: k) where
   pgPrimTypeName :: proxy a -> String
+
+instance GHC.TypeError
+  ( 'GHC.Text "Invalid PgPrimType (can't be Nullable): "
+       'GHC.:<>: 'GHC.ShowType (O.Nullable a)
+  ) => PgPrimType (O.Nullable a) where
+  pgPrimTypeName = error "impossible"
 
 instance forall a. PgPrimType a => PgPrimType (O.PGArray a) where
   pgPrimTypeName _ = pgPrimTypeName (Proxy :: Proxy a) ++ "[]"
@@ -146,7 +162,7 @@ class PgPrimType (PgType a) => PgTyped (a :: k) where
   --   instantiating @'PgNum' UserId@ and/or @'PgFractional' UserId@. Most
   --   likely you won't need this for cases such as @UserId@, since you
   --   shouldn't be doing arithmetic with user identifiers anyway.
-  type PgType a :: *
+  type PgType a :: Type
 
 instance PgTyped O.PGBool where type PgType O.PGBool = O.PGBool
 instance PgTyped O.PGBytea where type PgType O.PGBytea = O.PGBytea
@@ -165,7 +181,7 @@ instance PgTyped O.PGTimestamptz where type PgType O.PGTimestamptz = O.PGTimesta
 instance PgTyped O.PGTimestamp where type PgType O.PGTimestamp = O.PGTimestamp
 instance PgTyped O.PGTime where type PgType O.PGTime = O.PGTime
 instance PgTyped O.PGUuid where type PgType O.PGUuid = O.PGUuid
-instance (PgPrimType a, PgTyped a) => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray a
+instance PgPrimType a => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray a
 
 -------------------------------------------------------------------------------
 
@@ -183,7 +199,7 @@ instance PgNum O.PGInt8
 instance PgNum O.PGFloat4
 instance PgNum O.PGFloat8
 
-instance (PgTyped a, PgNum a, Num (O.Column (PgType a))) => Num (Kol a) where
+instance (PgNum a, Num (O.Column (PgType a))) => Num (Kol a) where
   fromInteger = Kol . fromInteger
   (*) = liftKol2 (*)
   (+) = liftKol2 (+)
@@ -274,8 +290,7 @@ liftKol3
 liftKol3 f = op3 (\ka kb kc -> Kol (f (unKol ka) (unKol kb) (unKol kc)))
 
 instance
-    ( PgTyped a
-    , Profunctor p, PP.Default p (O.Column (PgType a)) (O.Column b)
+    ( Profunctor p, PP.Default p (O.Column (PgType a)) (O.Column b)
     ) => PP.Default p (Kol a) (O.Column b) where
   def = P.lmap unKol PP.def
 
@@ -285,13 +300,13 @@ instance forall p a b.
   def = P.rmap Kol (PP.def :: p (O.Column a) (O.Column (PgType b)))
 
 instance forall p a b.
-    ( PgTyped a, PgTyped b
+    ( PgTyped b
     , Profunctor p, PP.Default p (O.Column (PgType a)) (O.Column (PgType b))
     ) => PP.Default p (Kol a) (Kol b) where
   def = P.dimap unKol Kol (PP.def :: p (O.Column (PgType a)) (O.Column (PgType b)))
 
 instance
-    ( PgTyped a, PP.Default O.QueryRunner (O.Column (PgType a)) b
+    ( PP.Default O.QueryRunner (O.Column (PgType a)) b
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
 
@@ -316,7 +331,7 @@ instance
 -- converting 'Int' to 'O.PGInt4'. If this is fixed upstream,
 -- we might go back to relying on 'O.Constant' if suitable. See
 -- https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
-class PgPrimType p => ToKol (a :: *) (p :: *) where
+class PgPrimType p => ToKol (a :: Type) (p :: Type) where
   -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
   -- PostgreSQL representation as a @('Kol' 'O.PGBool')@.
   --
@@ -453,14 +468,14 @@ instance {-# OVERLAPPABLE #-} forall p x a.
 
 -- | OVERLAPPABLE.
 instance {-# OVERLAPPABLE #-}
-    ( P.Profunctor p, PgTyped a
+    ( P.Profunctor p
     , PP.Default p (O.Column (O.Nullable (PgType a))) x
     ) => PP.Default p (Koln a) x where
   def = P.lmap unKoln PP.def
   {-# INLINE def #-}
 
 instance
-    ( P.Profunctor p, PgTyped a, PgTyped b
+    ( P.Profunctor p, PgTyped b
     , PP.Default p (O.Column (O.Nullable (PgType a))) (O.Column (O.Nullable (PgType b)))
     ) => PP.Default p (Koln a) (Koln b) where
   def = P.dimap unKoln Koln (PP.def :: p (O.Column (O.Nullable (PgType a)))
@@ -582,7 +597,7 @@ instance MonadFix WDef where
 -- | Column description.
 --
 -- This is only used as a promoted datatype expected to have kind
--- @'Col' 'GHC.Symbol' 'WD' 'RN' * *@.
+-- @'Col' 'Symbol' 'WD' 'RN' 'Type' 'Type'@.
 --
 -- * @name@: Column name.
 --
@@ -606,85 +621,44 @@ data Col name wd rn pgType hsType
 
 --
 
-type family Col_Name (col :: Col GHC.Symbol WD RN * *) :: GHC.Symbol where
+type family Col_Name (col :: Col Symbol WD RN Type Type) :: Symbol where
   Col_Name ('Col n w r p h) = n
-data Col_NameSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) GHC.Symbol)
+data Col_NameSym0 (col :: TyFun (Col Symbol WD RN Type Type) Symbol)
 type instance Apply Col_NameSym0 col = Col_Name col
 
-type family Col_PgType (col :: Col GHC.Symbol WD RN * *) :: * where
+type family Col_PgType (col :: Col Symbol WD RN Type Type) :: Type where
   Col_PgType ('Col n w r p h) = p
-data Col_PgTypeSym0 (col :: TyFun (Col GHC.Symbol WD RN * *) *)
+data Col_PgTypeSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
 type instance Apply Col_PgTypeSym0 col = Col_PgType col
 
-type family Col_PgRType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRType ('Col n w 'R  p h) = Kol p
-  Col_PgRType ('Col n w 'RN p h) = Koln p
+type family Col_PgR (col :: Col Symbol WD RN Type Type) :: Type where
+  Col_PgR ('Col n w 'R  p h) = Kol p
+  Col_PgR ('Col n w 'RN p h) = Koln p
+data Col_PgRSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
+type instance Apply Col_PgRSym0 col = Col_PgR col
 
-type family Col_PgRNType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRNType ('Col n w r p h) = Koln p
+type family Col_PgRN (col :: Col Symbol WD RN Type Type) :: Type where
+  Col_PgRN ('Col n w r p h) = Koln p
+data Col_PgRNSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
+type instance Apply Col_PgRNSym0 col = Col_PgRN col
 
-type family Col_PgWType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgWType ('Col n 'W  r p h) = Col_PgRType ('Col n 'W r p h)
-  Col_PgWType ('Col n 'WD r p h) = WDef (Col_PgRType ('Col n 'WD r p h))
+type family Col_PgW (col :: Col Symbol WD RN Type Type) :: Type where
+  Col_PgW ('Col n 'W  r p h) = Col_PgR ('Col n 'W r p h)
+  Col_PgW ('Col n 'WD r p h) = WDef (Col_PgR ('Col n 'WD r p h))
+data Col_PgWSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
+type instance Apply Col_PgWSym0 col = Col_PgW col
 
-type family Col_HsRType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsRType ('Col n w 'R  p h) = h
-  Col_HsRType ('Col n w 'RN p h) = Maybe h
+type family Col_HsR (col :: Col Symbol WD RN Type Type) :: Type where
+  Col_HsR ('Col n w 'R  p h) = h
+  Col_HsR ('Col n w 'RN p h) = Maybe h
+data Col_HsRSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
+type instance Apply Col_HsRSym0 col = Col_HsR col
 
-type family Col_HsIType (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_HsIType ('Col n 'W  r p h) = Col_HsRType ('Col n 'W r p h)
-  Col_HsIType ('Col n 'WD r p h) = WDef (Col_HsRType ('Col n 'WD r p h))
-
----
-
--- | Lookup a column in @'Tabla' t@ by its name.
-type Col_ByName t (c :: GHC.Symbol) = Col_ByName' c (Cols t)
-type family Col_ByName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Col GHC.Symbol WD RN * * where
-  Col_ByName' n ('Col n  w r p h ': xs) = 'Col n w r p h
-  Col_ByName' n ('Col n' w r p h ': xs) = Col_ByName' n xs
-
-type HasColName t (c :: GHC.Symbol) =  HasColName' c (Cols t)
-type family HasColName' (name :: GHC.Symbol) (cols :: [Col GHC.Symbol WD RN * *]) :: Constraint where
-  HasColName' n ('Col n  w r p h ': xs) = ()
-  HasColName' n ('Col n' w r p h ': xs) = HasColName' n xs
-
----
-
--- | Payload for @('HsR' t)@
-type Cols_HsR t = List.Map (Col_HsRFieldSym1 t) (Cols t)
-type Col_HsRField t (col :: Col GHC.Symbol WD RN * *)
-  = TCa t (Col_Name col) (Col_HsRType col)
-data Col_HsRFieldSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_HsRFieldSym1 t) col = Col_HsRField t col
-
--- | Payload for @('HsI' t)@
-type Cols_HsI t = List.Map (Col_HsIFieldSym1 t) (Cols t)
-type Col_HsIField t (col :: Col GHC.Symbol WD RN * *)
-  = TCa t (Col_Name col) (Col_HsIType col)
-data Col_HsIFieldSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_HsIFieldSym1 t) col = Col_HsIField t col
-
--- | Payload for @('PgR' t)@
-type Cols_PgR t = List.Map (Col_PgRSym1 t) (Cols t)
-type family Col_PgR t (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgR t ('Col n w r p h) = TCa t n (Col_PgRType ('Col n w r p h))
-data Col_PgRSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgRSym1 t) col = Col_PgR t col
-
--- | Payload for @('PgRN' t)@
-type Cols_PgRN t = List.Map (Col_PgRNSym1 t) (Cols t)
-type family Col_PgRN t (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgRN t ('Col n w r p h) = TCa t n (Col_PgRNType ('Col n w r p h))
-data Col_PgRNSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgRNSym1 t) col = Col_PgRN t col
-
--- | Type of the 'HL.Record' columns when inserting or updating a row. Also,
--- payload for @('PgW' t)@.
-type Cols_PgW t = List.Map (Col_PgWSym1 t) (Cols t)
-type family Col_PgW t (col :: Col GHC.Symbol WD RN * *) :: * where
-  Col_PgW t ('Col n w r p h) = TCa t n (Col_PgWType ('Col n w r p h))
-data Col_PgWSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PgWSym1 t) col = Col_PgW t col
+type family Col_HsI (col :: Col Symbol WD RN Type Type) :: Type where
+  Col_HsI ('Col n 'W  r p h) = Col_HsR ('Col n 'W r p h)
+  Col_HsI ('Col n 'WD r p h) = WDef (Col_HsR ('Col n 'WD r p h))
+data Col_HsISym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
+type instance Apply Col_HsISym0 col = Col_HsI col
 
 --------------------------------------------------------------------------------
 
@@ -694,18 +668,19 @@ data T (t :: k) = Tabla t => T
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in a specific table in a specific schema.
-data TC (t :: k) (c :: GHC.Symbol) = Tabla t => TC
+data TC (t :: k) (c :: Symbol) = Tabla t => TC
 
-type TCa (t :: k) (c :: GHC.Symbol) = Tagged (TC t c)
+type TCa (t :: k) (c :: Symbol) = Tagged (TC t c)
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
-data C (c :: GHC.Symbol) = C
+data C (c :: Symbol) = C
 
 --------------------------------------------------------------------------------
-
--- | All the representation of @t@ used within @opaleye-sot@ are @('Rec' t)@.
-type Rec t xs = Tagged (T t) (HL.Record xs)
+-- Note: By using newtype wrappers, instead of just type synonyms, we can
+-- provide nicer error messages to the users at the small cost of a bit more
+-- complicated implementation for us (e.g., the implementation of `col` could be
+-- generalized otherwise).
 
 -- | Expected output type for 'O.runQuery' on a @('PgR' t)@.
 --
@@ -713,7 +688,8 @@ type Rec t xs = Tagged (T t) (HL.Record xs)
 -- of a 'O.leftJoin', you will need to use @('Maybe' ('PgR' t))@.
 --
 -- Mnemonic: Haskell Read.
-type HsR t = Rec t (Cols_HsR t)
+newtype HsR t = HsR
+  { unHsR :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)) }
 
 -- | @'HsI' t@ is the Haskell representation of Haskell values to be inserted to
 -- the database, as taken by "Opaleye.SOT.Run.runInsertTabla".
@@ -722,18 +698,21 @@ type HsR t = Rec t (Cols_HsR t)
 -- case you need that for with the more general "Opaleye.SOT.Run.runInsert".
 --
 -- Mnemonic: Haskell Insert.
-type HsI t = Rec t (Cols_HsI t)
+newtype HsI t = HsI
+  { unHsI :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)) }
 
 -- | Output type of @'queryTabla' ('T' t)@.
 --
 -- Mnemonic: PostGresql Read.
-type PgR t = Rec t (Cols_PgR t)
+newtype PgR t = PgR
+  { unPgR :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)) }
 
 -- | Like @('PgRN' t)@ but every field is 'Koln', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'('table' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
-type PgRN t = Rec t (Cols_PgRN t)
+newtype PgRN t = PgRN
+  { unPgRN :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)) }
 
 -- | Representation of PostgreSQL values to be written to the database. This
 -- type can be used as input for "Opaleye.SOT.Run.runInsert" and similar.
@@ -741,7 +720,8 @@ type PgRN t = Rec t (Cols_PgRN t)
 -- An @'HsI' t@ can always be converted to a @'PgW' t@ using 'pgWfromHsI', in
 --
 -- Mnemonic: PostGresql Write.
-type PgW t = Rec t (Cols_PgW t)
+newtype PgW t = PgW
+  { unPgW :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)) }
 
 --------------------------------------------------------------------------------
 
@@ -750,22 +730,21 @@ type PgW t = Rec t (Cols_PgW t)
 -- superclass of 'Tabla'. Moreover, they enforce some sanity constraints on our
 -- 'Tabla' so that we can get early compile time errors.
 type ITabla t
-  = ( GHC.KnownSymbol (SchemaName t)
-    , GHC.KnownSymbol (TableName t)
-    , All PgTyped (List.Map Col_PgTypeSym0 (Cols t))
-    , HDistributeProxy (Cols t)
-    , HL.HMapAux HList (FnCol_Props t) (List.Map ProxySym0 (Cols t)) (Cols_Props t)
-    , HL.HMapAux HList (HL.HFmap FnPgWfromHsIField) (Cols_HsI t) (Cols_PgW t)
-    , HL.HMapAux HList (HL.HFmap FnPgWfromPgRField) (Cols_PgR t) (Cols_PgW t)
-    , HL.HRLabelSet (Cols_HsR t)
-    , HL.HRLabelSet (Cols_HsI t)
-    , HL.HRLabelSet (Cols_PgR t)
-    , HL.HRLabelSet (Cols_PgRN t)
-    , HL.HRLabelSet (Cols_PgW t)
-    , HL.SameLength (Cols_Props t) (List.Map ProxySym0 (Cols t))
-    , HL.SameLength (Cols_HsI t) (Cols_PgW t)
-    , HL.SameLength (Cols_PgR t) (Cols_PgW t)
-    , ProductProfunctorAdaptor O.TableProperties (HL.Record (Cols_Props t)) (HL.Record (Cols_PgW t)) (HL.Record (Cols_PgR t))
+  = ( KnownSymbol (SchemaName t)
+    , KnownSymbol (TableName t)
+    , All PgTyped (List.Map (Col_PgTypeSym0) (Cols t))
+    , RDistributeColProps (Cols t)
+    , Record.RMap FnPgWfromPgRField
+         (List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t))
+         (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t))
+    , Record.RMap FnPgWfromHsIField
+         (List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t))
+         (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t))
+    , PP.ProductProfunctorAdaptor
+         O.TableProperties
+         (Record (List.Map (Col_NameSym0 :&&&$$$ Col_PropsSym0) (Cols t)))
+         (Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)))
+         (Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)))
     , PP.Default OI.ColumnMaker (PgR t) (PgR t)
     )
 
@@ -781,15 +760,15 @@ class ITabla t => Tabla (t :: k) where
   -- | Some kind of unique identifier used for telling appart the database where
   -- this table exists from other databases, so as to avoid accidentally mixing
   -- tables from different databases in queries.
-  type Database t :: *
+  type Database t :: Type
   -- | PostgreSQL schema name where to find the table (defaults to @"public"@,
   -- PostgreSQL's default schema name).
-  type SchemaName t :: GHC.Symbol
+  type SchemaName t :: Symbol
   type SchemaName t = "public"
   -- | Table name.
-  type TableName t :: GHC.Symbol
+  type TableName t :: Symbol
   -- | Columns in this table. See the documentation for 'Col'.
-  type Cols t :: [Col GHC.Symbol WD RN * *]
+  type Cols t :: [Col Symbol WD RN Type Type]
 
 --------------------------------------------------------------------------------
 
@@ -802,7 +781,7 @@ class ITabla t => Tabla (t :: k) where
 -- @
 -- personToHsI :: Person -> HsI TPerson
 -- personToHsI (Person name age) =
---    'mkHsI' (T :: TPerson) $ \\set_ -> 'HL.hBuild'
+--    'kHsI' (T :: TPerson) $ \\set_ -> 'HL.hBuild'
 --        (set_ ('C' :: 'C' "name") name)
 --        (set_ ('C' :: 'C' "age") age)
 -- @
@@ -810,32 +789,39 @@ class ITabla t => Tabla (t :: k) where
 -- You are not required to use this function to build an @'HsI' t@ if working
 -- with the tools from "Data.HList" is sufficient for you. This is just a
 -- convenience.
+-- TODO mkHsI
+-- TODO   :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
+-- TODO   => T t
+-- TODO   -> ((forall c a. (C c -> a -> TCa t c a)) -> HList xs)
+-- TODO   -> HsI t -- ^
+-- TODO mkHsI (T::T t) k
+-- TODO   = Tagged
+-- TODO   $ HL.Record
+-- TODO   $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
+-- TODO   $ k (const Tagged)
+-- TODO {-# INLINE mkHsI #-}
+
+-- No good!
 mkHsI
-  :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
-  => T t
-  -> ((forall c a. (C c -> a -> TCa t c a)) -> HList xs)
-  -> HsI t -- ^
-mkHsI (T::T t) k
-  = Tagged
-  $ HL.Record
-  $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
-  $ k (const Tagged)
-{-# INLINE mkHsI #-}
+  :: (Tabla t, Record.RBuild' ('[] :: [(Symbol,Type)]) builder)
+  => (builder -> Record (List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)))
+  -> HsI t
+mkHsI f = HsI (f Record.rBuildSymbol)
+
 
 --------------------------------------------------------------------------------
 
--- | Use with 'HL.ApplyAB' to apply convert a field in a
--- @('HList' ('Cols_HsI' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
+-- | To be used with 'Record.ApplyAB'.
 data FnPgWfromHsIField = FnPgWfromHsIField
-instance HL.ApplyAB FnPgWfromHsIField x x where
+instance Record.ApplyAB FnPgWfromHsIField x x where
   applyAB _ = id
-instance (PgTyped b, PgType b ~ r, ToKol a r) => HL.ApplyAB FnPgWfromHsIField a (Kol b) where
+instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField a (Kol b) where
   applyAB _ = kol
-instance (PgTyped b, PgType b ~ r, ToKol a r) => HL.ApplyAB FnPgWfromHsIField (WDef a) (WDef (Kol b)) where
+instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (WDef a) (WDef (Kol b)) where
   applyAB _ = fmap kol
-instance (PgTyped b, PgType b ~ r, ToKol a r) => HL.ApplyAB FnPgWfromHsIField (Maybe a) (Koln b) where
+instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (Maybe a) (Koln b) where
   applyAB _ = maybe nul koln
-instance (PgTyped b, PgType b ~ r, ToKol a r) => HL.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
+instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
   applyAB _ = fmap (maybe nul koln)
 
 --------------------------------------------------------------------------------
@@ -843,26 +829,25 @@ instance (PgTyped b, PgType b ~ r, ToKol a r) => HL.ApplyAB FnPgWfromHsIField (W
 -- | Convert a custom Haskell type to a representation appropiate for /inserting/
 -- it as a new row using 'Opaleye.SOT.Run.runInsert'.
 pgWfromHsI :: Tabla t => HsI t -> PgW t
-pgWfromHsI = Tagged . HL.hMap FnPgWfromHsIField . unTagged
+pgWfromHsI = PgW . Record.rMap FnPgWfromHsIField . unHsI
 {-# INLINE pgWfromHsI #-}
 
 --------------------------------------------------------------------------------
 
--- | Use with 'HL.ApplyAB' to apply convert a field in a
--- @('HList' ('Cols_PgR' t)@) to a field in a @('HList' ('Cols_PgW' t))@.
+-- | To be used with 'Record.ApplyAB'.
 data FnPgWfromPgRField = FnPgWfromPgRField
-instance HL.ApplyAB FnPgWfromPgRField x x where
+instance Record.ApplyAB FnPgWfromPgRField x x where
   applyAB _ = id
-instance PgTyped a => HL.ApplyAB FnPgWfromPgRField (Kol a) (WDef (Kol a)) where
+instance Record.ApplyAB FnPgWfromPgRField (Kol a) (WDef (Kol a)) where
   applyAB _ = WVal
-instance PgTyped a => HL.ApplyAB FnPgWfromPgRField (Koln a) (WDef (Koln a)) where
+instance Record.ApplyAB FnPgWfromPgRField (Koln a) (WDef (Koln a)) where
   applyAB _ = WVal
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
 -- to a @('PgW' t)@ that can be used in a 'Opaleye.SOT.runUpdate'-like
 -- operation.
 pgWfromPgR :: Tabla t => PgR t -> PgW t
-pgWfromPgR = Tagged . HL.hMap FnPgWfromPgRField . unTagged
+pgWfromPgR = PgW . Record.rMap FnPgWfromPgRField . unPgR
 {-# INLINE pgWfromPgR #-}
 
 --------------------------------------------------------------------------------
@@ -885,62 +870,52 @@ colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) Koln . O.optional
 
 --------------------------------------------------------------------------------
 
--- | 'O.TableProperties' for all the columns in 'Tabla' @t@.
-type Cols_Props t = List.Map (Col_PropsSym1 t) (Cols t)
-
 -- | 'O.TableProperties' for a single column in 'Tabla' @t@.
-type Col_Props t (col :: Col GHC.Symbol WD RN * *)
-  = O.TableProperties (Col_PgW t col) (Col_PgR t col)
-data Col_PropsSym1 t (col :: TyFun (Col GHC.Symbol WD RN * *) *)
-type instance Apply (Col_PropsSym1 t) col = Col_Props t col
-data Col_PropsSym0 (col :: TyFun t (TyFun (Col GHC.Symbol WD RN * *) * -> *))
-type instance Apply Col_PropsSym0 t = Col_PropsSym1 t
+type Col_Props (col :: Col Symbol WD RN Type Type)
+  = O.TableProperties (Col_PgW col) (Col_PgR col)
+data Col_PropsSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
+type instance Apply Col_PropsSym0 t = Col_Props t
 
-class ICol_Props (col :: Col GHC.Symbol WD RN * *) where
-  colProps :: Tabla t => Proxy t -> Proxy col -> Col_Props t col
+class ICol_Props (col :: Col Symbol WD RN Type Type) where
+  colProps :: Proxy col -> Col_Props col
 
 -- | 'colProps' is equivalent 'colProps_wr'.
-instance forall n p h. (GHC.KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'W 'R p h) where
-  colProps _ = \_ -> ppaUnTagged (colProps_wr (GHC.symbolVal (Proxy :: Proxy n)))
+instance forall n p h. (KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'W 'R p h) where
+  colProps _ = colProps_wr (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wrn'.
-instance forall n p h. (GHC.KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'W 'RN p h) where
-  colProps _ = \_ -> ppaUnTagged (colProps_wrn (GHC.symbolVal (Proxy :: Proxy n)))
+instance forall n p h. (KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'W 'RN p h) where
+  colProps _ = colProps_wrn (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdr'.
-instance forall n p h. (GHC.KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'WD 'R p h) where
-  colProps _ = \_ -> ppaUnTagged (colProps_wdr (GHC.symbolVal (Proxy :: Proxy n)))
+instance forall n p h. (KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'WD 'R p h) where
+  colProps _ = colProps_wdr (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdrn'.
-instance forall n p h. (GHC.KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'WD 'RN p h) where
-  colProps _ = \_ -> ppaUnTagged (colProps_wdrn (GHC.symbolVal (Proxy :: Proxy n)))
+instance forall n p h. (KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'WD 'RN p h) where
+  colProps _ = colProps_wdrn (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 
--- | Use with 'HL.ApplyAB' to apply 'colProps' to each element of an 'HList'.
-data FnCol_Props t = FnCol_Props
-
-instance forall t (col :: Col GHC.Symbol WD RN * *) pcol out n w r p h
-  . ( Tabla t
-    , GHC.KnownSymbol n
-    , ICol_Props col
-    , pcol ~ Proxy col
-    , col ~ 'Col n w r p h
-    , out ~ Col_Props t col
-    ) => HL.ApplyAB (FnCol_Props t) pcol out
-    where
-      applyAB _ = colProps (Proxy :: Proxy t)
-      {-# INLINE applyAB #-}
+class RDistributeColProps (cols :: [Col Symbol WD RN Type Type]) where
+  rDistributeColProps
+    :: Proxy cols
+    -> Record (List.Map (Col_NameSym0 :&&&$$$ Col_PropsSym0) cols)
+instance RDistributeColProps '[] where
+  rDistributeColProps _ = RNil
+instance (RDistributeColProps cols, ICol_Props ('Col n w r p h))
+  => RDistributeColProps ('Col n w r p h ': cols) where
+  rDistributeColProps (_ :: Proxy ('Col n w r p h ': cols)) =
+     RCons (Tagged @n (colProps (Proxy @('Col n w r p h))))
+           (rDistributeColProps (Proxy @cols))
 
 --------------------------------------------------------------------------------
 
 -- | Build the Opaleye 'O.Table' for a 'Tabla'.
 table :: Tabla t => T t -> O.Table (PgW t) (PgR t)
 table (T::T t) = O.TableWithSchema
-   (GHC.symbolVal (Proxy :: Proxy (SchemaName t)))
-   (GHC.symbolVal (Proxy :: Proxy (TableName t)))
-   (ppaUnTagged $ ppa $ HL.Record
-      (HL.hMapL (FnCol_Props :: FnCol_Props t)
-      (hDistributeProxy (Proxy :: Proxy (Cols t)))))
+  (symbolVal (Proxy :: Proxy (SchemaName t)))
+  (symbolVal (Proxy :: Proxy (TableName t)))
+  (P.dimap unPgW PgR (PP.ppa (rDistributeColProps (Proxy @(Cols t)))))
 
 -- | Like @opaleye@'s 'O.queryTable', but for a 'Tabla'.
 queryTabla :: Tabla t => T t -> O.Query (PgR t)
@@ -948,15 +923,89 @@ queryTabla = O.queryTable . table
 
 --------------------------------------------------------------------------------
 
--- | Lens to a column.
---
--- Mnemonic: The COLumn.
-col :: forall t c xs xs' a a'
-    .  HL.HLensCxt (TC t c) HL.Record xs xs' a a'
-    => C c
-    -> Lens (Rec t xs) (Rec t xs') a a'
-col _ = _Wrapped . HL.hLens (HL.Label :: HL.Label (TC t c))
+class
+  ( Record.RLens' c (ColLens'RecordIndex r) x
+  ) => ColLens' r (c :: Symbol) x | r c -> x
+ where
+  type ColLens'RecordIndex r :: [(Symbol, Type)]
+  -- | 'Lens'' into the value in a column.
+  --
+  -- Mnemonic: the COLumn value.
+  --
+  -- Notice that the type of @x@ will depend on the choice of @r@. Also, the
+  -- lens is not fully polymorphic because that wouldn't make sense for our
+  -- needs.
+  --
+  -- See 'col' and 'GHC.IsLabel' for alternative APIs for this.
+  col' :: proxy c -> Lens' r x
+
+instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsI t)) x) => ColLens' (HsI t) c x where
+  type ColLens'RecordIndex (HsI t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
+  col' prx = iso unHsI HsI . Record.rLens prx
+  {-# INLINE col' #-}
+
+instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsR t)) x) => ColLens' (HsR t) c x where
+  type ColLens'RecordIndex (HsR t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
+  col' prx = iso unHsR HsR . Record.rLens prx
+  {-# INLINE col' #-}
+
+instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgR t)) x) => ColLens' (PgR t) c x where
+  type ColLens'RecordIndex (PgR t) = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
+  col' prx = iso unPgR PgR . Record.rLens prx
+  {-# INLINE col' #-}
+
+instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgRN t)) x) => ColLens' (PgRN t) c x where
+  type ColLens'RecordIndex (PgRN t) = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
+  col' prx = iso unPgRN PgRN . Record.rLens prx
+  {-# INLINE col' #-}
+
+instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgW t)) x) => ColLens' (PgW t) c x where
+  type ColLens'RecordIndex (PgW t) = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
+  col' prx = iso unPgW PgW . Record.rLens prx
+  {-# INLINE col' #-}
+
+
+-- | `'col' @c`  is just like `'col'' (Proxy @c)`, except nicer to use with the
+-- @-XTypeApplications@ GHC extension.
+col :: forall c r x. ColLens' r c x => Lens' r x
+col = col' (Proxy @c) -- Defining this function requires AllowAmbiguousTypes.
 {-# INLINE col #-}
+
+
+-- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
+-- value is expected.
+instance forall c f x t. (ColLens' (HsI t) c x, Functor f)
+  => GHC.IsLabel c ((x -> f x) -> ((HsI t) -> f (HsI t)))
+  where fromLabel _ = col' (Proxy @c)
+        {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
+-- value is expected.
+instance forall c f x t. (ColLens' (HsR t) c x, Functor f)
+  => GHC.IsLabel c ((x -> f x) -> ((HsR t) -> f (HsR t)))
+  where fromLabel _ = col' (Proxy @c)
+        {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
+-- value is expected.
+instance forall c f x t. (ColLens' (PgR t) c x, Functor f)
+  => GHC.IsLabel c ((x -> f x) -> ((PgR t) -> f (PgR t)))
+  where fromLabel _ = col' (Proxy @c)
+        {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
+-- value is expected.
+instance forall c f x t. (ColLens' (PgRN t) c x, Functor f)
+  => GHC.IsLabel c ((x -> f x) -> ((PgRN t) -> f (PgRN t)))
+  where fromLabel _ = col' (Proxy @c)
+        {-# INLINE fromLabel #-}
+--
+-- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
+-- value is expected.
+instance forall c f x t. (ColLens' (PgW t) c x, Functor f)
+  => GHC.IsLabel c ((x -> f x) -> ((PgW t) -> f (PgW t)))
+  where fromLabel _ = col' (Proxy @c)
+        {-# INLINE fromLabel #-}
 
 --------------------------------------------------------------------------------
 
@@ -1071,7 +1120,7 @@ gte = liftKol2 (O..>=)
 --------------------------------------------------------------------------------
 
 -- | Whether a 'Koln' is 'nul' (@NULL@).
-isNull :: PgTyped a => Koln a -> Kol O.PGBool
+isNull :: Koln a -> Kol O.PGBool
 isNull = Kol . O.isNull . unKoln
 
 -- | Convert a @'Koln' 'O.PGBool'@ to a @('Kol' 'O.PGBool')@. An outer @NULL@ is
@@ -1145,93 +1194,6 @@ descnf f = O.desc (unsafeUnNullableColumn . unKoln . f)
 -- | Descending order, @NULL@s last.
 descnl :: PgOrd b => (a -> Koln b) -> O.Order a
 descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . f)
-
---------------------------------------------------------------------------------
-
-ppaUnTagged :: P.Profunctor p => p a b -> p (Tagged ta a) (Tagged tb b)
-ppaUnTagged = P.dimap unTagged Tagged
-{-# INLINE ppaUnTagged #-}
-
--- | A generalization of product profunctor adaptors such as 'PP.p1', 'PP.p4', etc.
---
--- The functional dependencies make type inference easier, but also forbid some
--- otherwise acceptable instances.
-class P.Profunctor p => ProductProfunctorAdaptor p l ra rb | p l -> ra rb, p ra rb -> l where
-  ppa :: l -> p ra rb
-
--- | 'HList' of length 0.
-instance PP.ProductProfunctor p => ProductProfunctorAdaptor p (HList '[]) (HList '[]) (HList '[]) where
-  ppa = const (P.dimap (const ()) (const HNil) PP.empty)
-  {-# INLINE ppa #-}
-
--- | 'HList' of length 1 or more.
-instance
-    ( PP.ProductProfunctor p
-    , ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
-    ) => ProductProfunctorAdaptor p (HList (p a1 b1 ': pabs)) (HList (a1 ': as)) (HList (b1 ': bs)) where
-  ppa = \(HCons pab1 pabs) -> P.dimap (\(HCons x xs) -> (x,xs)) (uncurry HCons) (pab1 PP.***! ppa pabs)
-
-instance
-    ( ProductProfunctorAdaptor p (HList pabs) (HList as) (HList bs)
-    ) => ProductProfunctorAdaptor p (HL.Record pabs) (HL.Record as) (HL.Record bs) where
-  ppa = P.dimap (\(HL.Record x) -> x) HL.Record . ppa . (\(HL.Record x) -> x)
-  {-# INLINE ppa #-}
-
---------------------------------------------------------------------------------
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance (PP.ProductProfunctor p, PP.Default p a b) => PP.Default p (Tagged ta a) (Tagged tb b) where
-  def = ppaUnTagged PP.def
-  {-# INLINE def #-}
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance PP.ProductProfunctor p => PP.Default p (HList '[]) (HList '[]) where
-  def = ppa HNil
-  {-# INLINE def #-}
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance
-    ( PP.ProductProfunctor p, PP.Default p a1 b1, PP.Default p (HList as) (HList bs)
-    ) => PP.Default p (HList (a1 ': as)) (HList (b1 ': bs)) where
-  def = P.dimap (\(HCons x xs) -> (x,xs)) (uncurry HCons) (PP.def PP.***! PP.def)
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance
-    ( PP.ProductProfunctor p, PP.Default p (HList as) (HList bs)
-    ) => PP.Default p (HL.Record as) (HL.Record bs) where
-  def = P.dimap (\(HL.Record x) -> x) HL.Record PP.def
-  {-# INLINE def #-}
-
--- Maybes on the rhs
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance
-    ( PP.ProductProfunctor p, PP.Default p a (Maybe b)
-    ) => PP.Default p (Tagged ta a) (Maybe (Tagged tb b)) where
-  def = P.dimap unTagged (fmap Tagged) PP.def
-  {-# INLINE def #-}
-
--- | Orphan. "Opaleye.SOT.Internal". Defaults to 'Just'.
-instance PP.ProductProfunctor p => PP.Default p (HList '[]) (Maybe (HList '[])) where
-  def = P.rmap Just PP.def
-  {-# INLINE def #-}
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance
-    ( PP.ProductProfunctor p
-    , PP.Default p a (Maybe b)
-    , PP.Default p (HList as) (Maybe (HList bs))
-    ) => PP.Default p (HList (a ': as)) (Maybe (HList (b ': bs))) where
-  def = P.dimap (\(HCons a as) -> (a, as))
-                (\(mb, mbs) -> HCons <$> mb <*> mbs)
-                (PP.def PP.***! PP.def)
-
--- | Orphan. "Opaleye.SOT.Internal".
-instance
-    ( PP.ProductProfunctor p, PP.Default p (HList as) (Maybe (HList bs))
-    ) => PP.Default p (HL.Record as) (Maybe (HL.Record bs)) where
-  def = P.dimap (\(HL.Record x) -> x) (fmap HL.Record) PP.def
-  {-# INLINE def #-}
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -1365,17 +1327,4 @@ type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[]       = ()
   All c (x ': xs) = (c x, All c xs)
 
----
-
--- | Defunctionalized 'Proxy'. To be used with 'Apply'.
-data ProxySym0 (a :: TyFun k *)
-type instance Apply ProxySym0 a = Proxy a
-
-class HDistributeProxy (xs :: [k]) where
-  hDistributeProxy :: Proxy xs -> HList (List.Map ProxySym0 xs)
-instance HDistributeProxy ('[] :: [k]) where
-  hDistributeProxy _ = HNil
-  {-# INLINE hDistributeProxy #-}
-instance forall (x :: k) (xs :: [k]). HDistributeProxy xs => HDistributeProxy (x ': xs) where
-  hDistributeProxy _ = HCons (Proxy :: Proxy x) (hDistributeProxy (Proxy :: Proxy xs))
 

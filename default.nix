@@ -1,5 +1,5 @@
 { mkDerivation, aeson, base, bytestring, case-insensitive
-, exceptions, HList, lens, mtl, opaleye, postgresql-simple
+, exceptions, lens, mtl, opaleye, postgresql-simple
 , product-profunctors, profunctors, semigroups, singletons, stdenv
 , text, time, transformers, uuid
 }:
@@ -8,12 +8,12 @@ mkDerivation {
   version = "0.1";
   src = ./.;
   libraryHaskellDepends = [
-    aeson base bytestring case-insensitive exceptions HList lens mtl
+    aeson base bytestring case-insensitive exceptions lens mtl
     opaleye postgresql-simple product-profunctors profunctors
     semigroups singletons text time transformers uuid
   ];
   testHaskellDepends = [
-    base HList lens mtl opaleye postgresql-simple time
+    base lens mtl opaleye postgresql-simple time
   ];
   homepage = "https://github.com/k0001/opaleye-sot";
   description = "Opaleye's sugar on top";
