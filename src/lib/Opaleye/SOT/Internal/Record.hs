@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
@@ -12,6 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -215,21 +217,25 @@ rEnd = id
 
 class RBuild' (axs :: [(k,Type)]) (r :: Type) where
   rBuild' :: Record axs -> r
-instance RReverse axs axs' => RBuild' (axs :: [(k,Type)]) (Record (axs' :: [(k,Type)])) where
+instance forall (axs :: [(k,Type)]) (axs' :: [(k,Type)]).
+  (RReverse axs axs') => RBuild' axs (Record axs')
+ where
   rBuild' raxs = rReverse raxs
   {-# INLINE rBuild' #-}
-instance forall (a :: k) (x :: Type) (axs :: [(k,Type)]) (r :: Type).
-  (RBuild' ('(a,x) ': axs) r) => RBuild' axs (x -> r)
+instance
+  forall (a :: k) (x :: Type) (axs :: [(k,Type)]) (r :: Type).
+  (RBuild' ('(a,x) ': axs) r) => RBuild' axs (Tagged a x -> r)
  where
-  rBuild' raxs x = rBuild' (RCons (Tagged @(a :: k) x) raxs)
+  rBuild' raxs tx = rBuild' (RCons tx raxs)
   {-# INLINE rBuild' #-}
 
 class RReverse (xs :: [(k,Type)]) (sx :: [(k,Type)]) | xs -> sx, sx -> xs where
   rReverse :: Record xs -> Record sx
 instance
   forall (xs :: [(k,Type)]) (sx :: [(k,Type)]).
-  ( RRevApp xs ('[] :: [(k,Type)])  sx
-  , RRevApp sx ('[] :: [(k,Type)])  xs -- GHC warns that this constraint is redundant, but it is not.
+  ( RRevApp xs ('[] :: [(k,Type)]) sx
+  , RRevApp sx ('[] :: [(k,Type)]) xs
+    -- GHC warns that this constraint is redundant, but it is not.
   ) => RReverse xs sx where
   rReverse l = rRevApp l (RNil :: Record ('[] :: [(k,Type)]))
   {-# INLINE rReverse #-}
@@ -249,3 +255,5 @@ instance
  where
   rRevApp (RCons x l) l' = rRevApp l (RCons x l')
   {-# INLINE rRevApp #-}
+
+

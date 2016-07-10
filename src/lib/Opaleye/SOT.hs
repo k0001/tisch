@@ -27,12 +27,11 @@ module Opaleye.SOT
    -- * Working with 'Tabla'
  , table
  , queryTabla
- , HsR
- , HsI
- , mkHsI
- , PgR
- , PgRN
- , PgW
+ , HsR(..)
+ , HsI(..)
+ , PgR(..)
+ , PgRN(..)
+ , PgW(..)
  , pgWfromHsI
  , pgWfromPgR
 

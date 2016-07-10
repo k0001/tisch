@@ -22,6 +22,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
 module Opaleye.SOT.Internal where
@@ -688,8 +689,8 @@ data C (c :: Symbol) = C
 -- of a 'O.leftJoin', you will need to use @('Maybe' ('PgR' t))@.
 --
 -- Mnemonic: Haskell Read.
-newtype HsR t = HsR
-  { unHsR :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)) }
+newtype HsR t = HsR { unHsR :: Record (Cols_HsR t) }
+type Cols_HsR t = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
 
 -- | @'HsI' t@ is the Haskell representation of Haskell values to be inserted to
 -- the database, as taken by "Opaleye.SOT.Run.runInsertTabla".
@@ -698,21 +699,21 @@ newtype HsR t = HsR
 -- case you need that for with the more general "Opaleye.SOT.Run.runInsert".
 --
 -- Mnemonic: Haskell Insert.
-newtype HsI t = HsI
-  { unHsI :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)) }
+newtype HsI t = HsI { unHsI :: Record (Cols_HsI t) }
+type Cols_HsI t = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
 
 -- | Output type of @'queryTabla' ('T' t)@.
 --
 -- Mnemonic: PostGresql Read.
-newtype PgR t = PgR
-  { unPgR :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)) }
+newtype PgR t = PgR { unPgR :: Record (Cols_PgR t) }
+type Cols_PgR t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
 
 -- | Like @('PgRN' t)@ but every field is 'Koln', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'('table' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
-newtype PgRN t = PgRN
-  { unPgRN :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)) }
+newtype PgRN t = PgRN { unPgRN :: Record (Cols_PgRN t) }
+type Cols_PgRN t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
 
 -- | Representation of PostgreSQL values to be written to the database. This
 -- type can be used as input for "Opaleye.SOT.Run.runInsert" and similar.
@@ -720,8 +721,8 @@ newtype PgRN t = PgRN
 -- An @'HsI' t@ can always be converted to a @'PgW' t@ using 'pgWfromHsI', in
 --
 -- Mnemonic: PostGresql Write.
-newtype PgW t = PgW
-  { unPgW :: Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)) }
+newtype PgW t = PgW { unPgW :: Record (Cols_PgW t) }
+type Cols_PgW t = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
 
 --------------------------------------------------------------------------------
 
@@ -801,13 +802,18 @@ class ITabla t => Tabla (t :: k) where
 -- TODO   $ k (const Tagged)
 -- TODO {-# INLINE mkHsI #-}
 
--- No good!
-mkHsI
-  :: (Tabla t, Record.RBuild' ('[] :: [(Symbol,Type)]) builder)
-  => (builder -> Record (List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)))
-  -> HsI t
-mkHsI f = HsI (f Record.rBuildSymbol)
 
+-- instance ((raxs :: [(Symbol,Type)]) ~ Cols_HsI t, Record.RBuild' ('[] :: [(Symbol,Type)]) (Record raxs -> Record raxs)) => Record.RBuild' raxs (HsI t) where
+--   rBuild' raxs = HsI (Record.rBuildSymbol raxs)
+--   {-# INLINE rBuild' #-}
+--
+-- instance
+--   ( Record.RBuild' ('(a,x) ': axs) r
+--   ) => Record.RBuild' axs (Tagged (C a) x -> r)
+--  where
+--   rBuild' raxs (Tagged x :: Tagged (C a) x) =
+--      Record.rBuild' (Record.RCons (Tagged @a x) raxs)
+--   {-# INLINE rBuild' #-}
 
 --------------------------------------------------------------------------------
 
