@@ -17,6 +17,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -49,7 +50,9 @@ import           Data.Proxy (Proxy(..))
 import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product.Default as PP
 import qualified Data.Promotion.Prelude.List as List (Map)
+import           Data.Promotion.Prelude.Bool (If)
 import           Data.Singletons
+import           Data.Type.Equality
 import           Data.Tagged
 import           GHC.Exts (Constraint)
 import qualified GHC.OverloadedLabels as GHC
@@ -71,14 +74,6 @@ import qualified Opaleye.SOT.Internal.Record as Record
 import           Opaleye.SOT.Internal.Singletons ((:&&&$$$))
 
 -------------------------------------------------------------------------------
-
--- | Hack to workaround the current represenation for nullable columns.
--- See 'Koln'.
-type family NotNullable (x :: k) :: Constraint where
-  NotNullable (O.Nullable x) = GHC.TypeError
-    ('GHC.Text "NotNullable got Nullable: " 'GHC.:<>:
-     'GHC.ShowType (O.Nullable x))
-  NotNullable x = ()
 
 -- | Only 'PgPrimType' instances are allowed as indexes to @opaleye@'s
 -- 'O.Column'.
@@ -677,11 +672,15 @@ type TCa (t :: k) (c :: Symbol) = Tagged (TC t c)
 -- column in an unknown table.
 data C (c :: Symbol) = C
 
+instance GHC.IsLabel c (C c) where
+  fromLabel _ = C
+  {-# INLINE fromLabel #-}
+
 --------------------------------------------------------------------------------
--- Note: By using newtype wrappers, instead of just type synonyms, we can
--- provide nicer error messages to the users at the small cost of a bit more
--- complicated implementation for us (e.g., the implementation of `col` could be
--- generalized otherwise).
+-- Note: By using newtype wrappers, instead of just type synonyms for 'Record',
+-- we can provide nicer error messages to the users at the small cost of a bit
+-- more complicated implementation for us (e.g., the implementation of `col`
+-- could be generalized otherwise).
 
 -- | Expected output type for 'O.runQuery' on a @('PgR' t)@.
 --
@@ -689,9 +688,15 @@ data C (c :: Symbol) = C
 -- of a 'O.leftJoin', you will need to use @('Maybe' ('PgR' t))@.
 --
 -- Mnemonic: Haskell Read.
-newtype HsR t = HsR { unHsR :: Record (Cols_HsR t) }
-type Cols_HsR t = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
+newtype HsR t = HsR { unHsR :: Record (Cols_NamedHsR t) }
+type Cols_NamedHsR t = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
 
+instance Profunctor p => PP.Default p (HsR t) (HsR t) where
+  def = P.rmap id PP.def
+  {-# INLINE def #-}
+
+
+---
 -- | @'HsI' t@ is the Haskell representation of Haskell values to be inserted to
 -- the database, as taken by "Opaleye.SOT.Run.runInsertTabla".
 --
@@ -699,30 +704,71 @@ type Cols_HsR t = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
 -- case you need that for with the more general "Opaleye.SOT.Run.runInsert".
 --
 -- Mnemonic: Haskell Insert.
-newtype HsI t = HsI { unHsI :: Record (Cols_HsI t) }
-type Cols_HsI t = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
+newtype HsI t = HsI { unHsI :: Record (Cols_NamedHsI t) }
+type Cols_NamedHsI t = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
 
+instance Profunctor p => PP.Default p (HsI t) (HsI t) where
+  def = P.rmap id PP.def
+  {-# INLINE def #-}
+
+
+---
 -- | Output type of @'queryTabla' ('T' t)@.
 --
 -- Mnemonic: PostGresql Read.
-newtype PgR t = PgR { unPgR :: Record (Cols_PgR t) }
-type Cols_PgR t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
+newtype PgR t = PgR { unPgR :: Record (Cols_NamedPgR t) }
+type Cols_NamedPgR t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
 
+instance Profunctor p => PP.Default p (PgR t) (PgR t) where
+  def = P.rmap id PP.def
+  {-# INLINE def #-}
+
+instance
+  ( Profunctor p
+  , PP.Default p (Record (Cols_NamedPgR t)) (Record (Cols_NamedHsR t))
+  ) => PP.Default p (PgR t) (HsR t) where
+  def = P.dimap unPgR HsR PP.def
+  {-# INLINE def #-}
+
+instance
+  ( Profunctor p
+  , PP.Default p (Record (Cols_NamedPgR t)) (Record (Cols_NamedPgRN t))
+  ) => PP.Default p (PgR t) (PgRN t) where
+  def = P.dimap unPgR PgRN PP.def
+  {-# INLINE def #-}
+
+---
 -- | Like @('PgRN' t)@ but every field is 'Koln', as in the
 -- output type of the right hand side of a 'O.leftJoin' with @'('table' t)@.
 --
 -- Mnemonic: PostGresql Read Nulls.
-newtype PgRN t = PgRN { unPgRN :: Record (Cols_PgRN t) }
-type Cols_PgRN t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
+newtype PgRN t = PgRN { unPgRN :: Record (Cols_NamedPgRN t) }
+type Cols_NamedPgRN t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
 
+instance Profunctor p => PP.Default p (PgRN t) (PgRN t) where
+  def = P.rmap id PP.def
+  {-# INLINE def #-}
+
+instance
+  ( Profunctor p
+  , PP.Default p (Record (Cols_NamedPgRN t)) (Maybe (Record (Cols_NamedHsR t)))
+  ) => PP.Default p (PgRN t) (Maybe (HsR t)) where
+  def = P.dimap unPgRN (fmap HsR) PP.def
+  {-# INLINE def #-}
+
+---
 -- | Representation of PostgreSQL values to be written to the database. This
 -- type can be used as input for "Opaleye.SOT.Run.runInsert" and similar.
 --
 -- An @'HsI' t@ can always be converted to a @'PgW' t@ using 'pgWfromHsI', in
 --
 -- Mnemonic: PostGresql Write.
-newtype PgW t = PgW { unPgW :: Record (Cols_PgW t) }
-type Cols_PgW t = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
+newtype PgW t = PgW { unPgW :: Record (Cols_NamedPgW t) }
+type Cols_NamedPgW t = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
+
+instance Profunctor p => PP.Default p (PgW t) (PgW t) where
+  def = P.rmap id PP.def
+  {-# INLINE def #-}
 
 --------------------------------------------------------------------------------
 
@@ -731,22 +777,18 @@ type Cols_PgW t = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
 -- superclass of 'Tabla'. Moreover, they enforce some sanity constraints on our
 -- 'Tabla' so that we can get early compile time errors.
 type ITabla t
-  = ( KnownSymbol (SchemaName t)
+  = ( All PgTyped (List.Map (Col_PgTypeSym0) (Cols t))
+    , KnownSymbol (SchemaName t)
     , KnownSymbol (TableName t)
-    , All PgTyped (List.Map (Col_PgTypeSym0) (Cols t))
     , RDistributeColProps (Cols t)
-    , Record.RMap FnPgWfromPgRField
-         (List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t))
-         (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t))
-    , Record.RMap FnPgWfromHsIField
-         (List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t))
-         (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t))
+    , Record.RMap FnPgWfromPgRField (Cols_NamedPgR t) (Cols_NamedPgW t)
+    , Record.RMap FnPgWfromHsIField (Cols_NamedHsI t) (Cols_NamedPgW t)
+    , PP.Default OI.ColumnMaker (PgR t) (PgR t)
     , PP.ProductProfunctorAdaptor
          O.TableProperties
          (Record (List.Map (Col_NameSym0 :&&&$$$ Col_PropsSym0) (Cols t)))
-         (Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)))
-         (Record (List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)))
-    , PP.Default OI.ColumnMaker (PgR t) (PgR t)
+         (Record (Cols_NamedPgW t))
+         (Record (Cols_NamedPgR t))
     )
 
 -- | Tabla means table in spanish.
@@ -791,31 +833,58 @@ class ITabla t => Tabla (t :: k) where
 -- with the tools from "Data.HList" is sufficient for you. This is just a
 -- convenience.
 -- TODO mkHsI
--- TODO   :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_HsI t)) xs (Cols_HsI t))
+-- TODO   :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_NamedHsI t)) xs (Cols_NamedHsI t))
 -- TODO   => T t
 -- TODO   -> ((forall c a. (C c -> a -> TCa t c a)) -> HList xs)
 -- TODO   -> HsI t -- ^
 -- TODO mkHsI (T::T t) k
 -- TODO   = Tagged
 -- TODO   $ HL.Record
--- TODO   $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_HsI t)))
+-- TODO   $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_NamedHsI t)))
 -- TODO   $ k (const Tagged)
 -- TODO {-# INLINE mkHsI #-}
 
-
--- instance ((raxs :: [(Symbol,Type)]) ~ Cols_HsI t, Record.RBuild' ('[] :: [(Symbol,Type)]) (Record raxs -> Record raxs)) => Record.RBuild' raxs (HsI t) where
---   rBuild' raxs = HsI (Record.rBuildSymbol raxs)
---   {-# INLINE rBuild' #-}
---
--- instance
---   ( Record.RBuild' ('(a,x) ': axs) r
---   ) => Record.RBuild' axs (Tagged (C a) x -> r)
---  where
---   rBuild' raxs (Tagged x :: Tagged (C a) x) =
---      Record.rBuild' (Record.RCons (Tagged @a x) raxs)
---   {-# INLINE rBuild' #-}
-
 --------------------------------------------------------------------------------
+
+mkHsI :: MkHsI t
+mkHsI = Record.rBuildSymbol
+{-# INLINE mkHsI #-}
+
+type MkHsI t = Record.RBuild' ('[] :: [(Symbol,Type)])
+                              (Cols_CNamedFunArgs Col_HsISym0 (HsI t) (Cols t))
+                           => (Cols_CNamedFunArgs Col_HsISym0 (HsI t) (Cols t))
+
+hsi :: C c -> x -> Tagged c x
+hsi _ = Tagged
+{-# INLINE hsi #-}
+
+instance Record.RBuild' axs (Record (Cols_NamedHsI t)) => Record.RBuild' axs (HsI t) where
+  rBuild' raxs = HsI (Record.rBuild' raxs)
+  {-# INLINE rBuild' #-}
+
+-- | Take a look at 'MkHsI' to better understand the purpose of this function.
+type family Cols_CNamedFunArgs (f :: k ~> Type) (z :: Type) (cols :: [Col Symbol WD RN Type Type]) :: Type where
+  Cols_CNamedFunArgs f z '[] = z
+  Cols_CNamedFunArgs f z (x ': xs) =
+    Tagged (Col_Name x) (Apply f x) -> Cols_CNamedFunArgs f z xs
+
+
+
+-- | Used by arguments to 'mkHsI'.
+--
+-- Note: We could give an instance for @(x -> Tagged c x)@, but we don't want
+-- to pollute the global instance space with this, so we add a useless
+-- 'WrapSymbol' wrapper just to prevent this.
+
+-- instance
+--    ( Record.RBuild' ('(a,x) ': axs) r
+--    ) => Record.RBuild' axs (Ca a x -> r)
+--  where
+--    rBuild' raxs (Ca x :: Ca a x) =
+--       Record.rBuild' (Record.RCons (Tagged @a x) raxs)
+--    {-# INLINE rBuild' #-}
+--
+---
 
 -- | To be used with 'Record.ApplyAB'.
 data FnPgWfromHsIField = FnPgWfromHsIField
@@ -883,7 +952,7 @@ data Col_PropsSym0 (col :: TyFun (Col Symbol WD RN Type Type) Type)
 type instance Apply Col_PropsSym0 t = Col_Props t
 
 class ICol_Props (col :: Col Symbol WD RN Type Type) where
-  colProps :: Proxy col -> Col_Props col
+  colProps :: proxy col -> Col_Props col
 
 -- | 'colProps' is equivalent 'colProps_wr'.
 instance forall n p h. (KnownSymbol n, PgTyped p) => ICol_Props ('Col n 'W 'R p h) where
@@ -916,22 +985,35 @@ instance (RDistributeColProps cols, ICol_Props ('Col n w r p h))
 
 --------------------------------------------------------------------------------
 
+-- | Like 'table'', but @t@ is intended to be specified with the
+-- @TypeApplications@ GHC extension.
+table :: Tabla t => O.Table (PgW t) (PgR t)
+table = table' T
+{-# INLINE table #-}
+
 -- | Build the Opaleye 'O.Table' for a 'Tabla'.
-table :: Tabla t => T t -> O.Table (PgW t) (PgR t)
-table (T::T t) = O.TableWithSchema
+table' :: Tabla t => T t -> O.Table (PgW t) (PgR t)
+table' (T::T t) = O.TableWithSchema
   (symbolVal (Proxy :: Proxy (SchemaName t)))
   (symbolVal (Proxy :: Proxy (TableName t)))
   (P.dimap unPgW PgR (PP.ppa (rDistributeColProps (Proxy @(Cols t)))))
 
+-- | Like 'queryTabla', but @t@ is intended to be specified with the
+-- @TypeApplications@ GHC extension.
+queryTabla :: Tabla t => O.Query (PgR t)
+queryTabla = O.queryTable table
+{-# INLINE queryTabla #-}
+
 -- | Like @opaleye@'s 'O.queryTable', but for a 'Tabla'.
-queryTabla :: Tabla t => T t -> O.Query (PgR t)
-queryTabla = O.queryTable . table
+queryTabla' :: Tabla t => T t -> O.Query (PgR t)
+queryTabla' = O.queryTable . table'
+{-# INLINE queryTabla' #-}
 
 --------------------------------------------------------------------------------
 
 class
-  ( Record.RLens' c (ColLens'RecordIndex r) x
-  ) => ColLens' r (c :: Symbol) x | r c -> x
+  ( Record.RLens' n (ColLens'RecordIndex r) x
+  ) => ColLens' r (n :: Symbol) x | r n -> x
  where
   type ColLens'RecordIndex r :: [(Symbol, Type)]
   -- | 'Lens'' into the value in a column.
@@ -943,16 +1025,16 @@ class
   -- needs.
   --
   -- See 'col' and 'GHC.IsLabel' for alternative APIs for this.
-  col' :: proxy c -> Lens' r x
-
-instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsI t)) x) => ColLens' (HsI t) c x where
-  type ColLens'RecordIndex (HsI t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
-  col' prx = iso unHsI HsI . Record.rLens prx
-  {-# INLINE col' #-}
+  col' :: C n -> Lens' r x
 
 instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsR t)) x) => ColLens' (HsR t) c x where
   type ColLens'RecordIndex (HsR t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
   col' prx = iso unHsR HsR . Record.rLens prx
+  {-# INLINE col' #-}
+
+instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsI t)) x) => ColLens' (HsI t) c x where
+  type ColLens'RecordIndex (HsI t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
+  col' prx = iso unHsI HsI . Record.rLens prx
   {-# INLINE col' #-}
 
 instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgR t)) x) => ColLens' (PgR t) c x where
@@ -970,48 +1052,85 @@ instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgW t)) x) => ColLens' 
   col' prx = iso unPgW PgW . Record.rLens prx
   {-# INLINE col' #-}
 
-
--- | `'col' @c`  is just like `'col'' (Proxy @c)`, except nicer to use with the
--- @-XTypeApplications@ GHC extension.
-col :: forall c r x. ColLens' r c x => Lens' r x
-col = col' (Proxy @c) -- Defining this function requires AllowAmbiguousTypes.
+-- | `'col' @n`  is just like `'col'' ('C' :: 'C' n)`, except nicer to use
+-- with the @TypeApplications@ GHC extension.
+--
+-- Defining this function requires @AllowAmbiguousTypes@.
+col :: forall n r x. ColLens' r n x => Lens' r x
+col = col' (C :: C n)
 {-# INLINE col #-}
 
+--------------------------------------------------------------------------------
+-- Lenses into column values through OverloadedLabels:
 
--- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
--- value is expected.
-instance forall c f x t. (ColLens' (HsI t) c x, Functor f)
-  => GHC.IsLabel c ((x -> f x) -> ((HsI t) -> f (HsI t)))
-  where fromLabel _ = col' (Proxy @c)
+-- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
+-- value is expected. Notice @f@ is rigid.
+instance forall n f x t. (ColLens' (HsR t) n x, Functor f)
+  => GHC.IsLabel n ((x -> f x) -> ((HsR t) -> f (HsR t)))
+  where fromLabel _ = col' (C :: C n)
         {-# INLINE fromLabel #-}
 
--- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
--- value is expected.
-instance forall c f x t. (ColLens' (HsR t) c x, Functor f)
-  => GHC.IsLabel c ((x -> f x) -> ((HsR t) -> f (HsR t)))
-  where fromLabel _ = col' (Proxy @c)
+-- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
+-- value is expected. Notice @f@ is rigid.
+instance forall n f x t. (ColLens' (HsI t) n x, Functor f)
+  => GHC.IsLabel n ((x -> f x) -> ((HsI t) -> f (HsI t)))
+  where fromLabel _ = col' (C :: C n)
         {-# INLINE fromLabel #-}
 
--- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
--- value is expected.
-instance forall c f x t. (ColLens' (PgR t) c x, Functor f)
-  => GHC.IsLabel c ((x -> f x) -> ((PgR t) -> f (PgR t)))
-  where fromLabel _ = col' (Proxy @c)
+-- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
+-- value is expected. Notice @f@ is rigid.
+instance forall n f x t. (ColLens' (PgR t) n x, Functor f)
+  => GHC.IsLabel n ((x -> f x) -> ((PgR t) -> f (PgR t)))
+  where fromLabel _ = col' (C :: C n)
         {-# INLINE fromLabel #-}
 
--- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
--- value is expected.
-instance forall c f x t. (ColLens' (PgRN t) c x, Functor f)
-  => GHC.IsLabel c ((x -> f x) -> ((PgRN t) -> f (PgRN t)))
-  where fromLabel _ = col' (Proxy @c)
+-- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
+-- value is expected. Notice @f@ is rigid.
+instance forall n f x t. (ColLens' (PgRN t) n x, Functor f)
+  => GHC.IsLabel n ((x -> f x) -> ((PgRN t) -> f (PgRN t)))
+  where fromLabel _ = col' (C :: C n)
         {-# INLINE fromLabel #-}
 --
--- | @#foo@ works like @'col'' ('Proxy' @"foo")@ in places where a lens-like
--- value is expected.
-instance forall c f x t. (ColLens' (PgW t) c x, Functor f)
-  => GHC.IsLabel c ((x -> f x) -> ((PgW t) -> f (PgW t)))
-  where fromLabel _ = col' (Proxy @c)
+-- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
+-- value is expected. Notice @f@ is rigid.
+instance forall n f x t. (ColLens' (PgW t) n x, Functor f)
+  => GHC.IsLabel n ((x -> f x) -> ((PgW t) -> f (PgW t)))
+  where fromLabel _ = col' (C :: C n)
         {-# INLINE fromLabel #-}
+
+--------------------------------------------------------------------------------
+-- Projection of column values through OverloadedLabels:
+
+type family Col_ByName (n :: Symbol) (cols :: [Col Symbol WD RN Type Type]) :: Col Symbol WD RN Type Type where
+  Col_ByName n (c ': cs) = If (Col_Name c == n) c (Col_ByName n cs)
+  Col_ByName n '[] = GHC.TypeError
+    ('GHC.Text "Cols_ByName: No column named " 'GHC.:<>: 'GHC.ShowType n)
+
+
+-- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
+instance forall n x t. (ColLens' (HsR t) n x) => GHC.IsLabel n (HsR t -> x) where
+  fromLabel _ = view (col' (C :: C n))
+  {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
+instance forall n x t. (ColLens' (HsI t) n x) => GHC.IsLabel n (HsI t -> x) where
+  fromLabel _ = view (col' (C :: C n))
+  {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
+instance forall n x t. (ColLens' (PgR t) n x) => GHC.IsLabel n (PgR t -> x) where
+  fromLabel _ = view (col' (C :: C n))
+  {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
+instance forall n x t. (ColLens' (PgRN t) n x) => GHC.IsLabel n (PgRN t -> x) where
+  fromLabel _ = view (col' (C :: C n))
+  {-# INLINE fromLabel #-}
+
+-- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
+instance forall n x t. (ColLens' (PgW t) n x) => GHC.IsLabel n (PgW t -> x) where
+  fromLabel _ = view (col' (C :: C n))
+  {-# INLINE fromLabel #-}
 
 --------------------------------------------------------------------------------
 

@@ -7,7 +7,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 {- | @opaleye-sot@ is a different API for the core @opaleye@
 infraestructure with the following goals in mind:
@@ -58,7 +60,7 @@ infraestructure with the following goals in mind:
   this module, probably.
 -}
 module Tutorial
-  ( TDepartment
+  {- ( TDepartment
   , TBranch
   , TEmployee
   , TProductType
@@ -75,7 +77,7 @@ module Tutorial
   , q_TEmployee_TDepartment_join
   , q_TAccount_TIndividual_leftJoin
   , exampleRun
-  ) where
+  ) -} where
 
 import           Control.Arrow
 import           Control.Category (id)
@@ -488,43 +490,48 @@ instance Tabla TTransaction where
 -- | Order by field, desc.
 q_TAccount_desc :: Query (PgR TAccount)
 q_TAccount_desc =
-  orderBy (descnf (view (col (C::C "avail_balance"))))
-          (queryTabla T) -- Here: table' == table TAccount, inferred.
+  orderBy
+    (descnf #avail_balance)
+    (queryTabla @TAccount) -- The "@TAccount" can be left out, it is inferred.
 
 -- | Order by multiple fields, asc.
 q_TAccount_asc_multi :: Query (PgR TAccount)
 q_TAccount_asc_multi =
-  orderBy (mappend (ascnl (view (col (C::C "open_employee_id"))))
-                   (asc   (view (col (C::C "product_cd")))))
-          (queryTabla T) -- Here: table' == table TAccount, inferred.
+  orderBy
+    (mappend (ascnl #open_employee_id)   -- labels behave as projections.
+             (asc   (view #product_cd))) -- labels behave as lenses too.
+    queryTabla
 
 q_TEmployee_1 :: Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
-  e <- queryTabla T -< () -- Here: table' == table TEmployee, inferred.
-  restrict -< isNull (e ^. col (C::C "end_date"))
+  e <- queryTabla -< () -- inferred: TEmployee
+  restrict -< isNull (#end_date e)
   restrict <<< nullFalse -< lor
      (lt (koln (Time.fromGregorian 2003 1 1))
-         (e ^. col (C::C "start_date")))
+         (view #start_date e)) -- labels behave as projections.
      (eq (koln "Teller")
-         (e ^. col (C::C "title")))
+         (#title e))   -- labels behave as lenses too.
   id -< e
 
 q_TEmployee_TDepartment_join :: Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
-  e <- queryTabla T -< () -- inferred
-  d <- queryTabla T -< () -- inferred
+  e <- queryTabla -< () -- inferred: TEmployee
+  d <- queryTabla -< () -- inferred: TDepartment
   restrict <<< nullFalse -< eq
-     (e ^. col (C::C "department_id")) -- tnc
-     (d ^. col (C::C "department_id")) -- tc
+     (#department_id e) -- Koln
+     (#department_id d) -- Kol
   id -< (e,d)
 
 q_TAccount_TIndividual_leftJoin :: Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
   leftJoin
-   (queryTabla (T::T TAccount))    -- Can't be inferred.
-   (queryTabla (T::T TIndividual)) -- Can't be inferred.
-   (\(a,i) -> eq (a ^. col (C::C "customer_id"))
-                 (i ^. col (C::C "customer_id")))
+    (queryTabla @TAccount)    -- TAccount can't be inferred.
+    (queryTabla @TIndividual) -- TIndividual can't be inferred.
+    (\(a,i) -> eq
+       (#customer_id a)
+       (view (col' (C :: C "customer_id")) i)) -- a different way of
+                                               -- referring to the
+                                               -- customer_id column
 
 --------------------------------------------------------------------------------
 

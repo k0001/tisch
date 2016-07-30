@@ -26,9 +26,13 @@ module Opaleye.SOT
 
    -- * Working with 'Tabla'
  , table
+ , table'
  , queryTabla
+ , queryTabla'
  , HsR(..)
  , HsI(..)
+ , mkHsI
+ , hsi
  , PgR(..)
  , PgRN(..)
  , PgW(..)
@@ -79,6 +83,7 @@ module Opaleye.SOT
  , gte
    -- * Selecting
  , col
+ , col'
    -- * Ordering
  , O.orderBy
  , asc
@@ -96,13 +101,10 @@ module Opaleye.SOT
  , Col(..)
  , C(..)
  , T(..)
- , TC(..)
- , TCa
  , RN(..)
  , WD(..)
 
    -- ** Column types
- , NotNullable
  , PgTyped(..)
  , KolCast
  , KolLike

@@ -286,19 +286,19 @@ runQuery1 pc q = do
 runInsertTabla
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
   => Conn ps -> T t -> f (HsI t) -> m () -- ^
-runInsertTabla conn t = runInsert conn (table t) . map pgWfromHsI . toList
+runInsertTabla conn t = runInsert conn (table' t) . map pgWfromHsI . toList
 
 -- | Like 'runInsert1', but easier to use if you are querying a single 'Tabla'.
 runInsertTabla1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t)
   => Conn ps -> T t -> HsI t -> m () -- ^
-runInsertTabla1 conn t = runInsert1 conn (table t) . pgWfromHsI
+runInsertTabla1 conn t = runInsert1 conn (table' t) . pgWfromHsI
 
 -- | Like 'runInsert'', but easier to use if you are querying a single 'Tabla'.
 runInsertTabla'
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
   => Conn ps -> T t -> f (HsI t) -> m Int64 -- ^
-runInsertTabla' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
+runInsertTabla' conn t = runInsert' conn (table' t) . map pgWfromHsI . toList
 
 -- | Insert many rows.
 --
@@ -412,7 +412,7 @@ runUpdateTabla' pc = runUpdateTabla pc (T::T t)
 runUpdateTabla
   :: (Tabla t, MonadIO m, Allow 'Update ps)
   => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> Kol O.PGBool) -> m Int64 -- ^
-runUpdateTabla pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
+runUpdateTabla pc t upd = runUpdate pc (table' t) (upd . pgWfromPgR)
 
 --------------------------------------------------------------------------------
 
@@ -444,7 +444,7 @@ runDeleteTabla
   -> T t
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
   -> m Int64
-runDeleteTabla pc t = runDelete pc (table t)
+runDeleteTabla pc t = runDelete pc (table' t)
 
 --------------------------------------------------------------------------------
 -- Exceptions

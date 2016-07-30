@@ -168,10 +168,9 @@ instance
 
 --------------------------------------------------------------------------------
 
-class
-  RLens (a :: k) (axs :: [(k,Type)]) (ays :: [(k,Type)]) (x :: Type) (y :: Type)
-  | axs a -> x, ays a -> y, axs a y -> ays, ays a x -> axs
-  where
+class RLens (a :: k) (axs :: [(k,Type)]) (ays :: [(k,Type)]) (x :: Type) (y :: Type)
+  | axs a -> x, ays a -> y, axs y -> ays, ays x -> axs
+ where
   -- | A lens into the 'Record' value indexed by the key @a@.
   rLens :: proxy a -> Lens (Record axs) (Record ays) x y
 
@@ -181,7 +180,10 @@ instance RLens a ('(a,x) ': axs) ('(a,y) ': axs) x y where
   {-# INLINE rLens #-}
 
 instance {-# OVERLAPPABLE #-}
-  (RLens a axs ays x y) => RLens a (skip ': axs) (skip ': ays) x y
+  ( RLens a axs ays x y
+  , s ~ (skip ': axs) -- Need to specify s and t this way, otherwise
+  , t ~ (skip ': ays) -- we overlap with the other RLens instance.
+  ) => RLens a s t x y
  where
   rLens prx f = \(RCons tx raxs) -> fmap (RCons tx) (rLens prx f raxs)
   {-# INLINE rLens #-}
@@ -214,23 +216,28 @@ rEnd :: Record axs -> Record (axs :: [(k,Type)])
 rEnd = id
 {-# INLINE rEnd #-}
 
-
+---
 class RBuild' (axs :: [(k,Type)]) (r :: Type) where
   rBuild' :: Record axs -> r
-instance forall (axs :: [(k,Type)]) (axs' :: [(k,Type)]).
+
+instance
+  forall (axs :: [(k,Type)]) (axs' :: [(k,Type)]).
   (RReverse axs axs') => RBuild' axs (Record axs')
  where
   rBuild' raxs = rReverse raxs
   {-# INLINE rBuild' #-}
+
 instance
   forall (a :: k) (x :: Type) (axs :: [(k,Type)]) (r :: Type).
   (RBuild' ('(a,x) ': axs) r) => RBuild' axs (Tagged a x -> r)
  where
-  rBuild' raxs tx = rBuild' (RCons tx raxs)
+  rBuild' raxs = \tx -> rBuild' (RCons tx raxs)
   {-# INLINE rBuild' #-}
 
+---
 class RReverse (xs :: [(k,Type)]) (sx :: [(k,Type)]) | xs -> sx, sx -> xs where
   rReverse :: Record xs -> Record sx
+
 instance
   forall (xs :: [(k,Type)]) (sx :: [(k,Type)]).
   ( RRevApp xs ('[] :: [(k,Type)]) sx
@@ -240,15 +247,19 @@ instance
   rReverse l = rRevApp l (RNil :: Record ('[] :: [(k,Type)]))
   {-# INLINE rReverse #-}
 
+---
 type family RRevAppR (l1 :: [(k,Type)]) (l2 :: [(k,Type)]) :: [(k,Type)] where
   RRevAppR (e ': l) l' = RRevAppR l (e ': l')
   RRevAppR '[] l = l
 
+---
 class RRevApp (l1 :: [(k,Type)]) (l2 :: [(k,Type)]) (l3 :: [(k,Type)]) | l1 l2 -> l3 where
   rRevApp :: Record l1 -> Record l2 -> Record l3
+
 instance RRevApp ('[] :: [(k,Type)]) (l2 :: [(k,Type)]) (l2 :: [(k,Type)]) where
   rRevApp _ l = l
   {-# INLINE rRevApp #-}
+
 instance
   forall (x :: (k,Type)) (l :: [(k,Type)]) (l' :: [(k,Type)]) (z :: [(k,Type)]).
   (RRevApp l (x ': l') z) => RRevApp (x ': l) l' z
