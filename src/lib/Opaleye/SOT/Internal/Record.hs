@@ -3,7 +3,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -11,10 +10,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -65,38 +61,23 @@ class ApplyAB f a b where
   applyAB :: f -> a -> b
 
 ---
--- | @g . f@
-data FnComp g f = FnComp g f
-instance forall f g a b c.
-  ( ApplyAB f a b, ApplyAB g b c
-  ) => ApplyAB (FnComp g f) a c where
-    applyAB ~(FnComp g f) x = applyAB g (applyAB f x :: b)
-
----
--- | @'applyAB' 'FnTagged' a === 'Tagged' a@
-data FnTagged = FnTagged
-instance (ta ~ Tagged t a) => ApplyAB FnTagged a ta where
-  applyAB _ a = Tagged a
-
--- | @'applyAB' 'FnTagged' ('Tagged' a) === a@
-data FnUnTagged = FnUnTagged
-instance (ta ~ Tagged t a) => ApplyAB FnUnTagged ta a where
-  applyAB _ (Tagged a) = a
-
----
 -- | @'applyAB' ('FnMap' f) xs === map f xs@
 newtype FnMap f = FnMap f
 instance (RMap f x y) => ApplyAB (FnMap f) (Record x) (Record y) where
   applyAB (FnMap f) rx = rMapAux f rx
+  {-# INLINE applyAB #-}
 
 rMap :: (RMap f x y) => f -> Record x -> Record y
 rMap f rx = applyAB (FnMap f) rx
+{-# INLINE rMap #-}
 
 class (RecordKeys x ~ RecordKeys y) => RMap f x y where
   rMapAux :: f -> Record x -> Record y
 
 instance RMap f '[] '[] where
   rMapAux _ _ = RNil
+  {-# INLINE rMapAux #-}
+
 instance
     ( ApplyAB f b b', RMap f abs abs'
     ) => RMap f ('(a, b) ': abs) ('(a, b') ': abs') where
@@ -188,9 +169,6 @@ instance {-# OVERLAPPABLE #-}
   rLens prx f = \(RCons tx raxs) -> fmap (RCons tx) (rLens prx f raxs)
   {-# INLINE rLens #-}
 
--- | 'RLens'' is to 'RLens' what 'Control.Lens.Lens'' is to 'Control.Lens.Lens'.
-type RLens' a axs x = RLens a axs axs x x
-
 --------------------------------------------------------------------------------
 -- Stuff required to implement 'rBuild' follows. Quite possibly some of the
 -- kind annotations are unneeded, but it was quite easy to add all of them in
@@ -266,5 +244,4 @@ instance
  where
   rRevApp (RCons x l) l' = rRevApp l (RCons x l')
   {-# INLINE rRevApp #-}
-
 

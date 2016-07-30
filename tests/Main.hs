@@ -98,7 +98,7 @@ update1 :: Allow 'Update ps => Conn ps -> IO Int64
 update1 c = runUpdateTabla c (T :: T TTest) upd fil
   where
     -- inferred: fil :: PgR TTest -> Kol PGBool
-    fil = \v -> eq (kol True) (#c1 v)
+    fil = eq (kol True) . #c1
     -- inferred: upd :: PgW TTest -> PgW TTest
     upd = set #c1 (kol True)
 

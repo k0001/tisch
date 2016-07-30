@@ -17,7 +17,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeInType #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -812,42 +811,73 @@ class ITabla t => Tabla (t :: k) where
 -- | Helper function to safely build an @'HsI' t@.
 --
 -- The type of this function isn't easy to understand, but an example should
--- clarify its usage. Here we asume we have a @Person@ datatype and a @TPerson@
--- which is an instance of 'Tisch'.
+-- clarify its usage. We will asume we have a @TPerson@ which is an instance of
+-- 'Table', and @Person@ datatype as follows:
 --
 -- @
--- personToHsI :: Person -> HsI TPerson
--- personToHsI (Person name age) =
---    'kHsI' (T :: TPerson) $ \\set_ -> 'HL.hBuild'
---        (set_ ('C' :: 'C' "name") name)
---        (set_ ('C' :: 'C' "age") age)
+-- data TPerson
+-- instance 'Table' TPerson where
+--   type 'Database' TPerson = ... not important ...
+--   type 'SchemaName' TPerson = ... not important ...
+--   type 'TableName' TPerson = ... not important ...
+--   type 'Cols' TPerson
+--     = '[ ''Col' "name" 'W' 'R' 'O.PGText' 'Text'
+--        , ''Col' "age" 'W' 'R' 'O.PGInt4' 'Int32'
+--        ]
+--
+-- data Person = Person
+--   { _personName :: 'Text'
+--   , _personAge :: 'Int'
+--   }
 -- @
 --
--- You are not required to use this function to build an @'HsI' t@ if working
--- with the tools from "Data.HList" is sufficient for you. This is just a
--- convenience.
--- TODO mkHsI
--- TODO   :: (Tabla t, HL.HRearrange (HL.LabelsOf (Cols_NamedHsI t)) xs (Cols_NamedHsI t))
--- TODO   => T t
--- TODO   -> ((forall c a. (C c -> a -> TCa t c a)) -> HList xs)
--- TODO   -> HsI t -- ^
--- TODO mkHsI (T::T t) k
--- TODO   = Tagged
--- TODO   $ HL.Record
--- TODO   $ HL.hRearrange2 (Proxy :: Proxy (HL.LabelsOf (Cols_NamedHsI t)))
--- TODO   $ k (const Tagged)
--- TODO {-# INLINE mkHsI #-}
-
---------------------------------------------------------------------------------
-
+-- With that in place, and both the 'TypeApplications' and the 'OverloadedLabels'
+-- GHC extensions enabled, we can use 'mkHsI' as follows:
+--
+-- @
+-- personToHsI :: Person -> 'HsI' TPerson
+-- personToHsI person =
+--   'mkHsI' @ @TPerson@
+--     ('hsi' #name (_personName person))
+--     ('hsi' #age (_personAge age))
+-- @
+--
+-- The column names must appear in the same order as they do in @'Cols'
+-- TPerson@, otherwise you will get a compiler error.
+--
+-- As long as your column name is also a valid Haskell name, you can use the
+-- 'OverloadedLabels' syntax as above to specify the name of the column.
+-- However, if your column is name is more esoteric, you can just replace the
+-- call to 'hsi' with 'Tagged', specifying the column name as 'Symbol' between
+-- quotes:
+--
+-- @
+-- personToHsI :: Person -> 'HsI' TPerson
+-- personToHsI person =
+--   'mkHsI' @ @TPerson@
+--     ('Tagged' @"name" (_personName person))
+--     ('Tagged' @"age" (_personAge age))
+-- @
+--
+-- Note: Technically, you can use the 'Tagged' without specifying the column
+-- name and it will work just fine. However, for maintenance purposes (i.e., in
+-- case you change the order of your columns in the future), we highly recommend
+-- being explicit about the column name.
+--
+-- Note: You are not required to use this function to build an @'HsI' t@ if
+-- working with 'HsI', 'Record.RCons' and 'Record.RNil' (not exported, from
+-- "Opaleye.SOT.Internal.Record", not exported) are sufficient to you, this is
+-- just a convenience.
 mkHsI :: MkHsI t
 mkHsI = Record.rBuildSymbol
 {-# INLINE mkHsI #-}
 
+-- | See 'mkHsI'.
 type MkHsI t = Record.RBuild' ('[] :: [(Symbol,Type)])
                               (Cols_CNamedFunArgs Col_HsISym0 (HsI t) (Cols t))
                            => (Cols_CNamedFunArgs Col_HsISym0 (HsI t) (Cols t))
 
+-- | Helper function for building an 'HsI'. See 'mkHsI' for an example.
 hsi :: C (c :: Symbol) -> x -> Tagged c x
 hsi _ = Tagged
 {-# INLINE hsi #-}
@@ -856,29 +886,16 @@ instance Record.RBuild' axs (Record (Cols_NamedHsI t)) => Record.RBuild' axs (Hs
   rBuild' raxs = HsI (Record.rBuild' raxs)
   {-# INLINE rBuild' #-}
 
--- | Take a look at 'MkHsI' to better understand the purpose of this function.
-type family Cols_CNamedFunArgs (f :: k ~> Type) (z :: Type) (cols :: [Col Symbol WD RN Type Type]) :: Type where
+-- | Used by 'MkHsI'.
+type family Cols_CNamedFunArgs
+    (f :: TyFun (Col Symbol WD RN Type Type) Type -> Type)
+    (z :: Type) (cols :: [Col Symbol WD RN Type Type]) :: Type
+ where
   Cols_CNamedFunArgs f z '[] = z
   Cols_CNamedFunArgs f z (x ': xs) =
     Tagged (Col_Name x) (Apply f x) -> Cols_CNamedFunArgs f z xs
 
-
-
--- | Used by arguments to 'mkHsI'.
---
--- Note: We could give an instance for @(x -> Tagged c x)@, but we don't want
--- to pollute the global instance space with this, so we add a useless
--- 'WrapSymbol' wrapper just to prevent this.
-
--- instance
---    ( Record.RBuild' ('(a,x) ': axs) r
---    ) => Record.RBuild' axs (Ca a x -> r)
---  where
---    rBuild' raxs (Ca x :: Ca a x) =
---       Record.rBuild' (Record.RCons (Tagged @a x) raxs)
---    {-# INLINE rBuild' #-}
---
----
+--------------------------------------------------------------------------------
 
 -- | To be used with 'Record.ApplyAB'.
 data FnPgWfromHsIField = FnPgWfromHsIField
@@ -892,8 +909,6 @@ instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIFiel
   applyAB _ = maybe nul koln
 instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
   applyAB _ = fmap (maybe nul koln)
-
---------------------------------------------------------------------------------
 
 -- | Convert a custom Haskell type to a representation appropiate for /inserting/
 -- it as a new row using 'Opaleye.SOT.Run.runInsert'.
@@ -1014,7 +1029,7 @@ class ColLens n x a b | x n -> a b where
   --
   -- Notice that this lens is more polymorphic than it needs to be, as
   -- @'Lens' x x a a@ would suffice. However, we need to make this fully
-  -- polymorphic over @a@ and @b@ as otherwise `Control.Lens.set` won't
+  -- polymorphic over @a@ because otherwise `Control.Lens.set` won't
   -- pick our 'GHC.IsLabel' implementation for 'col'' when required.
   col' :: C (n :: Symbol) -> Lens x x a b
 
