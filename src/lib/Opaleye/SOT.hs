@@ -26,9 +26,7 @@ module Opaleye.SOT
 
    -- * Working with 'Tabla'
  , table
- , table'
  , queryTabla
- , queryTabla'
  , HsR(..)
  , HsI(..)
  , mkHsI
@@ -83,7 +81,6 @@ module Opaleye.SOT
  , gte
    -- * Selecting
  , col
- , col'
    -- * Ordering
  , O.orderBy
  , asc

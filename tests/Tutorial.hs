@@ -529,9 +529,9 @@ q_TAccount_TIndividual_leftJoin =
     (queryTabla @TIndividual) -- TIndividual can't be inferred.
     (\(a,i) -> eq
        (#customer_id a)
-       (view (col' (C :: C "customer_id")) i)) -- a different way of
-                                               -- referring to the
-                                               -- customer_id column
+       (view (col @"customer_id") i)) -- a different way of referring to the
+                                      -- customer_id column, useful if the
+                                      -- column name is not a valid Haskell name
 
 --------------------------------------------------------------------------------
 

@@ -169,7 +169,7 @@ instance
 --------------------------------------------------------------------------------
 
 class RLens (a :: k) (axs :: [(k,Type)]) (ays :: [(k,Type)]) (x :: Type) (y :: Type)
-  | axs a -> x, ays a -> y, axs y -> ays, ays x -> axs
+  | axs a -> x, ays a -> y, axs a y -> ays, ays a x -> axs
  where
   -- | A lens into the 'Record' value indexed by the key @a@.
   rLens :: proxy a -> Lens (Record axs) (Record ays) x y

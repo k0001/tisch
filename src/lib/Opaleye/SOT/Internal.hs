@@ -660,19 +660,13 @@ type instance Apply Col_HsISym0 col = Col_HsI col
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- table in a specific schema.
-data T (t :: k) = Tabla t => T
-
--- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
--- column in a specific table in a specific schema.
-data TC (t :: k) (c :: Symbol) = Tabla t => TC
-
-type TCa (t :: k) (c :: Symbol) = Tagged (TC t c)
+data T (t :: k) = T
 
 -- | Tag to be used alone or with 'Tagged' for uniquely identifying a specific
 -- column in an unknown table.
 data C (c :: Symbol) = C
 
-instance GHC.IsLabel c (C c) where
+instance GHC.IsLabel (c :: Symbol) (C c) where
   fromLabel _ = C
   {-# INLINE fromLabel #-}
 
@@ -713,7 +707,7 @@ instance Profunctor p => PP.Default p (HsI t) (HsI t) where
 
 
 ---
--- | Output type of @'queryTabla' ('T' t)@.
+-- | Output type of @'queryTabla' ('T' :: 'T' t)@.
 --
 -- Mnemonic: PostGresql Read.
 newtype PgR t = PgR { unPgR :: Record (Cols_NamedPgR t) }
@@ -854,7 +848,7 @@ type MkHsI t = Record.RBuild' ('[] :: [(Symbol,Type)])
                               (Cols_CNamedFunArgs Col_HsISym0 (HsI t) (Cols t))
                            => (Cols_CNamedFunArgs Col_HsISym0 (HsI t) (Cols t))
 
-hsi :: C c -> x -> Tagged c x
+hsi :: C (c :: Symbol) -> x -> Tagged c x
 hsi _ = Tagged
 {-# INLINE hsi #-}
 
@@ -998,7 +992,7 @@ table' (T::T t) = O.TableWithSchema
   (symbolVal (Proxy :: Proxy (TableName t)))
   (P.dimap unPgW PgR (PP.ppa (rDistributeColProps (Proxy @(Cols t)))))
 
--- | Like 'queryTabla', but @t@ is intended to be specified with the
+-- | Like 'queryTabla'', but @t@ is intended to be specified with the
 -- @TypeApplications@ GHC extension.
 queryTabla :: Tabla t => O.Query (PgR t)
 queryTabla = O.queryTable table
@@ -1139,8 +1133,7 @@ instance forall n x t. (ColLens' (PgW t) n x) => GHC.IsLabel n (PgW t -> x) wher
 matchBool
   :: (Op3 kol kol' kol'' kol''', PgTyped a)
   => kol a -> kol' a -> kol'' O.PGBool -> kol''' a
-matchBool f t x = liftKol3 matchBool' f t x
-  where matchBool' = \f' t' x' -> O.ifThenElse x' t' f'
+matchBool = liftKol3 (\f' t' x' -> O.ifThenElse x' t' f')
 
 --------------------------------------------------------------------------------
 -- Booleans.
