@@ -684,6 +684,10 @@ instance GHC.IsLabel (c :: Symbol) (C c) where
 newtype HsR t = HsR { unHsR :: Record (Cols_NamedHsR t) }
 type Cols_NamedHsR t = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
 
+deriving instance Eq (Record (Cols_NamedHsR t)) => Eq (HsR t)
+deriving instance Ord (Record (Cols_NamedHsR t)) => Ord (HsR t)
+deriving instance Show (Record (Cols_NamedHsR t)) => Show (HsR t)
+
 instance Profunctor p => PP.Default p (HsR t) (HsR t) where
   def = P.rmap id PP.def
   {-# INLINE def #-}
@@ -700,6 +704,10 @@ instance Profunctor p => PP.Default p (HsR t) (HsR t) where
 newtype HsI t = HsI { unHsI :: Record (Cols_NamedHsI t) }
 type Cols_NamedHsI t = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
 
+deriving instance Eq (Record (Cols_NamedHsI t)) => Eq (HsI t)
+deriving instance Ord (Record (Cols_NamedHsI t)) => Ord (HsI t)
+deriving instance Show (Record (Cols_NamedHsI t)) => Show (HsI t)
+
 instance Profunctor p => PP.Default p (HsI t) (HsI t) where
   def = P.rmap id PP.def
   {-# INLINE def #-}
@@ -711,6 +719,10 @@ instance Profunctor p => PP.Default p (HsI t) (HsI t) where
 -- Mnemonic: PostGresql Read.
 newtype PgR t = PgR { unPgR :: Record (Cols_NamedPgR t) }
 type Cols_NamedPgR t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
+
+deriving instance Eq (Record (Cols_NamedPgR t)) => Eq (PgR t)
+deriving instance Ord (Record (Cols_NamedPgR t)) => Ord (PgR t)
+deriving instance Show (Record (Cols_NamedPgR t)) => Show (PgR t)
 
 instance Profunctor p => PP.Default p (PgR t) (PgR t) where
   def = P.rmap id PP.def
@@ -738,6 +750,10 @@ instance
 newtype PgRN t = PgRN { unPgRN :: Record (Cols_NamedPgRN t) }
 type Cols_NamedPgRN t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
 
+deriving instance Eq (Record (Cols_NamedPgRN t)) => Eq (PgRN t)
+deriving instance Ord (Record (Cols_NamedPgRN t)) => Ord (PgRN t)
+deriving instance Show (Record (Cols_NamedPgRN t)) => Show (PgRN t)
+
 instance Profunctor p => PP.Default p (PgRN t) (PgRN t) where
   def = P.rmap id PP.def
   {-# INLINE def #-}
@@ -758,6 +774,10 @@ instance
 -- Mnemonic: PostGresql Write.
 newtype PgW t = PgW { unPgW :: Record (Cols_NamedPgW t) }
 type Cols_NamedPgW t = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
+
+deriving instance Eq (Record (Cols_NamedPgW t)) => Eq (PgW t)
+deriving instance Ord (Record (Cols_NamedPgW t)) => Ord (PgW t)
+deriving instance Show (Record (Cols_NamedPgW t)) => Show (PgW t)
 
 instance Profunctor p => PP.Default p (PgW t) (PgW t) where
   def = P.rmap id PP.def
@@ -821,7 +841,7 @@ class ITabla t => Tabla (t :: k) where
 --   type 'SchemaName' TPerson = ... not important ...
 --   type 'TableName' TPerson = ... not important ...
 --   type 'Cols' TPerson
---     = '[ ''Col' "name" 'W' 'R' 'O.PGText' 'Text'
+--     = '[ ''Col' "name" 'W' 'R' 'O.PGText' 'Data.Text.Text'
 --        , ''Col' "age" 'W' 'R' 'O.PGInt4' 'Int32'
 --        ]
 --
@@ -837,7 +857,7 @@ class ITabla t => Tabla (t :: k) where
 -- @
 -- personToHsI :: Person -> 'HsI' TPerson
 -- personToHsI person =
---   'mkHsI' @ @TPerson@
+--   'mkHsI' \@ TPerson
 --     ('hsi' #name (_personName person))
 --     ('hsi' #age (_personAge age))
 -- @
@@ -854,9 +874,9 @@ class ITabla t => Tabla (t :: k) where
 -- @
 -- personToHsI :: Person -> 'HsI' TPerson
 -- personToHsI person =
---   'mkHsI' @ @TPerson@
---     ('Tagged' @"name" (_personName person))
---     ('Tagged' @"age" (_personAge age))
+--   'mkHsI' \@ TPerson
+--     ('Tagged' \@ "name" (_personName person))
+--     ('Tagged' \@ "age" (_personAge age))
 -- @
 --
 -- Note: Technically, you can use the 'Tagged' without specifying the column
