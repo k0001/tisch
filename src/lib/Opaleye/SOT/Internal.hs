@@ -1005,44 +1005,36 @@ queryTabla' = O.queryTable . table'
 
 --------------------------------------------------------------------------------
 
-class
-  ( Record.RLens' n (ColLens'RecordIndex r) x
-  ) => ColLens' r (n :: Symbol) x | r n -> x
- where
-  type ColLens'RecordIndex r :: [(Symbol, Type)]
+class ColLens n x a b | x n -> a b where
   -- | 'Lens'' into the value in a column.
   --
   -- Mnemonic: the COLumn value.
   --
-  -- Notice that the type of @x@ will depend on the choice of @r@. Also, the
-  -- lens is not fully polymorphic because that wouldn't make sense for our
-  -- needs.
-  --
   -- See 'col' and 'GHC.IsLabel' for alternative APIs for this.
-  col' :: C n -> Lens' r x
+  --
+  -- Notice that this lens is more polymorphic than it needs to be, as
+  -- @'Lens' x x a a@ would suffice. However, we need to make this fully
+  -- polymorphic over @a@ and @b@ as otherwise `Control.Lens.set` won't
+  -- pick our 'GHC.IsLabel' implementation for 'col'' when required.
+  col' :: C (n :: Symbol) -> Lens x x a b
 
-instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsR t)) x) => ColLens' (HsR t) c x where
-  type ColLens'RecordIndex (HsR t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
+instance (Tabla t, x ~ Cols_NamedHsR t, Record.RLens n x x a b) => ColLens n (HsR t) a b where
   col' prx = iso unHsR HsR . Record.rLens prx
   {-# INLINE col' #-}
 
-instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (HsI t)) x) => ColLens' (HsI t) c x where
-  type ColLens'RecordIndex (HsI t) = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
+instance (Tabla t, x ~ Cols_NamedHsI t, Record.RLens n x x a b) => ColLens n (HsI t) a b where
   col' prx = iso unHsI HsI . Record.rLens prx
   {-# INLINE col' #-}
 
-instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgR t)) x) => ColLens' (PgR t) c x where
-  type ColLens'RecordIndex (PgR t) = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
+instance (Tabla t, x ~ Cols_NamedPgR t, Record.RLens n x x a b) => ColLens n (PgR t) a b where
   col' prx = iso unPgR PgR . Record.rLens prx
   {-# INLINE col' #-}
 
-instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgRN t)) x) => ColLens' (PgRN t) c x where
-  type ColLens'RecordIndex (PgRN t) = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
+instance (Tabla t, x ~ Cols_NamedPgRN t, Record.RLens n x x a b) => ColLens n (PgRN t) a b where
   col' prx = iso unPgRN PgRN . Record.rLens prx
   {-# INLINE col' #-}
 
-instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgW t)) x) => ColLens' (PgW t) c x where
-  type ColLens'RecordIndex (PgW t) = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
+instance (Tabla t, x ~ Cols_NamedPgW t, Record.RLens n x x a b) => ColLens n (PgW t) a b where
   col' prx = iso unPgW PgW . Record.rLens prx
   {-# INLINE col' #-}
 
@@ -1050,7 +1042,7 @@ instance (Tabla t, Record.RLens' c (ColLens'RecordIndex (PgW t)) x) => ColLens' 
 -- with the @TypeApplications@ GHC extension.
 --
 -- Defining this function requires @AllowAmbiguousTypes@.
-col :: forall n r x. ColLens' r n x => Lens' r x
+col :: forall n x a b. ColLens n x a b => Lens x x a b
 col = col' (C :: C n)
 {-# INLINE col #-}
 
@@ -1059,38 +1051,48 @@ col = col' (C :: C n)
 
 -- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
 -- value is expected. Notice @f@ is rigid.
-instance forall n f x t. (ColLens' (HsR t) n x, Functor f)
-  => GHC.IsLabel n ((x -> f x) -> ((HsR t) -> f (HsR t)))
-  where fromLabel _ = col' (C :: C n)
-        {-# INLINE fromLabel #-}
+instance forall n f t a b.
+  ( ColLens n (HsR t) a b, Functor f
+  ) => GHC.IsLabel n ((a -> f b) -> ((HsR t) -> f (HsR t)))
+ where
+  fromLabel _ = col' (C :: C n)
+  {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
 -- value is expected. Notice @f@ is rigid.
-instance forall n f x t. (ColLens' (HsI t) n x, Functor f)
-  => GHC.IsLabel n ((x -> f x) -> ((HsI t) -> f (HsI t)))
-  where fromLabel _ = col' (C :: C n)
-        {-# INLINE fromLabel #-}
+instance forall n f t a b.
+  ( ColLens n (HsI t) a b, Functor f
+  ) => GHC.IsLabel n ((a -> f b) -> ((HsI t) -> f (HsI t)))
+ where
+  fromLabel _ = col' (C :: C n)
+  {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
 -- value is expected. Notice @f@ is rigid.
-instance forall n f x t. (ColLens' (PgR t) n x, Functor f)
-  => GHC.IsLabel n ((x -> f x) -> ((PgR t) -> f (PgR t)))
-  where fromLabel _ = col' (C :: C n)
-        {-# INLINE fromLabel #-}
+instance forall n f t a b.
+  ( ColLens n (PgR t) a b, Functor f
+  ) => GHC.IsLabel n ((a -> f b) -> ((PgR t) -> f (PgR t)))
+ where
+  fromLabel _ = col' (C :: C n)
+  {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
 -- value is expected. Notice @f@ is rigid.
-instance forall n f x t. (ColLens' (PgRN t) n x, Functor f)
-  => GHC.IsLabel n ((x -> f x) -> ((PgRN t) -> f (PgRN t)))
-  where fromLabel _ = col' (C :: C n)
-        {-# INLINE fromLabel #-}
---
+instance forall n f t a b.
+  ( ColLens n (PgRN t) a b, Functor f
+  ) => GHC.IsLabel n ((a -> f b) -> ((PgRN t) -> f (PgRN t)))
+ where
+  fromLabel _ = col' (C :: C n)
+  {-# INLINE fromLabel #-}
+
 -- | @#foo@ works like @'col'' ('C' :: 'C' "foo")@ in places where a lens-like
 -- value is expected. Notice @f@ is rigid.
-instance forall n f x t. (ColLens' (PgW t) n x, Functor f)
-  => GHC.IsLabel n ((x -> f x) -> ((PgW t) -> f (PgW t)))
-  where fromLabel _ = col' (C :: C n)
-        {-# INLINE fromLabel #-}
+instance forall n f t a b.
+  ( ColLens n (PgW t) a b, Functor f
+  ) => GHC.IsLabel n ((a -> f b) -> ((PgW t) -> f (PgW t)))
+ where
+  fromLabel _ = col' (C :: C n)
+  {-# INLINE fromLabel #-}
 
 --------------------------------------------------------------------------------
 -- Projection of column values through OverloadedLabels:
@@ -1102,27 +1104,27 @@ type family Col_ByName (n :: Symbol) (cols :: [Col Symbol WD RN Type Type]) :: C
 
 
 -- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
-instance forall n x t. (ColLens' (HsR t) n x) => GHC.IsLabel n (HsR t -> x) where
+instance forall n t a. (ColLens n (HsR t) a a) => GHC.IsLabel n (HsR t -> a) where
   fromLabel _ = view (col' (C :: C n))
   {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
-instance forall n x t. (ColLens' (HsI t) n x) => GHC.IsLabel n (HsI t -> x) where
+instance forall n t a. (ColLens n (HsI t) a a) => GHC.IsLabel n (HsI t -> a) where
   fromLabel _ = view (col' (C :: C n))
   {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
-instance forall n x t. (ColLens' (PgR t) n x) => GHC.IsLabel n (PgR t -> x) where
+instance forall n t a. (ColLens n (PgR t) a a) => GHC.IsLabel n (PgR t -> a) where
   fromLabel _ = view (col' (C :: C n))
   {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
-instance forall n x t. (ColLens' (PgRN t) n x) => GHC.IsLabel n (PgRN t -> x) where
+instance forall n t a. (ColLens n (PgRN t) a a) => GHC.IsLabel n (PgRN t -> a) where
   fromLabel _ = view (col' (C :: C n))
   {-# INLINE fromLabel #-}
 
 -- | @#foo@ works like @'view' ('col'' ('C' :: 'C' "foo"))@.
-instance forall n x t. (ColLens' (PgW t) n x) => GHC.IsLabel n (PgW t -> x) where
+instance forall n t a. (ColLens n (PgW t) a a) => GHC.IsLabel n (PgW t -> a) where
   fromLabel _ = view (col' (C :: C n))
   {-# INLINE fromLabel #-}
 
