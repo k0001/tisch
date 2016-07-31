@@ -36,7 +36,7 @@ import           Data.Data (Data)
 import           Data.Kind
 import           Data.Foldable
 import           Data.Typeable (Typeable)
-import qualified Data.Aeson
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString
 import qualified Data.ByteString.Lazy
 import qualified Data.CaseInsensitive
@@ -367,8 +367,8 @@ instance ToKol Data.UUID.UUID O.PGUuid where kol = Kol . O.pgUUID
 instance ToKol (Data.CaseInsensitive.CI String) O.PGCitext where kol = Kol . O.unsafeCoerceColumn . O.pgString . Data.CaseInsensitive.original
 instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = Kol . O.pgCiStrictText
 instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = Kol . O.pgCiLazyText
-instance ToKol Data.Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Data.Aeson.encode
-instance ToKol Data.Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Data.Aeson.encode
+instance ToKol Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Aeson.encode
+instance ToKol Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Aeson.encode
 
 ---
 instance Monoid (Kol O.PGText) where
@@ -587,6 +587,18 @@ instance MonadFix WDef where
     where unWVal (WVal x) = x
           unWVal WDef     = error "mfix WDef: WDef"
 
+-- | Like @'Maybe' a@.
+instance Aeson.FromJSON a => Aeson.FromJSON (WDef a) where
+  parseJSON v = fmap (maybe WDef WVal) (Aeson.parseJSON v)
+  {-# INLINE parseJSON #-}
+
+-- | Like @'Maybe' a@.
+instance Aeson.ToJSON a => Aeson.ToJSON (WDef a) where
+  toJSON = Aeson.toJSON . wdef Nothing Just
+  {-# INLINE toJSON #-}
+  toEncoding = Aeson.toEncoding . wdef Nothing Just
+  {-# INLINE toEncoding #-}
+
 --------------------------------------------------------------------------------
 
 -- | Column description.
@@ -687,6 +699,9 @@ type Cols_NamedHsR t = List.Map (Col_NameSym0 :&&&$$$ Col_HsRSym0) (Cols t)
 deriving instance Eq (Record (Cols_NamedHsR t)) => Eq (HsR t)
 deriving instance Ord (Record (Cols_NamedHsR t)) => Ord (HsR t)
 deriving instance Show (Record (Cols_NamedHsR t)) => Show (HsR t)
+deriving instance Generic (Record (Cols_NamedHsR t)) => Generic (HsR t)
+instance (Aeson.FromJSON (Record (Cols_NamedHsR t)), Generic (HsR t)) => Aeson.FromJSON (HsR t)
+instance (Aeson.ToJSON (Record (Cols_NamedHsR t)), Generic (HsR t)) => Aeson.ToJSON (HsR t)
 
 instance Profunctor p => PP.Default p (HsR t) (HsR t) where
   def = P.rmap id PP.def
@@ -707,6 +722,9 @@ type Cols_NamedHsI t = List.Map (Col_NameSym0 :&&&$$$ Col_HsISym0) (Cols t)
 deriving instance Eq (Record (Cols_NamedHsI t)) => Eq (HsI t)
 deriving instance Ord (Record (Cols_NamedHsI t)) => Ord (HsI t)
 deriving instance Show (Record (Cols_NamedHsI t)) => Show (HsI t)
+deriving instance Generic (Record (Cols_NamedHsI t)) => Generic (HsI t)
+instance (Aeson.FromJSON (Record (Cols_NamedHsI t)), Generic (HsI t)) => Aeson.FromJSON (HsI t)
+instance (Aeson.ToJSON (Record (Cols_NamedHsI t)), Generic (HsI t)) => Aeson.ToJSON (HsI t)
 
 instance Profunctor p => PP.Default p (HsI t) (HsI t) where
   def = P.rmap id PP.def
@@ -719,10 +737,6 @@ instance Profunctor p => PP.Default p (HsI t) (HsI t) where
 -- Mnemonic: PostGresql Read.
 newtype PgR t = PgR { unPgR :: Record (Cols_NamedPgR t) }
 type Cols_NamedPgR t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRSym0) (Cols t)
-
-deriving instance Eq (Record (Cols_NamedPgR t)) => Eq (PgR t)
-deriving instance Ord (Record (Cols_NamedPgR t)) => Ord (PgR t)
-deriving instance Show (Record (Cols_NamedPgR t)) => Show (PgR t)
 
 instance Profunctor p => PP.Default p (PgR t) (PgR t) where
   def = P.rmap id PP.def
@@ -750,10 +764,6 @@ instance
 newtype PgRN t = PgRN { unPgRN :: Record (Cols_NamedPgRN t) }
 type Cols_NamedPgRN t = List.Map (Col_NameSym0 :&&&$$$ Col_PgRNSym0) (Cols t)
 
-deriving instance Eq (Record (Cols_NamedPgRN t)) => Eq (PgRN t)
-deriving instance Ord (Record (Cols_NamedPgRN t)) => Ord (PgRN t)
-deriving instance Show (Record (Cols_NamedPgRN t)) => Show (PgRN t)
-
 instance Profunctor p => PP.Default p (PgRN t) (PgRN t) where
   def = P.rmap id PP.def
   {-# INLINE def #-}
@@ -774,10 +784,6 @@ instance
 -- Mnemonic: PostGresql Write.
 newtype PgW t = PgW { unPgW :: Record (Cols_NamedPgW t) }
 type Cols_NamedPgW t = List.Map (Col_NameSym0 :&&&$$$ Col_PgWSym0) (Cols t)
-
-deriving instance Eq (Record (Cols_NamedPgW t)) => Eq (PgW t)
-deriving instance Ord (Record (Cols_NamedPgW t)) => Ord (PgW t)
-deriving instance Show (Record (Cols_NamedPgW t)) => Show (PgW t)
 
 instance Profunctor p => PP.Default p (PgW t) (PgW t) where
   def = P.rmap id PP.def
