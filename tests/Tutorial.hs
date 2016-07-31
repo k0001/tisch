@@ -508,9 +508,9 @@ q_TEmployee_1 = proc () -> do
   restrict -< isNull (#end_date e)
   restrict <<< nullFalse -< lor
      (lt (koln (Time.fromGregorian 2003 1 1))
-         (view #start_date e)) -- labels behave as projections.
+         (view #start_date e)) -- labels behave as lenses.
      (eq (koln "Teller")
-         (#title e))   -- labels behave as lenses too.
+         (#title e))   -- labels behave as projections too.
   id -< e
 
 q_TEmployee_TDepartment_join :: Query (PgR TEmployee, PgR TDepartment)
