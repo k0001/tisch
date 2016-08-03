@@ -26,7 +26,7 @@ module Opaleye.SOT
 
    -- * Working with 'Tabla'
  , table
- , queryTabla
+ , queryT
  , HsR(..)
  , HsI(..)
  , mkHsI

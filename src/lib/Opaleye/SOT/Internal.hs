@@ -718,7 +718,7 @@ instance Profunctor p => PP.Default p (HsI t) (HsI t) where
 
 
 ---
--- | Output type of @'queryTabla' ('T' :: 'T' t)@.
+-- | Output type of @'queryT' ('T' :: 'T' t)@.
 --
 -- Mnemonic: PostGresql Read.
 newtype PgR t = PgR { unPgR :: Record (Cols_NamedPgR t) }
@@ -1037,9 +1037,9 @@ table _ = O.TableWithSchema
   (P.dimap unPgW PgR (PP.ppa (rDistributeColProps (Proxy :: Proxy (Cols t)))))
 
 -- | Like @opaleye@'s 'O.queryTable', but for a 'Tabla'.
-queryTabla :: Tabla t => T t -> O.Query (PgR t)
-queryTabla = O.queryTable . table
-{-# INLINE queryTabla #-}
+queryT :: Tabla t => T t -> O.Query (PgR t)
+queryT = O.queryTable . table
+{-# INLINE queryT #-}
 
 --------------------------------------------------------------------------------
 

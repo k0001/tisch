@@ -70,12 +70,12 @@ testW_toHsI (TestW c1 c2 c3 c4) =
 
 -- query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
-   t1 <- queryTabla TTest -< ()
-   t2 <- queryTabla TTest -< ()
+   t1 <- queryT TTest -< ()
+   t2 <- queryT TTest -< ()
    restrict -< eq (#c1 t1) (#c1 t2)
    (t3, t4n) <- leftJoin
-      (queryTabla TTest)
-      (queryTabla TTest)
+      (queryT TTest)
+      (queryT TTest)
       (\(t3,t4) -> eq (#c1 t3) (#c3 t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
 
@@ -96,7 +96,7 @@ outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
 -- update1 :: Allow 'Update ps => Conn ps -> IO Int64
-update1 c = runUpdateTabla c TTest upd fil
+update1 c = runUpdateT c TTest upd fil
   where
     -- inferred: fil :: PgR TTest -> Kol PGBool
     fil = eq (kol True) . #c1
