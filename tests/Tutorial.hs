@@ -504,7 +504,7 @@ q_TAccount_desc :: Query (PgR TAccount)
 q_TAccount_desc =
   orderBy
     (descnf #avail_balance)
-    (queryT TAccount)
+    (queryTabla TAccount)
 
 -- | Order by multiple fields, asc.
 q_TAccount_asc_multi :: Query (PgR TAccount)
@@ -512,11 +512,11 @@ q_TAccount_asc_multi =
   orderBy
     (mappend (ascnl #open_employee_id)   -- labels behave as projections.
              (asc   (view #product_cd))) -- labels behave as lenses too.
-    (queryT TAccount)
+    (queryTabla TAccount)
 
 q_TEmployee_1 :: Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
-  e <- queryT TEmployee -< ()
+  e <- queryTabla TEmployee -< ()
   restrict -< isNull (#end_date e)
   restrict <<< nullFalse -< lor
      (lt (koln (Time.fromGregorian 2003 1 1))
@@ -527,8 +527,8 @@ q_TEmployee_1 = proc () -> do
 
 q_TEmployee_TDepartment_join :: Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
-  e <- queryT TEmployee -< ()
-  d <- queryT TDepartment -< ()
+  e <- queryTabla TEmployee -< ()
+  d <- queryTabla TDepartment -< ()
   restrict <<< nullFalse -< eq
      (#department_id e) -- Koln
      (#department_id d) -- Kol
@@ -537,8 +537,8 @@ q_TEmployee_TDepartment_join = proc () -> do
 q_TAccount_TIndividual_leftJoin :: Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
   leftJoin
-    (queryT TAccount)
-    (queryT TIndividual)
+    (queryTabla TAccount)
+    (queryTabla TIndividual)
     (\(a,i) -> eq
        (#customer_id a)
        (view (col (Proxy @"customer_id")) i)) -- a different way of referring to

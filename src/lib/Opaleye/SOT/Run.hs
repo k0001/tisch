@@ -40,19 +40,19 @@ module Opaleye.SOT.Run
   , runInsert
   , runInsert'
   , runInsert1
-  , runInsertT
-  , runInsertT'
-  , runInsertT1
+  , runInsertTabla
+  , runInsertTabla'
+  , runInsertTabla1
     -- ** Returning
   , runInsertReturning
   , runInsertReturning'
   , runInsertReturning1
     -- * Update
   , runUpdate
-  , runUpdateT
+  , runUpdateTabla
     -- * Delete
   , runDelete
-  , runDeleteT
+  , runDeleteTabla
     -- * Exception
   , ErrNumRows(..)
     -- * Parsing results
@@ -283,32 +283,32 @@ runQuery1 pc q = do
 -- | Like 'runInsert', but easier to use if you are querying a single 'Tabla'.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
--- the number of passed in rows. Use 'runInsertT'' if you don't want this
+-- the number of passed in rows. Use 'runInsertTabla'' if you don't want this
 -- behavior (hint: you probably want this behavior).
-runInsertT
+runInsertTabla
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
   => Conn ps -> T t -> f (HsI t) -> m () -- ^
-runInsertT conn t = runInsert conn (table t) . map pgWfromHsI . toList
+runInsertTabla conn t = runInsert conn (table t) . map pgWfromHsI . toList
 
 -- | Like 'runInsert1', but easier to use if you are querying a single 'Tabla'.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
 -- one. Use 'runInsert'' if you don't want this behavior (hint: you probably
 -- want this behavior).
-runInsertT1
+runInsertTabla1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t)
   => Conn ps -> T t -> HsI t -> m () -- ^
-runInsertT1 conn t = runInsert1 conn (table t) . pgWfromHsI
+runInsertTabla1 conn t = runInsert1 conn (table t) . pgWfromHsI
 
 -- | Like 'runInsert'', but easier to use if you are querying a single 'Tabla'.
 --
 -- Returns the number of affected rows, which might be different than the number
 -- of passed in rows. If you want this situation to throw an exception, use
--- 'runInsertT' (hint: you probably want to use 'runInsertT').
-runInsertT'
+-- 'runInsertTabla' (hint: you probably want to use 'runInsertTabla').
+runInsertTabla'
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
   => Conn ps -> T t -> f (HsI t) -> m Int64 -- ^
-runInsertT' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
+runInsertTabla' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
 
 -- | Insert many rows.
 --
@@ -411,7 +411,7 @@ runInsertReturning1 pc t w = do
 -- | Like @opaleye@'s 'O.runUpdate', but the predicate is expected to
 -- return a @'Kol' 'O.PGBool'@. Returns the number of affected rows.
 --
--- It is recommended that you use 'runUpdateT' if you are trying to update
+-- It is recommended that you use 'runUpdateTabla' if you are trying to update
 -- a table that is an instance of 'Tabla'. The result is the same, but
 -- this function might be less convenient to use.
 runUpdate
@@ -420,21 +420,21 @@ runUpdate
 runUpdate (Conn conn) t upd fil = liftIO (O.runUpdate conn t upd (unKol . fil))
 
 -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
-runUpdateT
+runUpdateTabla
   :: (Tabla t, MonadIO m, Allow 'Update ps)
   => Conn ps
   -> T t
   -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
   -> m Int64                 -- ^ Number of updated rows.
-runUpdateT pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
+runUpdateTabla pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
 
 --------------------------------------------------------------------------------
 
 -- | Like @opaleye@'s 'O.runDelete', but the predicate is expected to return
 -- a @'Kol' 'O.PGBool'@. Returns the number of affected rows.
 --
--- It is recommended that you use 'runDeleteT' if you are trying to update
+-- It is recommended that you use 'runDeleteTabla' if you are trying to update
 -- a table that is an instance of 'Tabla', the result is the same, but
 -- this function might be less convenient to use.
 runDelete
@@ -443,13 +443,13 @@ runDelete
 runDelete (Conn conn) t fil = liftIO (O.runDelete conn t (unKol . fil))
 
 -- | Like 'runDelete', but specifically designed to work well with 'Tabla'.
-runDeleteT
+runDeleteTabla
   :: (Tabla t, MonadIO m, Allow 'Delete ps)
   => Conn ps
   -> T t
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
   -> m Int64
-runDeleteT pc = runDelete pc . table
+runDeleteTabla pc = runDelete pc . table
 
 --------------------------------------------------------------------------------
 -- Exceptions
