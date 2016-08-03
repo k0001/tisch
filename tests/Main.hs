@@ -18,11 +18,11 @@ module Main where
 import           Control.Arrow
 import           Control.Lens
 import           Data.Int
+import           Data.Proxy
 import qualified Database.PostgreSQL.Simple as Pg
 import qualified Opaleye as O
 
 import           Opaleye.SOT
-import           Opaleye.SOT.Internal
 
 import           Tutorial () -- Just for typechecking
 
@@ -38,6 +38,7 @@ data DbTest
 
 data TTest
 instance Tabla TTest where
+  data T TTest = TTest
   type Database TTest = DbTest
   type SchemaName TTest = "s"
   type TableName TTest = "t"
@@ -52,33 +53,33 @@ data TestR = TestR Bool (Maybe Bool) Bool (Maybe Int64)
 
 testR_fromHsR :: HsR TTest -> TestR
 testR_fromHsR = \r -> TestR
-   (view (col' (C::C "c1")) r) -- == #c1 r
-   (view (col @"c2") r)        -- == #c2 r
-   (view #c3 r)                -- == #c3 r
-   (#c4 r)                     -- == #c4 r
+   (view (col (Proxy :: Proxy "c1")) r) -- == #c1 r
+   (view (col (Proxy @"c2")) r)         -- == #c2 r
+   (view #c3 r)                         -- == #c3 r
+   (#c4 r)                              -- == #c4 r
 
 data TestW = TestW Bool (Maybe Bool) (WDef Bool) (WDef (Maybe Int64))
 
-testW_toHsI :: TestW -> HsI TTest
+-- testW_toHsI :: TestW -> HsI TTest
 testW_toHsI (TestW c1 c2 c3 c4) =
-  mkHsI @TTest
+  mkHsI TTest
    (hsi #c1 c1)
    (hsi #c2 c2)
    (hsi #c3 c3)
    (hsi #c4 c4)
 
-query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
+-- query1 :: O.Query (PgR TTest, PgR TTest, PgR TTest, PgRN TTest)
 query1 = proc () -> do
-   t1 <- queryTabla -< () -- inferred
-   t2 <- queryTabla -< () -- inferred
+   t1 <- queryTabla TTest -< ()
+   t2 <- queryTabla TTest -< ()
    restrict -< eq (#c1 t1) (#c1 t2)
    (t3, t4n) <- leftJoin
-      (queryTabla @TTest) -- can't be inferred
-      (queryTabla @TTest) -- can't be inferred
+      (queryTabla TTest)
+      (queryTabla TTest)
       (\(t3,t4) -> eq (#c1 t3) (#c3 t4)) -< ()
    returnA -< (t1,t2,t3,t4n)
 
-query2 :: O.Query (PgR TTest)
+-- query2 :: O.Query (PgR TTest)
 query2 = proc () -> do
   (t,_,_,_) <- query1 -< ()
   returnA -< t
@@ -94,8 +95,8 @@ query3 = proc () -> do
 outQuery3 :: Pg.Connection -> IO [Maybe (HsR TTest)]
 outQuery3 conn = O.runQuery conn query3
 
-update1 :: Allow 'Update ps => Conn ps -> IO Int64
-update1 c = runUpdateTabla c (T :: T TTest) upd fil
+-- update1 :: Allow 'Update ps => Conn ps -> IO Int64
+update1 c = runUpdateTabla c TTest upd fil
   where
     -- inferred: fil :: PgR TTest -> Kol PGBool
     fil = eq (kol True) . #c1

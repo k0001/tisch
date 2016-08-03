@@ -6,10 +6,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
 {- | @opaleye-sot@ is a different API for the core @opaleye@
 infraestructure with the following goals in mind:
@@ -82,6 +82,7 @@ module Tutorial
 import           Control.Arrow
 import           Control.Category (id)
 import           Control.Lens
+import           Data.Proxy
 import qualified Data.Time as Time
 import           Data.Time (Day, LocalTime)
 import           Data.Int
@@ -162,6 +163,7 @@ instance QueryRunnerColumnDefault PGInt4 DepartmentId where
 
 data TDepartment
 instance Tabla TDepartment where
+  data T TDepartment = TDepartment
   type Database TDepartment = Db1
   type SchemaName TDepartment = "public"
   type TableName TDepartment = "department"
@@ -184,6 +186,7 @@ instance QueryRunnerColumnDefault PGInt4 BranchId where
 
 data TBranch
 instance Tabla TBranch where
+  data T TBranch = TBranch
   type Database TBranch = Db1
   type SchemaName TBranch = "public"
   type TableName TBranch = "branch"
@@ -211,6 +214,7 @@ instance QueryRunnerColumnDefault PGInt4 EmployeeId where
 
 data TEmployee
 instance Tabla TEmployee where
+  data T TEmployee = TEmployee
   type Database TEmployee = Db1
   type SchemaName TEmployee = "public"
   type TableName TEmployee = "employee"
@@ -240,6 +244,7 @@ instance QueryRunnerColumnDefault PGInt4 ProductTypeId where
 
 data TProductType
 instance Tabla TProductType where
+  data T TProductType = TProductType
   type Database TProductType = Db1
   type SchemaName TProductType = "public"
   type TableName TProductType = "product_type"
@@ -262,6 +267,7 @@ instance QueryRunnerColumnDefault PGInt4 ProductId where
 
 data TProduct
 instance Tabla TProduct where
+  data T TProduct = TProduct
   type Database TProduct = Db1
   type SchemaName TProduct = "public"
   type TableName TProduct = "product"
@@ -302,6 +308,7 @@ instance ToKol CustomerType PGText where
 
 data TCustomer
 instance Tabla TCustomer where
+  data T TCustomer = TCustomer
   type Database TCustomer = Db1
   type SchemaName TCustomer = "public"
   type TableName TCustomer = "customer"
@@ -319,6 +326,7 @@ instance Tabla TCustomer where
 
 data TIndividual
 instance Tabla TIndividual where
+  data T TIndividual = TIndividual
   type Database TIndividual = Db1
   type SchemaName TIndividual = "public"
   type TableName TIndividual = "individual"
@@ -343,6 +351,7 @@ instance QueryRunnerColumnDefault PGInt4 BizStateId where
 
 data TBusiness
 instance Tabla TBusiness where
+  data T TBusiness = TBusiness
   type Database TBusiness = Db1
   type SchemaName TBusiness = "public"
   type TableName TBusiness = "business"
@@ -367,6 +376,7 @@ instance QueryRunnerColumnDefault PGInt4 OfficerId where
 
 data TOfficer
 instance Tabla TOfficer where
+  data T TOfficer = TOfficer
   type Database TOfficer = Db1
   type SchemaName TOfficer = "public"
   type TableName TOfficer = "officer"
@@ -417,6 +427,7 @@ instance QueryRunnerColumnDefault PGText AccountStatus where
 
 data TAccount
 instance Tabla TAccount where
+  data T TAccount = TAccount
   type Database TAccount = Db1
   type SchemaName TAccount = "public"
   type TableName TAccount = "account"
@@ -466,6 +477,7 @@ instance ToKol TransactionType PGText where
 
 data TTransaction
 instance Tabla TTransaction where
+  data T TTransaction = TTransaction
   type Database TTransaction = Db1
   type SchemaName TTransaction = "public"
   type TableName TTransaction = "transaction"
@@ -492,7 +504,7 @@ q_TAccount_desc :: Query (PgR TAccount)
 q_TAccount_desc =
   orderBy
     (descnf #avail_balance)
-    (queryTabla @TAccount) -- The "@TAccount" can be left out, it is inferred.
+    (queryTabla TAccount)
 
 -- | Order by multiple fields, asc.
 q_TAccount_asc_multi :: Query (PgR TAccount)
@@ -500,11 +512,11 @@ q_TAccount_asc_multi =
   orderBy
     (mappend (ascnl #open_employee_id)   -- labels behave as projections.
              (asc   (view #product_cd))) -- labels behave as lenses too.
-    queryTabla
+    (queryTabla TAccount)
 
 q_TEmployee_1 :: Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
-  e <- queryTabla -< () -- inferred: TEmployee
+  e <- queryTabla TEmployee -< ()
   restrict -< isNull (#end_date e)
   restrict <<< nullFalse -< lor
      (lt (koln (Time.fromGregorian 2003 1 1))
@@ -515,8 +527,8 @@ q_TEmployee_1 = proc () -> do
 
 q_TEmployee_TDepartment_join :: Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
-  e <- queryTabla -< () -- inferred: TEmployee
-  d <- queryTabla -< () -- inferred: TDepartment
+  e <- queryTabla TEmployee -< ()
+  d <- queryTabla TDepartment -< ()
   restrict <<< nullFalse -< eq
      (#department_id e) -- Koln
      (#department_id d) -- Kol
@@ -525,13 +537,14 @@ q_TEmployee_TDepartment_join = proc () -> do
 q_TAccount_TIndividual_leftJoin :: Query (PgR TAccount, PgRN TIndividual)
 q_TAccount_TIndividual_leftJoin =
   leftJoin
-    (queryTabla @TAccount)    -- TAccount can't be inferred.
-    (queryTabla @TIndividual) -- TIndividual can't be inferred.
+    (queryTabla TAccount)
+    (queryTabla TIndividual)
     (\(a,i) -> eq
        (#customer_id a)
-       (view (col @"customer_id") i)) -- a different way of referring to the
-                                      -- customer_id column, useful if the
-                                      -- column name is not a valid Haskell name
+       (view (col (Proxy @"customer_id")) i)) -- a different way of referring to
+                                              -- the customer_id column, useful
+                                              -- if the column name is not a
+                                              -- valid Haskell name
 
 --------------------------------------------------------------------------------
 

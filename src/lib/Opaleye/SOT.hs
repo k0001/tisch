@@ -96,8 +96,6 @@ module Opaleye.SOT
 
    -- * Types
  , Col(..)
- , C(..)
- , T(..)
  , RN(..)
  , WD(..)
 

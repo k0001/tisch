@@ -50,11 +50,9 @@ module Opaleye.SOT.Run
     -- * Update
   , runUpdate
   , runUpdateTabla
-  , runUpdateTabla'
     -- * Delete
   , runDelete
   , runDeleteTabla
-  , runDeleteTabla'
     -- * Exception
   , ErrNumRows(..)
     -- * Parsing results
@@ -283,28 +281,40 @@ runQuery1 pc q = do
 --------------------------------------------------------------------------------
 
 -- | Like 'runInsert', but easier to use if you are querying a single 'Tabla'.
+--
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- the number of passed in rows. Use 'runInsertTabla'' if you don't want this
+-- behavior (hint: you probably want this behavior).
 runInsertTabla
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
   => Conn ps -> T t -> f (HsI t) -> m () -- ^
-runInsertTabla conn t = runInsert conn (table' t) . map pgWfromHsI . toList
+runInsertTabla conn t = runInsert conn (table t) . map pgWfromHsI . toList
 
 -- | Like 'runInsert1', but easier to use if you are querying a single 'Tabla'.
+--
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- one. Use 'runInsert'' if you don't want this behavior (hint: you probably
+-- want this behavior).
 runInsertTabla1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t)
   => Conn ps -> T t -> HsI t -> m () -- ^
-runInsertTabla1 conn t = runInsert1 conn (table' t) . pgWfromHsI
+runInsertTabla1 conn t = runInsert1 conn (table t) . pgWfromHsI
 
 -- | Like 'runInsert'', but easier to use if you are querying a single 'Tabla'.
+--
+-- Returns the number of affected rows, which might be different than the number
+-- of passed in rows. If you want this situation to throw an exception, use
+-- 'runInsertTabla' (hint: you probably want to use 'runInsertTabla').
 runInsertTabla'
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Tabla t, Foldable f)
   => Conn ps -> T t -> f (HsI t) -> m Int64 -- ^
-runInsertTabla' conn t = runInsert' conn (table' t) . map pgWfromHsI . toList
+runInsertTabla' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
 
 -- | Insert many rows.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
 -- the number of passed in rows. Use 'runInsert'' if you don't want this
--- behavior.
+-- behavior (hint: you probably want this behavior).
 runInsert
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Foldable f)
   => Conn ps -> O.Table w v -> f w -> m () -- ^
@@ -313,12 +323,17 @@ runInsert conn t fs = case toList fs of
   ws -> do
     nAffected <- runInsert' conn t ws
     let nExpected = fromIntegral (length ws) :: Int64
-    when (nExpected /= nAffected) $ do
+    when (nExpected == nAffected) $ do
        let sql = O.arrangeInsertManySql t (NEL.fromList ws)
        Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
--- | Like 'runInsert', but doesn't check the number of affected rows. Returns
--- the number of affected rows.
+
+-- | Like 'runInsert', but doesn't check that the number of affected rows equals
+-- the number of passed in rows.
+--
+-- Returns the number of affected rows, which might be different than the number
+-- of passed in rows. If you want this situation to throw an exception, use
+-- 'runInsert' (hint: you probably want to use 'runInsert').
 runInsert'
   :: (MonadIO m, Allow 'Insert ps, Foldable f)
   => Conn ps -> O.Table w v -> f w -> m Int64 -- ^
@@ -329,7 +344,8 @@ runInsert' (Conn conn) t fs = case toList fs of
 -- | Insert one row.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
--- one. Use 'runInsert'' if you don't want this behavior.
+-- one. Use 'runInsert'' if you don't want this behavior (hint: you probably
+-- want this behavior).
 runInsert1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
   => Conn ps -> O.Table w v -> w -> m () -- ^
@@ -341,7 +357,7 @@ runInsert1 pc t w = runInsert pc t [w]
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
 -- the number of passed in rows. Use 'runInsertReturning'' if you don't want
--- this behavior.
+-- this behavior (hint: you probably want this behavior).
 runInsertReturning
   :: forall m ps w v r f
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r,
@@ -360,8 +376,13 @@ runInsertReturning conn t fs = case toList fs of
              sql = O.arrangeInsertManyReturningSql u t (NEL.fromList ws) id
          Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
--- Like 'runInsertReturning', except it doesn't check for the number of
--- actually affected rows.
+
+-- Like 'runInsertReturning', but doesn't check that the number of affected
+-- rows equals the number of passed in rows.
+--
+-- Returns the number of affected rows, which might be different than the number
+-- of passed in rows. If you want this situation to throw an exception, use
+-- 'runInsertReturning' (hint: you probably want to use 'runInsertReturning').
 runInsertReturning'
   :: (MonadIO m, PP.Default O.QueryRunner v r, Allow ['Insert, 'Fetch] ps,
       Foldable f)
@@ -373,14 +394,15 @@ runInsertReturning' (Conn conn) t fs = case toList fs of
 -- | Insert one row, returning data from the one row actually inserted.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
--- the one. Use 'runInsertReturning'' if you don't want this behavior.
+-- one. Use 'runInsertReturning'' if you don't want this behavior (hint: you
+-- probably want this behavior).
 runInsertReturning1
   :: forall m v w r ps
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r,
       Allow ['Insert, 'Fetch] ps)
   => Conn ps -> O.Table w v -> w -> m r -- ^
 runInsertReturning1 pc t w = do
-   -- pattern matching on [r] is safe here, see runInsertReturningMany
+   -- Pattern matching on [r] is safe here, see 'runInsertReturning'.
    [r] <- runInsertReturning pc t [w]
    return r
 
@@ -398,21 +420,14 @@ runUpdate
 runUpdate (Conn conn) t upd fil = liftIO (O.runUpdate conn t upd (unKol . fil))
 
 -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
-runUpdateTabla'
-  :: forall t m ps
-   . (Tabla t, MonadIO m, Allow 'Update ps)
+runUpdateTabla
+  :: (Tabla t, MonadIO m, Allow 'Update ps)
   => Conn ps
+  -> T t
   -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
   -> m Int64                 -- ^ Number of updated rows.
-runUpdateTabla' pc = runUpdateTabla pc (T::T t)
-
--- | Like 'runUpdateTabla'', but takes @t@ explicitely for the times when
--- it can't be inferred.
-runUpdateTabla
-  :: (Tabla t, MonadIO m, Allow 'Update ps)
-  => Conn ps -> T t -> (PgW t -> PgW t) -> (PgR t -> Kol O.PGBool) -> m Int64 -- ^
-runUpdateTabla pc t upd = runUpdate pc (table' t) (upd . pgWfromPgR)
+runUpdateTabla pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
 
 --------------------------------------------------------------------------------
 
@@ -428,23 +443,13 @@ runDelete
 runDelete (Conn conn) t fil = liftIO (O.runDelete conn t (unKol . fil))
 
 -- | Like 'runDelete', but specifically designed to work well with 'Tabla'.
-runDeleteTabla'
-  :: forall t m ps
-   . (Tabla t, MonadIO m, Allow 'Delete ps)
-  => Conn ps
-  -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
-  -> m Int64
-runDeleteTabla' pc = runDeleteTabla pc (T::T t)
-
--- | Like 'runDeleteTabla'', but takes @t@ explicitely for the times when it
--- can't be inferred.
 runDeleteTabla
   :: (Tabla t, MonadIO m, Allow 'Delete ps)
   => Conn ps
   -> T t
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
   -> m Int64
-runDeleteTabla pc t = runDelete pc (table' t)
+runDeleteTabla pc = runDelete pc . table
 
 --------------------------------------------------------------------------------
 -- Exceptions
