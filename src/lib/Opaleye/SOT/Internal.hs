@@ -177,7 +177,7 @@ instance PgTyped O.PGTimestamptz where type PgType O.PGTimestamptz = O.PGTimesta
 instance PgTyped O.PGTimestamp where type PgType O.PGTimestamp = O.PGTimestamp
 instance PgTyped O.PGTime where type PgType O.PGTime = O.PGTime
 instance PgTyped O.PGUuid where type PgType O.PGUuid = O.PGUuid
-instance PgPrimType a => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray a
+instance PgTyped a => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray (PgType a)
 
 -------------------------------------------------------------------------------
 
@@ -327,7 +327,7 @@ instance
 -- converting 'Int' to 'O.PGInt4'. If this is fixed upstream,
 -- we might go back to relying on 'O.Constant' if suitable. See
 -- https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
-class PgPrimType p => ToKol (a :: Type) (p :: Type) where
+class (PgTyped p, PgType p ~ p) => ToKol (a :: Type) (p :: Type) where
   -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
   -- PostgreSQL representation as a @('Kol' 'O.PGBool')@.
   --
@@ -341,10 +341,6 @@ class PgPrimType p => ToKol (a :: Type) (p :: Type) where
   default kol
     :: (PgTyped b, PgType b ~ p, Wrapped a, ToKol (Unwrapped a) p) => a -> Kol b
   kol = kol . view _Wrapped'
-
--- -- | OVERLAPPABLE (due to [Char]).
--- instance {-# OVERLAPPABLE #-} ToKol a p => ToKol [a] (O.PGArray p) where
---    kol = ... wait for https://github.com/tomjaguarpaw/haskell-opaleye/pull/154
 
 instance ToKol a p => ToKol (Tagged t a) p
 instance ToKol String O.PGText where kol = Kol . O.pgString
@@ -370,6 +366,22 @@ instance ToKol (Data.CaseInsensitive.CI Data.Text.Text) O.PGCitext where kol = K
 instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where kol = Kol . O.pgCiLazyText
 instance ToKol Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Aeson.encode
 instance ToKol Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Aeson.encode
+
+instance forall a p. ToKol a p => ToKol [a] (O.PGArray p) where
+  kol = kolArray . map (kol :: a -> Kol p)
+
+-- | Build a @'Kol' ('O.PGArray' x)@ from any 'Foldable'.
+--
+-- The return type is not fixed to @'Kol' ('O.PGArray' x)@ so that you can
+-- easily use 'kolArray' as part of the implementation for 'kol' (see instance
+-- @'ToKol' [a] ('O.PGArray' p)@ as an example of this).
+kolArray
+ :: forall f a as
+ .  (Foldable f, PgTyped as, PgType as ~ O.PGArray (PgType a))
+ => f (Kol a) -> Kol as
+kolArray xs = Kol $ O.unsafeCast
+   (pgPrimTypeName (Proxy :: Proxy (O.PGArray (PgType a))))
+   (OI.Column (OI.ArrayExpr (map (OI.unColumn . unKol) (toList xs))))
 
 ---
 instance Monoid (Kol O.PGText) where
@@ -450,7 +462,7 @@ bindKoln kna f = Koln $
 --
 -- Evaluates to the first argument if it is not @NULL@, otherwise
 -- evaluates to the second argument.
-altKoln :: (PgTyped a) => Koln a -> Koln a -> Koln a
+altKoln :: PgTyped a => Koln a -> Koln a -> Koln a
 altKoln kna0 kna1 = Koln $
   O.matchNullable (unKoln kna1) O.toNullable (unKoln kna0)
 
