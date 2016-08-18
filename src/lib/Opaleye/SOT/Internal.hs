@@ -1279,50 +1279,44 @@ gte = liftKol2 (O..>=)
 isNull :: Koln a -> Kol O.PGBool
 isNull = Kol . O.isNull . unKoln
 
--- | Convert a @'Koln' 'O.PGBool'@ to a @('Kol' 'O.PGBool')@. An outer @NULL@ is
--- converted to @TRUE@.
+-- | Restrict query results to a particular condition.
 --
--- This can be used as a function or as a 'O.QueryArr', whatever works best
--- for you. The 'O.QueryArr' support is often convenient when working with
--- 'restrict':
+-- This is analogous to 'Control.Monad.guard' for 'MonadPlus'.
 --
--- @
--- 'restrict' '<<<' 'nullTrue' -< ...
--- @
+-- Hint: Many times you will have a @'Koln' 'O.PGBool'@ instead of a @'Kol'
+-- 'O.PGBool'@. In order to use that with 'restrict' you will have to convert it
+-- to a @'Kol' 'O.PGBool'@ first, deciding whether you want @NULL@ to mean
+-- “true” or “false”.
 --
--- Simplified types:
+-- To treat @NULL@ as true:
 --
 -- @
--- 'nullTrue' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
--- 'nullTrue' :: 'O.QueryArr' ('Koln' 'O.PGBool') ('Kol' 'O.PGBool')
+-- 'matchKoln' ('kol' 'True')  'id' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
 -- @
-nullTrue :: Arrow f => f (Koln O.PGBool) (Kol O.PGBool)
-nullTrue = arr $ matchKoln (kol True) id
-
--- | Like 'nullTrue', but an outer @NULL@ is converted to @FALSE@.
-nullFalse :: Arrow f => f (Koln O.PGBool) (Kol O.PGBool)
-nullFalse = arr $ matchKoln (kol False) id
-
--- | Like @opaleye@'s 'O.restric', but takes a 'Kol' as input.
+--
+-- To treat @NULL@ as false:
+--
+-- @
+-- 'matchKoln' ('kol' 'False') 'id' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
+-- @
 restrict :: O.QueryArr (Kol O.PGBool) ()
 restrict = O.restrict <<^ unKol
 
--- | Like @opaleye@'s 'O.leftJoin', but the predicate is expected to
--- return a @'Kol' 'O.PGBool'@.
+-- | Perform an SQL @LEFT JOIN@.
+--
+-- @'leftJoin' t1 t2 f@ returns all of the rows from @t1@ (the left table),
+-- possibly paired with the rows from @f2@ (the right table) in case @f@ is
+-- true.
 leftJoin
   :: ( PP.Default O.Unpackspec a a
      , PP.Default O.Unpackspec b b
      , PP.Default OI.NullMaker b nb )
-  => O.Query a -> O.Query b -> ((a, b) -> Kol O.PGBool) -> O.Query (a, nb) -- ^
-leftJoin = leftJoinExplicit PP.def PP.def PP.def
-
--- | Like Opaleye's 'O.leftJoinExplicit', but the predicate is expected to
--- return a @'Kol' 'O.PGBool'@.
-leftJoinExplicit
-  :: O.Unpackspec a a -> O.Unpackspec b b -> OI.NullMaker b nb
-  -> O.Query a -> O.Query b -> ((a, b) -> Kol O.PGBool) -> O.Query (a, nb) -- ^
-leftJoinExplicit ua ub nmb qa qb fil =
-  O.leftJoinExplicit ua ub nmb qa qb (unKol . fil)
+  => O.Query a -- ^ Left table.
+  -> O.Query b -- ^ Right table.
+  -> ((a, b) -> Kol O.PGBool)
+  -> O.Query (a, nb) -- ^
+leftJoin qa qb fil =
+  O.leftJoinExplicit PP.def PP.def PP.def qa qb (unKol . fil)
 
 --------------------------------------------------------------------------------
 -- Ordering

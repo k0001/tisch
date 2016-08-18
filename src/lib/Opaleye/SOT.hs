@@ -62,10 +62,7 @@ module Opaleye.SOT
  , O.Query
  , O.QueryArr
  , leftJoin
- , leftJoinExplicit
  , restrict
- , nullTrue
- , nullFalse
    -- ** Booleans
  , lnot
  , lor
