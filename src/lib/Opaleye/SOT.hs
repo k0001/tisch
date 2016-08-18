@@ -51,7 +51,7 @@ module Opaleye.SOT
  , nul
  , FromKol(..)
  , fromKol
- , matchKoln
+ , fromKoln
  , isNull
  , mapKoln
  , forKoln
@@ -121,9 +121,6 @@ module Opaleye.SOT
  , O.PGTime
  , O.PGUuid
 
-   -- * Miscellaneous
- , op1
- , op2
  ) where
 
 import           Opaleye.SOT.Internal

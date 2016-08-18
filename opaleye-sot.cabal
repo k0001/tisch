@@ -53,7 +53,7 @@ test-suite tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules: Tutorial
-  ghc-options: -Wall -rtsopts -O2
+  ghc-options: -Wall -rtsopts -O0
   build-depends:
       base
     , lens

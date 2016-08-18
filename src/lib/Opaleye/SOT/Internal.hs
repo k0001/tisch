@@ -11,6 +11,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -259,19 +260,19 @@ unsafeCoerceKol = liftKol1 O.unsafeCoerceColumn
 -- taking any of 'Kol' and 'Koln' as argument, with the result type fully
 -- determined by it.
 liftKol1
-  :: (PgTyped a, PgTyped b, Op1 kol kol')
+  :: (PgTyped a, PgTyped b)
   => (O.Column (PgType a) -> O.Column (PgType b))
-  -> (kol a -> kol' b) -- ^
-liftKol1 f = op1 (Kol . f . unKol)
+  -> (Kol a -> Kol b) -- ^
+liftKol1 f = Kol . f . unKol
 
 -- | Converts a binary function on Opaleye's 'O.Column's to an binary function
 -- taking any of 'Kol' and 'Koln' as arguments, with the result type fully
 -- determined by them.
 liftKol2
-  :: (PgTyped a, PgTyped b, PgTyped c, Op2 kol kol' kol'')
+  :: (PgTyped a, PgTyped b, PgTyped c)
   => (O.Column (PgType a) -> O.Column (PgType b) -> O.Column (PgType c))
-  -> (kol a -> kol' b -> kol'' c)
-liftKol2 f = op2 (\ka kb -> Kol (f (unKol ka) (unKol kb)))
+  -> (Kol a -> Kol b -> Kol c)
+liftKol2 f = \ka kb -> Kol (f (unKol ka) (unKol kb))
 
 -- | Converts a ternary function on Opaleye's 'O.Column's to an ternary function
 -- on 'Kol'.
@@ -279,10 +280,10 @@ liftKol2 f = op2 (\ka kb -> Kol (f (unKol ka) (unKol kb)))
 -- /Hint/: You can further compose the result of this function with 'op3'
 -- to widen the range of accepted argument types.
 liftKol3
-  :: (PgTyped a, PgTyped b, PgTyped c, PgTyped d, Op3 kol kol' kol'' kol''')
+  :: (PgTyped a, PgTyped b, PgTyped c, PgTyped d)
   => (O.Column (PgType a) -> O.Column (PgType b) -> O.Column (PgType c) -> O.Column (PgType d))
-  -> (kol a -> kol' b -> kol'' c -> kol''' d)
-liftKol3 f = op3 (\ka kb kc -> Kol (f (unKol ka) (unKol kb) (unKol kc)))
+  -> (Kol a -> Kol b -> Kol c -> Kol d)
+liftKol3 f = \ka kb kc -> Kol (f (unKol ka) (unKol kb) (unKol kc))
 
 instance
     ( Profunctor p, PP.Default p (O.Column (PgType a)) (O.Column b)
@@ -418,13 +419,13 @@ nul = Koln O.null
 fromKol :: PgTyped a => Kol a -> Koln a
 fromKol = Koln . O.toNullable . unKol
 
--- | Case analysis for 'Koln'. Like 'maybe' for 'Maybe'.
+-- | Convert a 'Koln' to a 'Kol'.
 --
--- If @('Koln' a)@ is @NULL@, then evaluate to the first argument,
--- otherwise it applies the given function to the underlying @('Kol' a)@.
-matchKoln :: (PgTyped a, PgTyped b) => Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
-matchKoln kb0 f kna = Kol $
-  O.matchNullable (unKol kb0) (unKol . f . Kol) (unKoln kna)
+-- This function behaves as 'Data.Maybe.fromMaybe': If @'Koln' a@ is @NULL@,
+-- then return the first argument, otherwise it returns the @'Kol' a@ underlying
+-- the given @'Koln' a@.
+fromKoln :: PgTyped a => Kol a -> Koln a -> Kol a
+fromKoln ka0 na = Kol (O.matchNullable (unKol ka0) id (unKoln na))
 
 -- | Like 'fmap' for 'Maybe'.
 --
@@ -487,7 +488,8 @@ instance {-# OVERLAPPABLE #-}
 ---
 instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
   mempty = fromKol mempty
-  mappend = op2 (mappend :: Kol a -> Kol a -> Kol a)
+  mappend = \na nb ->
+    bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (mappend ka kb)))
 
 -------------------------------------------------------------------------------
 
@@ -1168,9 +1170,7 @@ instance forall n t a. (ColLens n (PgW t) a a) => GHC.IsLabel n (PgW t -> a) whe
 
 -- | Like 'Prelude.bool', @'matchBool' f t x@ evaluates to @f@ if @x@ is false,
 -- otherwise it evaluates to @t@.
-matchBool
-  :: (Op3 kol kol' kol'' kol''', PgTyped a)
-  => kol a -> kol' a -> kol'' O.PGBool -> kol''' a
+matchBool :: PgTyped a => Kol a -> Kol a -> Kol O.PGBool -> Kol a
 matchBool = liftKol3 (\f' t' x' -> O.ifThenElse x' t' f')
 
 --------------------------------------------------------------------------------
@@ -1185,11 +1185,11 @@ matchBool = liftKol3 (\f' t' x' -> O.ifThenElse x' t' f')
 -- 'lnot' :: 'Kol'  'O.PGBool' -> 'Kol'  'O.PGBool'
 -- 'lnot' :: 'Koln' 'O.PGBool' -> 'Koln' 'O.PGBool'
 -- @
-lnot :: Op1' kol => kol O.PGBool -> kol O.PGBool
+lnot :: Kol O.PGBool -> Kol O.PGBool
 lnot = liftKol1 O.not
 
 -- | Logical OR. See 'eq' for possible argument types.
-lor :: Op2 kol kol' kol'' => kol O.PGBool -> kol' O.PGBool -> kol'' O.PGBool
+lor :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool
 lor = liftKol2 (O..||)
 
 -- | Whether any of the given 'O.PGBool's is true.
@@ -1197,11 +1197,11 @@ lor = liftKol2 (O..||)
 -- Notice that 'lor' is more general that 'lors', as it doesn't restrict @kol@.
 --
 -- Mnemonic reminder: Logical ORs.
-lors :: (Op2' kol, FromKol kol, Foldable f) => f (kol O.PGBool) -> kol O.PGBool
-lors = foldl' lor (fromKol' (kol False))
+lors :: Foldable f => f (Kol O.PGBool) -> Kol O.PGBool
+lors = foldl' lor (kol False)
 
 -- Logical AND. See 'eq' for possible argument types.
-land :: Op2 kol kol' kol'' => kol O.PGBool -> kol' O.PGBool -> kol'' O.PGBool
+land :: Kol O.PGBool -> Kol O.PGBool -> Kol O.PGBool
 land = liftKol2 (O..&&)
 
 -- | Whether all of the given 'O.PGBool's are true.
@@ -1210,8 +1210,8 @@ land = liftKol2 (O..&&)
 -- @kol@.
 --
 -- Mnemonic reminder: Logical ANDs.
-lands :: (Op2' kol, FromKol kol, Foldable f) => f (kol O.PGBool) -> kol O.PGBool
-lands = foldl' land (fromKol' (kol True))
+lands :: Foldable f => f (Kol O.PGBool) -> Kol O.PGBool
+lands = foldl' land (kol True)
 
 --------------------------------------------------------------------------------
 -- Equality
@@ -1230,16 +1230,14 @@ lands = foldl' land (fromKol' (kol True))
 -- @
 --
 -- Mnemonic reminder: EQual.
-eq :: (PgTyped a, Op2 kol kol' kol'') => kol a -> kol' a -> kol'' O.PGBool
+eq :: PgTyped a => Kol a -> Kol a -> Kol O.PGBool
 eq = liftKol2 (O..==)
 
 -- | Whether the given value is a member of the given collection.
 --
 -- Notice that a combination 'eq' and 'or' is more general that 'member', as
 -- they don't restrict @kol'@.
-member
-  :: (PgTyped a, Op2 kol kol' kol', Op2' kol', FromKol kol', Foldable f)
-  => kol a -> f (kol' a) -> kol' O.PGBool -- ^
+member :: (PgTyped a, Foldable f) => Kol a -> f (Kol a) -> Kol O.PGBool
 member a = lors . map (eq a) . toList
 
 --------------------------------------------------------------------------------
@@ -1249,28 +1247,28 @@ member a = lors . map (eq a) . toList
 -- argument types.
 --
 -- Mnemonic reminder: Less Than.
-lt :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+lt :: PgOrd a => Kol a -> Kol a -> Kol O.PGBool
 lt = liftKol2 (O..<)
 
 -- | Whether the first argument is less than or equal to the second. See 'eq'
 -- for possible argument types.
 --
 -- Mnemonic reminder: Less Than or Equal.
-lte :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+lte :: PgOrd a => Kol a -> Kol a -> Kol O.PGBool
 lte = liftKol2 (O..<=)
 
 -- | Whether the first argument is greater than the second. See 'eq' for
 -- possible argument types.
 --
 -- Mnemonic reminder: Greater Than.
-gt :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+gt :: PgOrd a => Kol a -> Kol a -> Kol O.PGBool
 gt = liftKol2 (O..>)
 
 -- | Whether the first argument is greater than or equal to the second. See 'eq'
 -- for possible argument types.
 --
 -- Mnemonic reminder: Greater Than or Equal.
-gte :: (Op2 kol kol' kol'', PgOrd a) => kol a -> kol' a -> kol'' O.PGBool
+gte :: PgOrd a => Kol a -> Kol a -> Kol O.PGBool
 gte = liftKol2 (O..>=)
 
 --------------------------------------------------------------------------------
@@ -1285,19 +1283,19 @@ isNull = Kol . O.isNull . unKoln
 --
 -- Hint: Many times you will have a @'Koln' 'O.PGBool'@ instead of a @'Kol'
 -- 'O.PGBool'@. In order to use that with 'restrict' you will have to convert it
--- to a @'Kol' 'O.PGBool'@ first, deciding whether you want @NULL@ to mean
--- “true” or “false”.
+-- to a @'Kol' 'O.PGBool'@ first, deciding whether you want 'nul' (@NULL@) to
+-- mean “true” or “false”.
 --
 -- To treat @NULL@ as true:
 --
 -- @
--- 'matchKoln' ('kol' 'True')  'id' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
+-- 'fromKoln' ('kol' 'True') :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
 -- @
 --
 -- To treat @NULL@ as false:
 --
 -- @
--- 'matchKoln' ('kol' 'False') 'id' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
+-- 'fromKoln' ('kol' 'False') :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
 -- @
 restrict :: O.QueryArr (Kol O.PGBool) ()
 restrict = O.restrict <<^ unKol
@@ -1347,104 +1345,6 @@ descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . f)
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
--- Support for overloaded unary operators working on Kol or Koln
-
-class (Op1_ Kol Kol g g) => Op1' g
-instance (Op1_ Kol Kol g g) => Op1' g
-
-class (Op1_ Kol Kol ga gb) => Op1 ga gb
-instance (Op1_ Kol Kol ga gb) => Op1 ga gb
-
--- | Instances of this class can be used to convert an unary function @fa a ->
--- fb b@ to an unary function @ga a -> gb b@, where @fa@, @fb@, and @ga@ can be
--- any combination of 'Kol' or 'Koln', with @gb@ fully determined by them,
--- biasing towards 'Kol'.
---
--- Thanks to the 'KolLike' superclass and the functional dependency in this
--- class, it is impossible to add new 'Op1_' instances. All the possible
--- instances are already exported from this module.
-class (KolLike fa, KolLike fb, KolLike ga, KolLike gb) =>
-      Op1_ fa fb ga gb | fa fb ga -> gb where
-  -- | Convert an unary function @fa a -> fb b@ to an unary function @ga a -> gb
-  -- b@, where @fa@, @fb@, and @ga@ can be any combination of 'Kol' or 'Koln',
-  -- with @gb@ fully determined by them.
-  op1 :: (PgTyped a, PgTyped b) => (fa a -> fb b) -> (ga a -> gb b)
-
-instance Op1_ Kol  Kol  Kol  Kol  where op1 f ka = f ka
-instance Op1_ Kol  Kol  Koln Koln where op1 f na = bindKoln na (\ka -> fromKol (f ka))
--- The 'Op1_' instances above are sufficient for the tools offered by this
--- module. Do we need to export the more?
-
----
-
-class (Op2_ Kol Kol Kol g g g) => Op2' g
-instance (Op2_ Kol Kol Kol g g g) => Op2' g
-
-class (Op2_ Kol Kol Kol ga gb gc) => Op2 ga gb gc
-instance (Op2_ Kol Kol Kol ga gb gc) => Op2 ga gb gc
-
--- | Instances of this class can be used to convert a binary function @fa a ->
--- fb b -> fc c@ to a binary function @ga a -> gb b -> gc c@, where @fa@, @fb@,
--- @fc@, @ga@ and @gb@ can be any combination of 'Kol' or 'Koln', with @gc@
--- fully determined by them, biasing towards 'Kol'.
---
--- Thanks to the 'KolLike' superclass and the functional dependency in this
--- class, it is impossible to add new 'Op2_' instances. All the possible
--- instances are already exported from this module.
-class (KolLike fa, KolLike fb, KolLike fc) =>
-      Op2_ fa fb fc ga gb gc | fa fb fc ga gb -> gc where
-  -- | Convert a binary function @fa a -> fb b -> fc c@ to a binary function
-  -- @ga a -> gb b -> gc c@, where @fa@, @fb@, @fc@, @ga@ and @gb@ can be any
-  -- combination of 'Kol' or 'Koln', with @gc@ fully determined by them.
-  op2 :: (PgTyped a, PgTyped b, PgTyped c)
-      => (fa a -> fb b -> fc c)
-      -> (ga a -> gb b -> gc c)
-
-instance Op2_ Kol  Kol  Kol  Kol  Kol  Kol  where op2 f ka kb = f ka kb
-instance Op2_ Kol  Kol  Kol  Kol  Koln Koln where op2 f ka nb = bindKoln nb (\kb -> fromKol (f ka kb))
-instance Op2_ Kol  Kol  Kol  Koln Kol  Koln where op2 f na kb = bindKoln na (\ka -> fromKol (f ka kb))
-instance Op2_ Kol  Kol  Kol  Koln Koln Koln where op2 f na nb = bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (f ka kb)))
--- The 'Op2_' instances above are sufficient for the tools offered by this
--- module. Do we need to export more?
-
----
-class (Op3_ Kol Kol Kol Kol g g g g) => Op3' g
-instance (Op3_ Kol Kol Kol Kol g g g g) => Op3' g
-
-class (Op3_ Kol Kol Kol Kol ga gb gc gd) => Op3 ga gb gc gd
-instance (Op3_ Kol Kol Kol Kol ga gb gc gd) => Op3 ga gb gc gd
-
--- | Instances of this class can be used to convert a ternary function @fa a ->
--- fb b -> fc c -> fd d@ to a ternary function @ga a -> gb b -> gc c -> gd d@,
--- where @fa@, @fb@, @fc@, @fd@, @ga@, @gb@ and @gc@ can be any combination of
--- 'Kol' or 'Koln', with @gd@ fully determined by them, biasing towards 'Kol'.
---
--- Thanks to the 'KolLike' superclass and the functional dependency in this
--- class, it is impossible to add new 'Op3_' instances. All the possible
--- instances are already exported from this module.
-class (KolLike fa, KolLike fb, KolLike fc, KolLike fd) =>
-      Op3_ fa fb fc fd ga gb gc gd | fa fb fc fd ga gb gc -> gd where
-  -- | Convert a ternary function @fa a -> fb b -> fc c -> fd d@ to a ternary
-  -- function @ga a -> gb b -> gc c -> gd d@, where @fa@, @fb@, @fc@, @fd@,
-  -- @ga@, @gb@ and @gc@ can be any combination of 'Kol' or 'Koln', with @gd@
-  -- fully determined by them.
-  op3 :: (PgTyped a, PgTyped b, PgTyped c, PgTyped d)
-      => (fa a -> fb b -> fc c -> fd d)
-      -> (ga a -> gb b -> gc c -> gd d)
-
-instance Op3_ Kol Kol Kol Kol  Kol  Kol  Kol  Kol  where op3 f ka kb kc = f ka kb kc
-instance Op3_ Kol Kol Kol Kol  Kol  Kol  Koln Koln where op3 f ka kb nc = bindKoln nc (\kc -> fromKol (f ka kb kc))
-instance Op3_ Kol Kol Kol Kol  Kol  Koln Kol  Koln where op3 f ka nb kc = bindKoln nb (\kb -> fromKol (f ka kb kc))
-instance Op3_ Kol Kol Kol Kol  Kol  Koln Koln Koln where op3 f ka nb nc = bindKoln nb (\kb -> bindKoln nc (\kc -> fromKol (f ka kb kc)))
-instance Op3_ Kol Kol Kol Kol  Koln Kol  Kol  Koln where op3 f na kb kc = bindKoln na (\ka -> fromKol (f ka kb kc))
-instance Op3_ Kol Kol Kol Kol  Koln Kol  Koln Koln where op3 f na kb nc = bindKoln na (\ka -> bindKoln nc (\kc -> fromKol (f ka kb kc)))
-instance Op3_ Kol Kol Kol Kol  Koln Koln Kol  Koln where op3 f na nb kc = bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (f ka kb kc)))
-instance Op3_ Kol Kol Kol Kol  Koln Koln Koln Koln where op3 f na nb nc = bindKoln na (\ka -> bindKoln nb (\kb -> bindKoln nc (\kc -> fromKol (f ka kb kc))))
--- The 'Op3_' instances above are sufficient for the tools offered by this
--- module. Do we need to export more?
-
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
 -- This belongs in Opaleye
 
 unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
@@ -1476,5 +1376,4 @@ instance OI.PGNum O.PGFloat4 where
 type family All (c :: k -> Constraint) (xs :: [k]) :: Constraint where
   All c '[]       = ()
   All c (x ': xs) = (c x, All c xs)
-
 

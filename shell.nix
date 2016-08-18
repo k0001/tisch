@@ -1,9 +1,11 @@
-{ nixpkgs ? import <nixpkgs> {}
+{ nixpkgs ? <nixpkgs>
 , compiler ? "ghc801"
 }:
 
+
+
 let
-  inherit (nixpkgs) pkgs;
+  inherit (import nixpkgs {}) pkgs;
   hs = pkgs.haskell.packages.${compiler}.override {
     overrides = self: super: {
       opaleye-sot = self.callPackage ./default.nix {};

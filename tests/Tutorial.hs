@@ -60,7 +60,7 @@ infraestructure with the following goals in mind:
   this module, probably.
 -}
 module Tutorial
-  {- ( TDepartment
+  ( TDepartment
   , TBranch
   , TEmployee
   , TProductType
@@ -71,15 +71,15 @@ module Tutorial
   , TOfficer
   , TAccount
   , TTransaction
+  , T(..)
   , q_TAccount_desc
   , q_TAccount_asc_multi
   , q_TEmployee_1
   , q_TEmployee_TDepartment_join
   , q_TAccount_TIndividual_leftJoin
   , exampleRun
-  ) -} where
+  ) where
 
-import           Control.Arrow
 import           Control.Category (id)
 import           Control.Lens
 import           Data.Proxy
@@ -517,21 +517,20 @@ q_TAccount_asc_multi =
 q_TEmployee_1 :: Query (PgR TEmployee)
 q_TEmployee_1 = proc () -> do
   e <- queryTabla TEmployee -< ()
-  restrict -< isNull (#end_date e)
-  restrict <<< nullFalse -< lor
-     (lt (koln (Time.fromGregorian 2003 1 1))
-         (view #start_date e)) -- labels behave as lenses.
-     (eq (koln "Teller")
-         (#title e))   -- labels behave as projections too.
+  restrict -< isNull (#end_date e) -- labels behave as projections.
+  restrict -< fromKoln (kol False) $
+     forKoln (#title e) $ \eTitle ->
+       lor (lt (kol (Time.fromGregorian 2003 1 1))
+               (view #start_date e)) -- labels behave as lenses too.
+           (eq (kol "Teller") eTitle)
   id -< e
 
 q_TEmployee_TDepartment_join :: Query (PgR TEmployee, PgR TDepartment)
 q_TEmployee_TDepartment_join = proc () -> do
   e <- queryTabla TEmployee -< ()
   d <- queryTabla TDepartment -< ()
-  restrict <<< nullFalse -< eq
-     (#department_id e) -- Koln
-     (#department_id d) -- Kol
+  restrict -< fromKoln (kol False) $
+     mapKoln (eq (#department_id d)) (#department_id e)
   id -< (e,d)
 
 q_TAccount_TIndividual_leftJoin :: Query (PgR TAccount, PgRN TIndividual)
