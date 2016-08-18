@@ -1030,13 +1030,19 @@ instance (RDistributeColProps cols, ICol_Props ('Col n w r p h))
 --------------------------------------------------------------------------------
 
 -- | Build the Opaleye 'O.Table' for a 'Tabla'.
-table :: forall t. Tabla t => T t -> O.Table (PgW t) (PgR t)
-table _ = O.TableWithSchema
+--
+-- If you will be querying the resulting 'O.Table' right away, it is simpler to
+-- use 'queryTabla' directly.
+table :: Tabla t => T t -> O.Table (PgW t) (PgR t)
+table (_ :: T t) = O.TableWithSchema
   (symbolVal (Proxy :: Proxy (SchemaName t)))
   (symbolVal (Proxy :: Proxy (TableName t)))
   (P.dimap unPgW PgR (PP.ppa (rDistributeColProps (Proxy :: Proxy (Cols t)))))
 
--- | Like @opaleye@'s 'O.queryTable', but for a 'Tabla'.
+-- | Query all of the rows in a 'Tabla.
+--
+-- This is like @opaleye@'s own 'O.queryTable', but for specialized for a
+-- 'Tabla'.
 queryTabla :: Tabla t => T t -> O.Query (PgR t)
 queryTabla = O.queryTable . table
 {-# INLINE queryTabla #-}
@@ -1290,11 +1296,11 @@ isNull = Kol . O.isNull . unKoln
 -- 'nullTrue' :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
 -- 'nullTrue' :: 'O.QueryArr' ('Koln' 'O.PGBool') ('Kol' 'O.PGBool')
 -- @
-nullTrue :: (Arrow f) => f (Koln O.PGBool) (Kol O.PGBool)
+nullTrue :: Arrow f => f (Koln O.PGBool) (Kol O.PGBool)
 nullTrue = arr $ matchKoln (kol True) id
 
 -- | Like 'nullTrue', but an outer @NULL@ is converted to @FALSE@.
-nullFalse :: (Arrow f) => f (Koln O.PGBool) (Kol O.PGBool)
+nullFalse :: Arrow f => f (Koln O.PGBool) (Kol O.PGBool)
 nullFalse = arr $ matchKoln (kol False) id
 
 -- | Like @opaleye@'s 'O.restric', but takes a 'Kol' as input.
@@ -1307,7 +1313,7 @@ leftJoin
   :: ( PP.Default O.Unpackspec a a
      , PP.Default O.Unpackspec b b
      , PP.Default OI.NullMaker b nb )
-   => O.Query a -> O.Query b -> ((a, b) -> Kol O.PGBool) -> O.Query (a, nb) -- ^
+  => O.Query a -> O.Query b -> ((a, b) -> Kol O.PGBool) -> O.Query (a, nb) -- ^
 leftJoin = leftJoinExplicit PP.def PP.def PP.def
 
 -- | Like Opaleye's 'O.leftJoinExplicit', but the predicate is expected to
