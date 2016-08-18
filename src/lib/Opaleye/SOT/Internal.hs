@@ -318,15 +318,6 @@ instance
 -- default 'kol' :: ('PgTyped' b, 'PgType' b ~ p, 'Wrapped' a, 'ToKol' ('Unwrapped' a) p) => a -> 'Kol' b
 -- 'kol' = 'kol' . 'view' '_Wrapped''
 -- @
---
--- /Implementation notice/: This class overlaps in purpose with Opaleye's
--- 'O.Constant'. Technicaly, we don't really need to repeat those instances
--- here: we could just rely on Opaleye's 'O.Constant'. However, as of today,
--- Opaleye's 'O.Constant' provides some undesired support which we
--- deliberately want to avoid here. Namely, we don't want to support
--- converting 'Int' to 'O.PGInt4'. If this is fixed upstream,
--- we might go back to relying on 'O.Constant' if suitable. See
--- https://github.com/tomjaguarpaw/haskell-opaleye/pull/110
 class (PgTyped p, PgType p ~ p) => ToKol (a :: Type) (p :: Type) where
   -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
   -- PostgreSQL representation as a @('Kol' 'O.PGBool')@.
