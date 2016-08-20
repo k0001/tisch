@@ -257,9 +257,12 @@ data Kol (a :: k) = PgTyped a => Kol { unKol :: O.Column (PgType a) }
 
 deriving instance (PgTyped a, Show (O.Column (PgType a))) => Show (Kol a)
 
+-- | Like 'unsaferCoerceKol', but with a guarantee that the underlying 'PgType's
+-- are the same.
 unsafeCoerceKol :: (PgTyped a, PgTyped b, PgType a ~ PgType b) => Kol a -> Kol b
 unsafeCoerceKol = unsaferCoerceKol
 
+-- | Like 'unsafeCastKol', but without any explicit casting.
 unsaferCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
 unsaferCoerceKol = liftKol1 O.unsafeCoerceColumn
 
@@ -551,23 +554,43 @@ instance KolCast O.PGInt8 O.PGText
 instance KolCast O.PGInt8 O.PGCitext
 
 -- Shooting yourself in the foot? I will help you.
-type family TypeError85 a b :: Constraint where
-  TypeError85 a b = GHC.TypeError
+
+type family TypeErrorRange a b :: Constraint where
+  TypeErrorRange a b = GHC.TypeError
+    ('GHC.Text "If really want to cast " 'GHC.:<>: 'GHC.ShowType a 'GHC.:<>:
+     'GHC.Text " to " 'GHC.:<>: 'GHC.ShowType b 'GHC.:<>:
+     'GHC.Text " then use 'unsafeCastKol'." 'GHC.:$$:
+     'GHC.Text "You will get a runtime error if the " 'GHC.:<>: 'GHC.ShowType a
+     'GHC.:<>: 'GHC.Text " value is out of the range of " 'GHC.:<>: 'GHC.ShowType b)
+instance TypeErrorRange O.PGInt4 O.PGInt2 => KolCast O.PGInt4 O.PGInt2
+instance TypeErrorRange O.PGInt8 O.PGInt2 => KolCast O.PGInt8 O.PGInt2
+instance TypeErrorRange O.PGInt8 O.PGInt4 => KolCast O.PGInt8 O.PGInt4
+
+type family TypeErrorTimeCasting a b :: Constraint where
+  TypeErrorTimeCasting a b = GHC.TypeError
     ('GHC.Text "Do not cast " 'GHC.:<>: 'GHC.ShowType a 'GHC.:<>:
      'GHC.Text " to " 'GHC.:<>: 'GHC.ShowType b 'GHC.:$$:
      'GHC.Text "It probably doesn't do what you think it does." 'GHC.:$$:
      'GHC.Text "Read section 8.5 of the PostgreSQL documentation instead.")
-instance TypeError85 O.PGDate O.PGTimestamp => KolCast O.PGDate O.PGTimestamp
-instance TypeError85 O.PGDate O.PGTimestamptz => KolCast O.PGDate O.PGTimestamptz
-instance TypeError85 O.PGTimestamp O.PGDate => KolCast O.PGTimestamp O.PGDate
-instance TypeError85 O.PGTimestamp O.PGTime => KolCast O.PGTimestamp O.PGTime
-instance TypeError85 O.PGTimestamp O.PGTimestamptz => KolCast O.PGTimestamp O.PGTimestamptz
-instance TypeError85 O.PGTimestamptz O.PGDate => KolCast O.PGTimestamptz O.PGDate
-instance TypeError85 O.PGTimestamptz O.PGTime => KolCast O.PGTimestamptz O.PGTime
-instance TypeError85 O.PGTimestamptz O.PGTimestamp => KolCast O.PGTimestamptz O.PGTimestamp
+instance TypeErrorTimeCasting O.PGDate O.PGTimestamp => KolCast O.PGDate O.PGTimestamp
+instance TypeErrorTimeCasting O.PGDate O.PGTimestamptz => KolCast O.PGDate O.PGTimestamptz
+instance TypeErrorTimeCasting O.PGTimestamp O.PGDate => KolCast O.PGTimestamp O.PGDate
+instance TypeErrorTimeCasting O.PGTimestamp O.PGTime => KolCast O.PGTimestamp O.PGTime
+instance TypeErrorTimeCasting O.PGTimestamp O.PGTimestamptz => KolCast O.PGTimestamp O.PGTimestamptz
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGDate => KolCast O.PGTimestamptz O.PGDate
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGTime => KolCast O.PGTimestamptz O.PGTime
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGTimestamp => KolCast O.PGTimestamptz O.PGTimestamp
 
-kolCast :: forall a b. KolCast a b => Kol a -> Kol b
-kolCast = liftKol1 (O.unsafeCast (pgPrimTypeName (Proxy :: Proxy (PgType b))))
+-- | Safely and explicitely cast one column type to another one. See 'KolCast'.
+kolCast :: KolCast a b => Kol a -> Kol b
+kolCast = unsafeCastKol
+
+-- | Unsafely but explicitely cast one column type to another one by
+-- appending a target type name like @::int4@ to the PostgreSQL value, even if
+-- it is not guaranteed that the @int4@ type can properly hold the value. Use
+-- 'unsafeCoerceKol' if you don't want the explicit casting behavior.
+unsafeCastKol :: forall a b. (PgTyped a, PgTyped b) => Kol a -> Kol b
+unsafeCastKol = liftKol1 (O.unsafeCast (pgPrimTypeName (Proxy @(PgType b))))
 
 -- | Safe upcasting.
 upcastKol :: PgTyped a => Kol a -> Kol (PgType a)
@@ -763,7 +786,6 @@ instance (Aeson.ToJSON (Record (Cols_NamedHsR t)), Generic (HsR t)) => Aeson.ToJ
 instance Profunctor p => PP.Default p (HsR t) (HsR t) where
   def = P.rmap id PP.def
   {-# INLINE def #-}
-
 
 ---
 -- | @'HsI' t@ is the Haskell representation of Haskell values to be inserted to
