@@ -616,24 +616,6 @@ unsafeDowncastKol = unsafeCoerceKol
 
 -------------------------------------------------------------------------------
 
--- | Satisfied if @a@ is one of 'Kol' or 'Koln'. We use this 'Constraint' to
--- restrict the instances that can exist for typeclasses like 'FromKol'.
-type family KolLike a :: Constraint where
-  KolLike Kol  = ()
-  KolLike Koln = ()
-
-class KolLike f => FromKol f where
-  -- | Like 'fromKol', but generalizing the return type to either 'Kol' or
-  -- 'Koln'.
-  fromKol' :: PgTyped a => Kol a -> f a
-
--- | @'fromKol'' = 'id'@
-instance FromKol Kol  where fromKol' = id
--- | @'fromKol'' = 'fromKol'@
-instance FromKol Koln where fromKol' = fromKol
-
--------------------------------------------------------------------------------
-
 -- | Whether to read a plain value or possibly @NULL@.
 data RN = R  -- ^ Read plain value.
         | RN -- ^ Possibly read @NULL@.

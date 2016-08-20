@@ -49,7 +49,6 @@ module Opaleye.SOT
  , Koln(..)
  , koln
  , nul
- , FromKol(..)
  , fromKol
  , fromKoln
  , isNull
@@ -99,9 +98,10 @@ module Opaleye.SOT
    -- ** Column types
  , PgTyped(..)
  , KolCast
- , KolLike
  , PgNum
  , PgFractional
+ , PgEq
+ , PgOrd
  , O.PGOrd
  , O.PGBool
  , O.PGBytea
