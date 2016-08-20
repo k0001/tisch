@@ -112,7 +112,11 @@ instance PgPrimType O.PGTime where pgPrimTypeName _ = "time"
 instance PgPrimType O.PGUuid where pgPrimTypeName _ = "uuid"
 
 -- | Only 'PgTyped' instances are allowed as indexes to 'Kol' and 'Koln'.
-class PgPrimType (PgType a) => PgTyped (a :: k) where
+--
+-- The @'PgType' a ~ 'PgType' ('PgType' a)@ guarantees that @'PgType' a@ is a
+-- fixpoint.
+class (PgPrimType (PgType a), PgTyped (PgType a), PgType a ~ PgType (PgType a))
+  => PgTyped (a :: k) where
   -- | @'PgType' a@ indicates the primitive PostgreSQL column type that will
   -- ultimately be used as the index to @opaleye@'s 'O.Column'. This could be
   -- @a@ itself, in the case of primitive types such as 'O.PGInt4', or it could
@@ -253,8 +257,11 @@ data Kol (a :: k) = PgTyped a => Kol { unKol :: O.Column (PgType a) }
 
 deriving instance (PgTyped a, Show (O.Column (PgType a))) => Show (Kol a)
 
-unsafeCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
-unsafeCoerceKol = liftKol1 O.unsafeCoerceColumn
+unsafeCoerceKol :: (PgTyped a, PgTyped b, PgType a ~ PgType b) => Kol a -> Kol b
+unsafeCoerceKol = unsaferCoerceKol
+
+unsaferCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
+unsaferCoerceKol = liftKol1 O.unsafeCoerceColumn
 
 -- | Converts an unary function on Opaleye's 'O.Column' to an unary function
 -- taking any of 'Kol' and 'Koln' as argument, with the result type fully
@@ -306,21 +313,42 @@ instance
     ) => PP.Default O.QueryRunner (Kol a) b where
   def = P.lmap unKol PP.def
 
--- | Build a 'Kol'.
+-- | Convert a Haskell value to its 'Kol' representation.
 --
--- You need to provide a 'ToKol' instance for every Haskell type you plan to
--- convert to its PostgreSQL representation as 'Kol'.
+-- A a default implementation of 'kol' is given for 'Wrapped' instances (see
+-- 'kolWrapped').
 --
--- A a default implementation of 'kol' is available for 'Wrapped'
--- instances:
+-- Notice that as described in the documentation for 'PgTyped', @b@ here could
+-- be any 'PgTyped'. For example, following the @UserId@ example mentioned in
+-- the documentation for 'PgTyped', you can have:
 --
 -- @
--- default 'kol' :: ('PgTyped' b, 'PgType' b ~ p, 'Wrapped' a, 'ToKol' ('Unwrapped' a) p) => a -> 'Kol' b
--- 'kol' = 'kol' . 'view' '_Wrapped''
+-- instance 'ToKol' @UserId@ @UserId@
 -- @
-class (PgTyped p, PgType p ~ p) => ToKol (a :: Type) (p :: Type) where
+--
+-- And that instance would give you @'kol' :: @UserId@ -> 'Kol' @UserId@@.
+-- However, for that to work, a 'ToKol' instance relating the @UserId@ on the
+-- left (the Haskell value) to the primitive type of the @UserId@ on the right
+-- (i.e., 'PgType' @UserId@ ~ 'O.PGInt4') must also exist:
+--
+-- @
+-- instance 'ToKol' @UserId@ 'O.PGInt4'
+-- @
+--
+-- If you ensure that @UserId@ is an instance of 'Wrapped', then that's all you
+-- need to say: both instances will get default implementations of 'kol'.
+-- Otherwise, you'll need to implement 'kol' yourself.
+--
+-- Law 1 - @b@ is only nominal:
+--
+-- @
+-- ('upcastKol' ('kol' (x :: a) :: 'Kol' b) :: Kol ('PgType' b))
+--    '==' ('kol' (x :: a) :: 'Kol' ('PgType' b))
+-- @
+class (PgTyped b, ToKol a (PgType b)) => ToKol (a :: Type) (b :: kb) where
   -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
-  -- PostgreSQL representation as a @('Kol' 'O.PGBool')@.
+  -- PostgreSQL representation (for example, to a @'Kol' 'O.PGBool'@, or any
+  -- other compatible 'PgTyped').
   --
   -- Some example simplified types:
   --
@@ -328,12 +356,12 @@ class (PgTyped p, PgType p ~ p) => ToKol (a :: Type) (p :: Type) where
   -- 'kol' :: 'Bool' -> 'Kol' 'O.PGBool'
   -- 'kol' :: 'Int32' -> 'Kol' 'O.PGInt4'
   -- @
-  kol :: (PgTyped b, PgType b ~ p) => a -> Kol (b :: kb)
-  default kol
-    :: (PgTyped b, PgType b ~ p, Wrapped a, ToKol (Unwrapped a) p) => a -> Kol b
-  kol = kol . view _Wrapped'
+  kol :: a -> Kol (b :: kb)
+  default kol :: (Wrapped a, PgTyped b, ToKol (Unwrapped a) (PgType b)) => a -> Kol b
+  kol = -- Downcasting here is safe due to the Law 1 of 'ToKol'.
+        unsafeDowncastKol . kol . view _Wrapped'
 
-instance ToKol a p => ToKol (Tagged t a) p
+instance (ToKol a b) => ToKol (Tagged t a) b
 instance ToKol String O.PGText where kol = Kol . O.pgString
 instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
 instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
@@ -358,9 +386,9 @@ instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where ko
 instance ToKol Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Aeson.encode
 instance ToKol Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Aeson.encode
 
-instance forall a p. ToKol a p => ToKol [a] (O.PGArray p) where
-  kol = kolArray . map (kol :: a -> Kol p)
-
+instance forall a b. ToKol a b => ToKol [a] (O.PGArray b) where
+  kol = kolArray . map (kol :: a -> Kol b)
+--
 -- | Build a @'Kol' ('O.PGArray' x)@ from any 'Foldable'.
 --
 -- The return type is not fixed to @'Kol' ('O.PGArray' x)@ so that you can
@@ -381,7 +409,9 @@ instance Monoid (Kol O.PGText) where
 
 instance Monoid (Kol O.PGCitext) where
   mempty = kol (Data.CaseInsensitive.mk "")
-  mappend ka kb = unsafeCoerceKol (mappend (unsafeCoerceKol ka) (unsafeCoerceKol kb) :: Kol O.PGText)
+  mappend ka kb = unsaferCoerceKol
+    (mappend (unsaferCoerceKol ka :: Kol O.PGText)
+             (unsaferCoerceKol kb :: Kol O.PGText))
 
 instance Monoid (Kol O.PGBytea) where
   mempty = kol Data.ByteString.empty
@@ -410,7 +440,7 @@ deriving instance Show (O.Column (O.Nullable a)) => Show (Koln a)
 
 -- | Build a 'Koln' from a Haskell term. This is like the 'Just' constructor for
 -- 'Maybe'
-koln :: (ToKol a p, PgTyped b, PgType b ~ p) => a -> Koln b
+koln :: (ToKol a b) => a -> Koln b
 koln = fromKol . kol
 
 -- | PostgreSQL's @NULL@ value. This is like the 'Nothing' constructor for
@@ -498,18 +528,54 @@ instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
 
 -- | @'KolCast' a b@ says that @'Kol' a@ can be safely cast to @'Kol' b@
 -- using 'kolCast'.
+--
+-- Notice that an explicit cast will be performed on the PostgreSQL side. For
+-- example, using @'kolCast' :: 'Kol' 'O.PGUuid' -> 'Kol' 'O.PGText'@ will
+-- explicitely add @::text@ to the value in an @uuid@ column. This allows for
+-- much more interesting and predictable conversions between different types
+-- compared to 'unsafeCoerceKol'.
 class (PgTyped a, PgTyped b) => KolCast (a :: ka) (b :: kb) where
--- | Identity.
-instance PgTyped a => KolCast a a
--- | OVERLAPPABLE. Upcast.
-instance {-# OVERLAPPABLE #-} (PgTyped a, PgTyped b, PgType a ~ b) => KolCast a b
 
 instance KolCast O.PGCitext O.PGText
 instance KolCast O.PGText O.PGCitext
 instance KolCast O.PGUuid O.PGText
+instance KolCast O.PGUuid O.PGCitext
+instance KolCast O.PGInt2 O.PGText
+instance KolCast O.PGInt2 O.PGCitext
+instance KolCast O.PGInt2 O.PGInt4
+instance KolCast O.PGInt2 O.PGInt8
+instance KolCast O.PGInt4 O.PGText
+instance KolCast O.PGInt4 O.PGCitext
+instance KolCast O.PGInt4 O.PGInt8
+instance KolCast O.PGInt8 O.PGText
+instance KolCast O.PGInt8 O.PGCitext
+
+-- Shooting yourself in the foot? I will help you.
+type family TypeError85 a b :: Constraint where
+  TypeError85 a b = GHC.TypeError
+    ('GHC.Text "Do not cast " 'GHC.:<>: 'GHC.ShowType a 'GHC.:<>:
+     'GHC.Text " to " 'GHC.:<>: 'GHC.ShowType b 'GHC.:$$:
+     'GHC.Text "It probably doesn't do what you think it does." 'GHC.:$$:
+     'GHC.Text "Read section 8.5 of the PostgreSQL documentation instead.")
+instance TypeError85 O.PGDate O.PGTimestamp => KolCast O.PGDate O.PGTimestamp
+instance TypeError85 O.PGDate O.PGTimestamptz => KolCast O.PGDate O.PGTimestamptz
+instance TypeError85 O.PGTimestamp O.PGDate => KolCast O.PGTimestamp O.PGDate
+instance TypeError85 O.PGTimestamp O.PGTime => KolCast O.PGTimestamp O.PGTime
+instance TypeError85 O.PGTimestamp O.PGTimestamptz => KolCast O.PGTimestamp O.PGTimestamptz
+instance TypeError85 O.PGTimestamptz O.PGDate => KolCast O.PGTimestamptz O.PGDate
+instance TypeError85 O.PGTimestamptz O.PGTime => KolCast O.PGTimestamptz O.PGTime
+instance TypeError85 O.PGTimestamptz O.PGTimestamp => KolCast O.PGTimestamptz O.PGTimestamp
 
 kolCast :: forall a b. KolCast a b => Kol a -> Kol b
 kolCast = liftKol1 (O.unsafeCast (pgPrimTypeName (Proxy :: Proxy (PgType b))))
+
+-- | Safe upcasting.
+upcastKol :: PgTyped a => Kol a -> Kol (PgType a)
+upcastKol = unsafeCoerceKol
+
+-- | Unsafe downcasting.
+unsafeDowncastKol :: PgTyped a => Kol (PgType a) -> Kol a
+unsafeDowncastKol = unsafeCoerceKol
 
 -------------------------------------------------------------------------------
 
@@ -941,13 +1007,13 @@ type family Cols_CNamedFunArgs
 data FnPgWfromHsIField = FnPgWfromHsIField
 instance Record.ApplyAB FnPgWfromHsIField x x where
   applyAB _ = id
-instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField a (Kol b) where
+instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField a (Kol b) where
   applyAB _ = kol
-instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (WDef a) (WDef (Kol b)) where
+instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (WDef a) (WDef (Kol b)) where
   applyAB _ = fmap kol
-instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (Maybe a) (Koln b) where
+instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (Maybe a) (Koln b) where
   applyAB _ = maybe nul koln
-instance (PgTyped b, PgType b ~ r, ToKol a r) => Record.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
+instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
   applyAB _ = fmap (maybe nul koln)
 
 -- | Convert a custom Haskell type to a representation appropiate for /inserting/
