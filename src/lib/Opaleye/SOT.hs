@@ -39,8 +39,6 @@ module Opaleye.SOT
 
    -- * Kol
  , Kol(..)
- , kolCast
- , unsafeCoerceKol
  , ToKol(..)
  , liftKol1
  , liftKol2
@@ -97,7 +95,6 @@ module Opaleye.SOT
 
    -- ** Column types
  , PgTyped(..)
- , KolCast
  , PgNum
  , PgFractional
  , PgEq
@@ -121,6 +118,14 @@ module Opaleye.SOT
  , O.PGTime
  , O.PGUuid
 
+   -- ** Coercing / type casting
+ , KolCast
+ , kolCast
+ , upcastKol
+ , unsafeDowncastKol
+ , unsafeCastKol
+ , unsafeCoerceKol
+ , unsaferCoerceKol
  ) where
 
 import           Opaleye.SOT.Internal
