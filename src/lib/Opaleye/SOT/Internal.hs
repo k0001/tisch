@@ -54,6 +54,7 @@ import           Data.Promotion.Prelude.Bool (If)
 import           Data.Singletons
 import           Data.Type.Equality
 import           Data.Tagged
+import           Data.Word
 import           GHC.Exts (Constraint)
 import qualified GHC.OverloadedLabels as GHC
 import           GHC.Generics (Generic)
@@ -194,6 +195,7 @@ instance (PgTyped a, O.PGOrd (PgType a)) => PgOrd a
 -- | A @'PgNum' a@ instance gives you a @'Num' ('Kol' a)@ instance for free.
 class (PgTyped a, OI.PGNum (PgType a)) => PgNum (a :: k)
 
+instance PgNum O.PGInt2
 instance PgNum O.PGInt4
 instance PgNum O.PGInt8
 instance PgNum O.PGFloat4
@@ -370,6 +372,18 @@ instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
 instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
 instance ToKol Char O.PGText where kol = Kol . O.pgString . (:[])
 instance ToKol Bool O.PGBool where kol = Kol . O.pgBool
+instance ToKol Word8 O.PGInt2 where kol = Kol . pgInt2 . fromIntegral
+instance ToKol Word8 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
+instance ToKol Word8 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
+instance ToKol Word16 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
+instance ToKol Word16 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
+instance ToKol Word32 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
+instance ToKol Int8 O.PGInt2 where kol = Kol . pgInt2 . fromIntegral
+instance ToKol Int8 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
+instance ToKol Int8 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
+instance ToKol Int16 O.PGInt2 where kol = Kol . pgInt2 . fromIntegral
+instance ToKol Int16 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
+instance ToKol Int16 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
 instance ToKol Int32 O.PGInt4 where kol = Kol . O.pgInt4 . fromIntegral
 instance ToKol Int32 O.PGInt8 where kol = Kol . O.pgInt8 . fromIntegral
 instance ToKol Int64 O.PGInt8 where kol = Kol . O.pgInt8
@@ -1468,6 +1482,9 @@ pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
 pgFloat8 :: Float -> O.Column O.PGFloat8
 pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double
 
+pgInt2 :: Int16 -> O.Column O.PGInt2
+pgInt2 = OI.literalColumn . OI.IntegerLit . fromIntegral
+
 -- | Orphan. "Opaleye.SOT.Internal".
 instance OI.QueryRunnerColumnDefault O.PGFloat4 Float where
   queryRunnerColumnDefault = O.fieldQueryRunnerColumn
@@ -1479,6 +1496,10 @@ instance OI.PGFractional O.PGFloat4 where
 -- | Orphan. "Opaleye.SOT.Internal".
 instance OI.PGNum O.PGFloat4 where
   pgFromInteger = pgFloat4 . fromInteger
+
+-- | Orphan. "Opaleye.SOT.Internal".
+instance OI.PGNum O.PGInt2 where
+  pgFromInteger = pgInt2 . fromInteger
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
