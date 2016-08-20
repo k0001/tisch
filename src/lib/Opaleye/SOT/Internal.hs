@@ -1307,6 +1307,27 @@ lands = foldl' land (kol True)
 --------------------------------------------------------------------------------
 -- Equality
 
+-- | A @'PgEq' a@ instance states that @a@ can be compared for equality.
+class PgTyped a => PgEq (a :: k)
+
+instance PgEq O.PGBool
+instance PgEq O.PGBytea
+instance PgEq O.PGCitext
+instance PgEq O.PGDate
+instance PgEq O.PGFloat4
+instance PgEq O.PGFloat8
+instance PgEq O.PGInt2
+instance PgEq O.PGInt4
+instance PgEq O.PGInt8
+instance PgEq O.PGJsonb
+instance PgEq O.PGJson
+instance PgEq O.PGNumeric
+instance PgEq O.PGText
+instance PgEq O.PGTimestamptz
+instance PgEq O.PGTimestamp
+instance PgEq O.PGTime
+instance PgEq O.PGUuid
+
 -- | Whether two column values are equal.
 --
 -- Note: This function can take any combination of 'Kol' and 'Koln' arguments,
@@ -1321,14 +1342,14 @@ lands = foldl' land (kol True)
 -- @
 --
 -- Mnemonic reminder: EQual.
-eq :: PgTyped a => Kol a -> Kol a -> Kol O.PGBool
+eq :: PgEq a => Kol a -> Kol a -> Kol O.PGBool
 eq = liftKol2 (O..==)
 
 -- | Whether the given value is a member of the given collection.
 --
 -- Notice that a combination 'eq' and 'or' is more general that 'member', as
 -- they don't restrict @kol'@.
-member :: (PgTyped a, Foldable f) => Kol a -> f (Kol a) -> Kol O.PGBool
+member :: (PgEq a, Foldable f) => Kol a -> f (Kol a) -> Kol O.PGBool
 member a = lors . map (eq a) . toList
 
 --------------------------------------------------------------------------------
