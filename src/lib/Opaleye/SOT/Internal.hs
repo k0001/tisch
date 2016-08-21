@@ -233,6 +233,18 @@ instance PgIntegral O.PGInt2
 instance PgIntegral O.PGInt4
 instance PgIntegral O.PGInt8
 
+itruncate :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
+itruncate = liftKol1 (unsafeFunExpr "trunc" . pure)
+
+iround :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
+iround = liftKol1 (unsafeFunExpr "round" . pure)
+
+iceil :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
+iceil = liftKol1 (unsafeFunExpr "ceil" . pure)
+
+ifloor :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
+ifloor = liftKol1 (unsafeFunExpr "floor" . pure)
+
 -------------------------------------------------------------------------------
 
 -- | A @'PgFractional' a@ instance gives you a @'Fractional' ('Kol' a)@ instance
@@ -276,7 +288,7 @@ instance
   exp = liftKol1 (unsafeFunExpr "exp" . pure)
   log = liftKol1 (unsafeFunExpr "log" . pure)
   sqrt = liftKol1 (unsafeFunExpr "sqrt" . pure)
-  (**) = liftKol2 (\base ex -> unsafeFunExpr "pow" [base, ex])
+  (**) = liftKol2 (\base ex -> unsafeFunExpr "power" [base, ex])
   logBase = liftKol2 (\base n -> unsafeFunExpr "log" [base, n])
   sin = liftKol1 (unsafeFunExpr "sin" . pure)
   cos = liftKol1 (unsafeFunExpr "cos" . pure)

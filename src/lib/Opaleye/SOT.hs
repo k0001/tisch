@@ -86,9 +86,13 @@ module Opaleye.SOT
  , lte
  , gt
  , gte
-   -- ** Numeric
+   -- ** Various numeric
  , modulo
  , euler's
+ , itruncate
+ , iround
+ , iceil
+ , ifloor
    -- ** Bit-wise
  , bwand
  , bwor
