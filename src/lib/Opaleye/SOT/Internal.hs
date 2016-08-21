@@ -63,7 +63,7 @@ import qualified GHC.TypeLits as GHC
 import           GHC.TypeLits (Symbol, KnownSymbol, symbolVal)
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
-import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
+import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 import qualified Opaleye.Internal.PGTypes as OI
 import qualified Opaleye.Internal.RunQuery as OI
 import qualified Opaleye.Internal.Join as OI
@@ -191,6 +191,7 @@ class (PgTyped a, O.PGOrd (PgType a)) => PgOrd (a :: k)
 instance (PgTyped a, O.PGOrd (PgType a)) => PgOrd a
 
 -------------------------------------------------------------------------------
+-- Various numerical operations
 
 -- | A @'PgNum' a@ instance gives you a @'Num' ('Kol' a)@ instance for free.
 class (PgTyped a, OI.PGNum (PgType a)) => PgNum (a :: k)
@@ -218,6 +219,10 @@ instance (PgTyped a, Num (Kol a)) => Num (Koln a) where
   abs = mapKoln abs
   negate = mapKoln negate
   signum = mapKoln signum
+
+-- | Sql operator @%@
+modulo :: PgNum a => Kol a -> Kol a -> Kol a
+modulo = liftKol2 (OI.binOp HDB.OpMod)
 
 -------------------------------------------------------------------------------
 
@@ -426,12 +431,12 @@ kolArray
  => f (Kol a) -> Kol as
 kolArray xs = Kol $ O.unsafeCast
    (pgPrimTypeName (Proxy :: Proxy (O.PGArray (PgType a))))
-   (OI.Column (OI.ArrayExpr (map (OI.unColumn . unKol) (toList xs))))
+   (OI.Column (HDB.ArrayExpr (map (OI.unColumn . unKol) (toList xs))))
 
 ---
 instance Monoid (Kol O.PGText) where
   mempty = kol ""
-  mappend = liftKol2 (OI.binOp OI.OpCat)
+  mappend = liftKol2 (OI.binOp HDB.OpCat)
 
 instance Monoid (Kol O.PGCitext) where
   mempty = kol (Data.CaseInsensitive.mk "")
@@ -441,7 +446,7 @@ instance Monoid (Kol O.PGCitext) where
 
 instance Monoid (Kol O.PGBytea) where
   mempty = kol Data.ByteString.empty
-  mappend = liftKol2 (OI.binOp OI.OpCat)
+  mappend = liftKol2 (OI.binOp HDB.OpCat)
 
 ---
 -- | Like @opaleye@'s @'O.Column' ('O.Nullable' x)@, but with @x@ guaranteed
@@ -1394,6 +1399,9 @@ gte :: PgOrd a => Kol a -> Kol a -> Kol O.PGBool
 gte = liftKol2 (O..>=)
 
 --------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
 
 -- | Whether a 'Koln' is 'nul' (@NULL@).
 isNull :: Koln a -> Kol O.PGBool
@@ -1473,13 +1481,13 @@ unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
 unsafeUnNullableColumn = O.unsafeCoerceColumn
 
 pgFloat4 :: Float -> O.Column O.PGFloat4
-pgFloat4 = OI.literalColumn . OI.DoubleLit . float2Double
+pgFloat4 = OI.literalColumn . HDB.DoubleLit . float2Double
 
 pgFloat8 :: Float -> O.Column O.PGFloat8
-pgFloat8 = OI.literalColumn . OI.DoubleLit . float2Double
+pgFloat8 = OI.literalColumn . HDB.DoubleLit . float2Double
 
 pgInt2 :: Int16 -> O.Column O.PGInt2
-pgInt2 = OI.literalColumn . OI.IntegerLit . fromIntegral
+pgInt2 = OI.literalColumn . HDB.IntegerLit . fromIntegral
 
 -- | Orphan. "Opaleye.SOT.Internal".
 instance OI.QueryRunnerColumnDefault O.PGFloat4 Float where
