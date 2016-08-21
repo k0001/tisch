@@ -100,6 +100,9 @@ module Opaleye.SOT
  , bwnot
  , bwsl
  , bwsr
+   -- ** Time
+ , fromNaiveTimestamp
+ , unsafeToNaiveTimestamp
 
    -- * WDef
  , WDef(WDef, WVal)

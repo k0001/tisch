@@ -234,16 +234,16 @@ instance PgIntegral O.PGInt4
 instance PgIntegral O.PGInt8
 
 itruncate :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
-itruncate = liftKol1 (unsafeFunExpr "trunc" . pure)
+itruncate = liftKol1 (unsafeFunExpr "trunc" . pure . AnyColumn)
 
 iround :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
-iround = liftKol1 (unsafeFunExpr "round" . pure)
+iround = liftKol1 (unsafeFunExpr "round" . pure . AnyColumn)
 
 iceil :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
-iceil = liftKol1 (unsafeFunExpr "ceil" . pure)
+iceil = liftKol1 (unsafeFunExpr "ceil" . pure . AnyColumn)
 
 ifloor :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
-ifloor = liftKol1 (unsafeFunExpr "floor" . pure)
+ifloor = liftKol1 (unsafeFunExpr "floor" . pure . AnyColumn)
 
 -------------------------------------------------------------------------------
 
@@ -282,17 +282,17 @@ instance
     , PgFloating (Kol a)
     ) => Floating (Kol a) where
   pi = Kol (unsafeFunExpr "pi" [])
-  exp = liftKol1 (unsafeFunExpr "exp" . pure)
-  log = liftKol1 (unsafeFunExpr "log" . pure)
-  sqrt = liftKol1 (unsafeFunExpr "sqrt" . pure)
-  (**) = liftKol2 (\base ex -> unsafeFunExpr "power" [base, ex])
-  logBase = liftKol2 (\base n -> unsafeFunExpr "log" [base, n])
-  sin = liftKol1 (unsafeFunExpr "sin" . pure)
-  cos = liftKol1 (unsafeFunExpr "cos" . pure)
-  tan = liftKol1 (unsafeFunExpr "tan" . pure)
-  asin = liftKol1 (unsafeFunExpr "asin" . pure)
-  acos = liftKol1 (unsafeFunExpr "acos" . pure)
-  atan = liftKol1 (unsafeFunExpr "atan" . pure)
+  exp = liftKol1 (unsafeFunExpr "exp" . pure . AnyColumn)
+  log = liftKol1 (unsafeFunExpr "log" . pure . AnyColumn)
+  sqrt = liftKol1 (unsafeFunExpr "sqrt" . pure . AnyColumn)
+  (**) = liftKol2 (\base ex -> unsafeFunExpr "power" [AnyColumn base, AnyColumn ex])
+  logBase = liftKol2 (\base n -> unsafeFunExpr "log" [AnyColumn base, AnyColumn n])
+  sin = liftKol1 (unsafeFunExpr "sin" . pure . AnyColumn)
+  cos = liftKol1 (unsafeFunExpr "cos" . pure . AnyColumn)
+  tan = liftKol1 (unsafeFunExpr "tan" . pure . AnyColumn)
+  asin = liftKol1 (unsafeFunExpr "asin" . pure . AnyColumn)
+  acos = liftKol1 (unsafeFunExpr "acos" . pure . AnyColumn)
+  atan = liftKol1 (unsafeFunExpr "atan" . pure . AnyColumn)
   -- Not the most efficient implementations, but PostgreSQL doesn't provide
   -- builtin support for hyperbolic functions. We add these for completeness,
   -- so that we can implement the 'Floating' typeclass in full.
@@ -404,7 +404,7 @@ instance
 -- instance 'ToKol' @UserId@ @UserId@
 -- @
 --
--- And that instance would give you @'kol' :: @UserId@ -> 'Kol' @UserId@@.
+-- And that instance would give you @'kol' :: UserId -> 'Kol' UserId@.
 -- However, for that to work, a 'ToKol' instance relating the @UserId@ on the
 -- left (the Haskell value) to the primitive type of the @UserId@ on the right
 -- (i.e., 'PgType' @UserId@ ~ 'O.PGInt4') must also exist:
@@ -809,7 +809,7 @@ instance Aeson.ToJSON a => Aeson.ToJSON (WDef a) where
 -- * @hsType@: Type of the column value used in Haskell outside Opaleye
 --   queries. Hint: don't use something like @'Maybe' 'Bool'@ here if you
 --   want to indicate that this is an optional 'Bool' column. Instead, use
---   'Int' here and 'RN' in the @rn@ field.
+--   'Bool' here and 'RN' in the @rn@ field.
 --
 -- /Notice that 'Col' is very different from 'Kol' and 'Koln': 'Kol' and 'Koln'/
 -- /are used at runtime for manipulating values stored in columns, 'Col' is used/
@@ -1524,6 +1524,40 @@ bwsr = liftKol2 (OI.binOp (HDB.OpOther (">>")))
 
 --------------------------------------------------------------------------------
 
+-- Convert a PostgreSQL @timestamptz@ to a @timestamp@ at a given timezone.
+--
+-- Notice that a @timestamp@ value is meaningless unless you also know the
+-- timezone where that timestamp happens. For this reason, this function also
+-- gives you back the timezone information that must always accompany the
+-- @timestamp@ value, so that you don't forget that you must keep it somehow.
+--
+-- This function is marked unsafe because dealing with @timestamp@ values in
+-- PostgreSQL is very error prone unless you really know what you are doing.
+-- Quite likely you shouldn't be using @timestamp@ values in PostgreSQL unless
+-- you are storing distant dates in the future for which the precise UTC time
+-- can't be known (e.g., can you tell the UTC time for January 1 4045, 00:00:00
+-- in Peru? Me neither, as I have no idea in what timezone Peru will be in
+-- 4045, so I can't convert that to UTC).
+unsafeToNaiveTimestamp
+  :: ( PgTyped zone, PgType zone ~ O.PGText
+     , PgTyped a, PgType a ~ O.PGTimestamptz
+     , PgTyped b, PgType b ~ O.PGTimestamp )
+  => Kol zone -> Kol a -> (Kol zone, Kol b)
+unsafeToNaiveTimestamp kz ka = (,) kz $ liftKol2
+  (\zone a -> unsafeFunExpr "timezone" [AnyColumn zone, AnyColumn a]) kz ka
+
+-- Convert a PostgreSQL @timestamp@ to a @timestamptz@, making the assumption
+-- that the given @timestamp@ happens at the given timezone.
+fromNaiveTimestamp
+  :: ( PgTyped zone, PgType zone ~ O.PGText
+     , PgTyped a, PgType a ~ O.PGTimestamp
+     , PgTyped b, PgType b ~ O.PGTimestamptz )
+  => Kol zone -> Kol a -> Kol b
+fromNaiveTimestamp = liftKol2
+  (\zone a -> unsafeFunExpr "timezone" [AnyColumn zone, AnyColumn a])
+
+--------------------------------------------------------------------------------
+
 -- | Whether a 'Koln' is 'nul' (@NULL@).
 isNull :: Koln a -> Kol O.PGBool
 isNull = Kol . O.isNull . unKoln
@@ -1598,10 +1632,13 @@ descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . f)
 --------------------------------------------------------------------------------
 -- This belongs in Opaleye
 
+data AnyColumn = forall a. AnyColumn (O.Column a)
+
 -- | 'unsafeFunExpr "f" xs' calls a function called @"f"@ with arguments @xs@.
 -- The return type must correctly be set by the caller.
-unsafeFunExpr :: HDB.Name -> [O.Column a] -> O.Column b
-unsafeFunExpr fname = OI.Column . HDB.FunExpr fname . map OI.unColumn
+unsafeFunExpr :: HDB.Name -> [AnyColumn] -> O.Column b
+unsafeFunExpr fname =
+  OI.Column . HDB.FunExpr fname . map (\(AnyColumn (OI.Column x)) -> x)
 
 unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
 unsafeUnNullableColumn = O.unsafeCoerceColumn
