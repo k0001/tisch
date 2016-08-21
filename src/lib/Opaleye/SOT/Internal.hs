@@ -480,11 +480,23 @@ fromKol = Koln . O.toNullable . unKol
 
 -- | Convert a 'Koln' to a 'Kol'.
 --
--- This function behaves as 'Data.Maybe.fromMaybe': If @'Koln' a@ is @NULL@,
--- then return the first argument, otherwise it returns the @'Kol' a@ underlying
--- the given @'Koln' a@.
+-- This function behaves as 'Data.Maybe.fromMaybe'.
+--
+-- @
+-- 'fromKoln' ka na == 'matchKoln' ka id na
+-- @
 fromKoln :: PgTyped a => Kol a -> Koln a -> Kol a
-fromKoln ka0 na = Kol (O.matchNullable (unKol ka0) id (unKoln na))
+fromKoln ka0 = matchKoln ka0 id
+
+--- | Case analysis for 'Koln'.
+--
+-- This function behaves as 'Prelude.maybe' for 'Maybe': If @'Koln' a@ is
+-- @NULL@, then evaluate to the first argument, otherwise it applies the given
+-- function to the @'Kol' a@ underlying the given @'Koln' a@.
+matchKoln
+  :: (PgTyped a, PgTyped b) => Kol b -> (Kol a -> Kol b) -> Koln a -> Kol b
+matchKoln kb0 f na =
+  Kol (O.matchNullable (unKol kb0) (unKol . f . Kol) (unKoln na))
 
 -- | Like 'fmap' for 'Maybe'.
 --

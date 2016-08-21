@@ -49,6 +49,7 @@ module Opaleye.SOT
  , nul
  , fromKol
  , fromKoln
+ , matchKoln
  , isNull
  , mapKoln
  , forKoln
