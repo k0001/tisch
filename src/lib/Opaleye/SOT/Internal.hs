@@ -489,7 +489,7 @@ instance ToKol Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Aeson.enc
 
 instance forall a b. ToKol a b => ToKol [a] (O.PGArray b) where
   kol = kolArray . map (kol :: a -> Kol b)
---
+
 -- | Build a @'Kol' ('O.PGArray' x)@ from any 'Foldable'.
 --
 -- The return type is not fixed to @'Kol' ('O.PGArray' x)@ so that you can
@@ -502,6 +502,26 @@ kolArray
 kolArray xs = Kol $ O.unsafeCast
    (pgPrimTypeName (Proxy :: Proxy (O.PGArray (PgType a))))
    (OI.Column (HDB.ArrayExpr (map (OI.unColumn . unKol) (toList xs))))
+
+-- | Conversions from 'Int' are explicitely disabled.
+instance {-# OVERLAPPING #-}
+  ( PgTyped a
+  , GHC.TypeError
+      ('GHC.Text "ToKol conversions from Int to Kol are disabled because the size"
+       'GHC.:$$: 'GHC.Text "of Int is machine-dependent, which is likely to cause you maintenance"
+       'GHC.:$$: 'GHC.Text "problems in the future. Be explicit about the size of your integer,"
+       'GHC.:$$: 'GHC.Text "use one Int8, Int16, Int32, Int64 from Data.Int.")
+  ) => ToKol Int a where kol = undefined
+
+-- | Conversions from 'Word' are explicitely disabled.
+instance {-# OVERLAPPING #-}
+  ( PgTyped a
+  , GHC.TypeError
+      ('GHC.Text "ToKol conversions from Word to Kol are disabled because the size"
+       'GHC.:$$: 'GHC.Text "of Word is machine-dependent, which is likely to cause you maintenance"
+       'GHC.:$$: 'GHC.Text "problems in the future. Be explicit about the size of your integer,"
+       'GHC.:$$: 'GHC.Text "use one of Word8, Word16, Word32 from Data.Word.")
+  ) => ToKol Word a where kol = undefined
 
 ---
 
