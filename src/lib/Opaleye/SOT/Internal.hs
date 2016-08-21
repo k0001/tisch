@@ -116,6 +116,15 @@ instance PgPrimType O.PGUuid where pgPrimTypeName _ = "uuid"
 --
 -- The @'PgType' a ~ 'PgType' ('PgType' a)@ guarantees that @'PgType' a@ is a
 -- fixpoint.
+--
+-- Law 1: The @a@ in @'PgType' a@ is only nominal (i.e., it is possible to
+-- safely downcast @'PgType' a@ to @a@ and upcast it back to @'PgType' a@
+-- provided the column's value didn't change):
+--
+-- @
+-- 'upcastKol' . 'unsafeDowncastKol' = 'id'
+-- 'unsafeDowncastKol' . 'upcastKol' = 'id'
+-- @
 class (PgPrimType (PgType a), PgTyped (PgType a), PgType a ~ PgType (PgType a))
   => PgTyped (a :: k) where
   -- | @'PgType' a@ indicates the primitive PostgreSQL column type that will
@@ -407,13 +416,6 @@ instance
 -- If you ensure that @UserId@ is an instance of 'Wrapped', then that's all you
 -- need to say: both instances will get default implementations of 'kol'.
 -- Otherwise, you'll need to implement 'kol' yourself.
---
--- Law 1 - @b@ is only nominal:
---
--- @
--- ('upcastKol' ('kol' (x :: a) :: 'Kol' b) :: Kol ('PgType' b))
---    '==' ('kol' (x :: a) :: 'Kol' ('PgType' b))
--- @
 class (PgTyped b, ToKol a (PgType b)) => ToKol (a :: Type) (b :: kb) where
   -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
   -- PostgreSQL representation (for example, to a @'Kol' 'O.PGBool'@, or any
@@ -427,7 +429,7 @@ class (PgTyped b, ToKol a (PgType b)) => ToKol (a :: Type) (b :: kb) where
   -- @
   kol :: a -> Kol (b :: kb)
   default kol :: (Wrapped a, PgTyped b, ToKol (Unwrapped a) (PgType b)) => a -> Kol b
-  kol = -- Downcasting here is safe due to the Law 1 of 'ToKol'.
+  kol = -- Downcasting here is safe due to the Law 1 of 'PgTyped'.
         unsafeDowncastKol . kol . view _Wrapped'
 
 instance (ToKol a b) => ToKol (Tagged t a) b
