@@ -26,7 +26,6 @@ module Opaleye.SOT
 
    -- * Working with 'Tabla'
  , table
- , queryTabla
  , HsR(..)
  , HsI(..)
  , mkHsI
@@ -59,8 +58,21 @@ module Opaleye.SOT
    -- * Querying
  , O.Query
  , O.QueryArr
+ , queryTabla
  , leftJoin
  , restrict
+   -- * Selecting
+ , col
+   -- * Ordering
+ , O.orderBy
+ , asc
+ , ascnf
+ , ascnl
+ , desc
+ , descnf
+ , descnl
+
+   -- * Operators
    -- ** Booleans
  , lnot
  , lor
@@ -74,16 +86,9 @@ module Opaleye.SOT
  , lte
  , gt
  , gte
-   -- * Selecting
- , col
-   -- * Ordering
- , O.orderBy
- , asc
- , ascnf
- , ascnl
- , desc
- , descnf
- , descnl
+   -- ** Numeric
+ , modulo
+   -- ** Bit-wise
 
    -- * WDef
  , WDef(WDef, WVal)
