@@ -88,7 +88,14 @@ module Opaleye.SOT
  , gte
    -- ** Numeric
  , modulo
+ , euler's
    -- ** Bit-wise
+ , bwand
+ , bwor
+ , bwxor
+ , bwnot
+ , bwsl
+ , bwsr
 
    -- * WDef
  , WDef(WDef, WVal)
@@ -102,7 +109,9 @@ module Opaleye.SOT
    -- ** Column types
  , PgTyped(..)
  , PgNum
+ , PgIntegral
  , PgFractional
+ , PgFloating
  , PgEq
  , PgOrd
  , O.PGOrd
