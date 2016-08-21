@@ -1637,6 +1637,26 @@ pgInt2 = OI.literalColumn . HDB.IntegerLit . fromIntegral
 instance OI.QueryRunnerColumnDefault O.PGFloat4 Float where
   queryRunnerColumnDefault = O.fieldQueryRunnerColumn
 
+-- | Conversions to 'Int' are explicitely disabled.
+instance {-# OVERLAPPING #-}
+  ( GHC.TypeError
+      ('GHC.Text "QueryRunnerColumnDefault conversions to Int are disabled because the size"
+       'GHC.:$$: 'GHC.Text "of Int is machine-dependent, which is likely to cause you maintenance"
+       'GHC.:$$: 'GHC.Text "problems in the future. Be explicit about the size of your integer,"
+       'GHC.:$$: 'GHC.Text "use one Int8, Int16, Int32, Int64 from Data.Int.")
+  ) => OI.QueryRunnerColumnDefault a Int
+  where queryRunnerColumnDefault = undefined
+
+-- | Conversions to 'Word' are explicitely disabled.
+instance {-# OVERLAPPING #-}
+  ( GHC.TypeError
+      ('GHC.Text "QueryRunnerColumnDefault conversions to Word are disabled because the size"
+       'GHC.:$$: 'GHC.Text "of Word is machine-dependent, which is likely to cause you maintenance"
+       'GHC.:$$: 'GHC.Text "problems in the future. Be explicit about the size of your integer,"
+       'GHC.:$$: 'GHC.Text "use one of Word8, Word16, Word32 from Data.Word.")
+  ) => OI.QueryRunnerColumnDefault a Word
+  where queryRunnerColumnDefault = undefined
+
 -- | Orphan. "Opaleye.SOT.Internal".
 instance OI.PGFractional O.PGFloat4 where
   pgFromRational = pgFloat4 . fromRational
