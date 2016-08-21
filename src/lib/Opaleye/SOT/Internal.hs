@@ -211,15 +211,6 @@ instance (PgNum a, Num (O.Column (PgType a))) => Num (Kol a) where
   negate = liftKol1 negate
   signum = liftKol1 signum
 
-instance (PgTyped a, Num (Kol a)) => Num (Koln a) where
-  fromInteger = fromKol . fromInteger
-  (*) = liftKoln2 (*)
-  (+) = liftKoln2 (+)
-  (-) = liftKoln2 (-)
-  abs = mapKoln abs
-  negate = mapKoln negate
-  signum = mapKoln signum
-
 -- | Sql operator @%@
 modulo :: PgNum a => Kol a -> Kol a -> Kol a
 modulo = liftKol2 (OI.binOp HDB.OpMod)
@@ -262,10 +253,6 @@ instance
   fromRational = Kol . fromRational
   (/) = liftKol2 (/)
 
-instance (PgTyped a, Num (Koln a), Fractional (Kol a)) => Fractional (Koln a) where
-  fromRational = fromKol . fromRational
-  (/) = liftKoln2 (/)
-
 -------------------------------------------------------------------------------
 -- | A 'PgFloating' instance gives you 'Floating'-support.
 class (PgTyped a, PgFractional a) => PgFloating (a :: k)
@@ -273,6 +260,7 @@ class (PgTyped a, PgFractional a) => PgFloating (a :: k)
 instance PgFloating O.PGFloat4
 instance PgFloating O.PGFloat8
 
+-- | @2.718281828459045@
 euler's :: PgFloating a => Kol a
 euler's = unsaferCoerceExplicitKol
   (kol (2.718281828459045 :: Double) :: Kol O.PGFloat8)
@@ -306,26 +294,6 @@ instance
   asinh x = log (x + sqrt ((x ** fromInteger 2) + fromInteger 1))
   acosh x = log (x + sqrt ((x ** fromInteger 2) - fromInteger 1))
   atanh x = log ((fromInteger 1 + x) / (fromInteger 1 - x)) / fromInteger 2
-
-instance (PgTyped a, PgFloating a, Floating (Kol a)) => Floating (Koln a) where
-  pi = fromKol pi
-  exp = mapKoln exp
-  log = mapKoln log
-  sqrt = mapKoln sqrt
-  (**) = liftKoln2 (**)
-  logBase = liftKoln2 (**)
-  sin = mapKoln sin
-  cos = mapKoln cos
-  tan = mapKoln tan
-  asin = mapKoln asin
-  acos = mapKoln acos
-  atan = mapKoln atan
-  sinh = mapKoln sinh
-  cosh = mapKoln cosh
-  tanh = mapKoln tanh
-  asinh = mapKoln asinh
-  acosh = mapKoln acosh
-  atanh = mapKoln atanh
 
 -------------------------------------------------------------------------------
 
