@@ -264,9 +264,18 @@ deriving instance (PgTyped a, Show (O.Column (PgType a))) => Show (Kol a)
 unsafeCoerceKol :: (PgTyped a, PgTyped b, PgType a ~ PgType b) => Kol a -> Kol b
 unsafeCoerceKol = unsaferCoerceKol
 
--- | Like 'unsafeCastKol', but without any explicit casting.
+-- | Like 'unsaferCoerceExplicitKol', but without any explicit mention of the
+-- target type.
 unsaferCoerceKol :: (PgTyped a, PgTyped b) => Kol a -> Kol b
 unsaferCoerceKol = liftKol1 O.unsafeCoerceColumn
+
+-- | Unsafely but explicitely coerce one column type to another one by
+-- appending a target type name like @::int4@ to the PostgreSQL value, even if
+-- it is not guaranteed that the @int4@ type can properly hold the value. Use
+-- 'unsafeCoerceKol' if you don't want the explicit casting behavior.
+unsaferCoerceExplicitKol :: forall a b. (PgTyped a, PgTyped b) => Kol a -> Kol b
+unsaferCoerceExplicitKol =
+  liftKol1 (O.unsafeCast (pgPrimTypeName (Proxy @(PgType b))))
 
 -- | Converts an unary function on Opaleye's 'O.Column' to an unary function
 -- taking any of 'Kol' and 'Koln' as argument, with the result type fully
@@ -543,29 +552,29 @@ instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
 
 -------------------------------------------------------------------------------
 
--- | @'KolCast' a b@ says that @'Kol' a@ can be safely cast to @'Kol' b@
--- using 'kolCast'.
+-- | @'CastKol' a b@ says that @'Kol' a@ can be safely cast to @'Kol' b@
+-- using 'castKol'.
 --
 -- Notice that an explicit cast will be performed on the PostgreSQL side. For
--- example, using @'kolCast' :: 'Kol' 'O.PGUuid' -> 'Kol' 'O.PGText'@ will
+-- example, using @'castKol' :: 'Kol' 'O.PGUuid' -> 'Kol' 'O.PGText'@ will
 -- explicitely add @::text@ to the value in an @uuid@ column. This allows for
 -- much more interesting and predictable conversions between different types
 -- compared to 'unsafeCoerceKol'.
-class (PgTyped a, PgTyped b) => KolCast (a :: ka) (b :: kb) where
+class (PgTyped a, PgTyped b) => CastKol (a :: ka) (b :: kb) where
 
-instance KolCast O.PGCitext O.PGText
-instance KolCast O.PGText O.PGCitext
-instance KolCast O.PGUuid O.PGText
-instance KolCast O.PGUuid O.PGCitext
-instance KolCast O.PGInt2 O.PGText
-instance KolCast O.PGInt2 O.PGCitext
-instance KolCast O.PGInt2 O.PGInt4
-instance KolCast O.PGInt2 O.PGInt8
-instance KolCast O.PGInt4 O.PGText
-instance KolCast O.PGInt4 O.PGCitext
-instance KolCast O.PGInt4 O.PGInt8
-instance KolCast O.PGInt8 O.PGText
-instance KolCast O.PGInt8 O.PGCitext
+instance CastKol O.PGCitext O.PGText
+instance CastKol O.PGText O.PGCitext
+instance CastKol O.PGUuid O.PGText
+instance CastKol O.PGUuid O.PGCitext
+instance CastKol O.PGInt2 O.PGText
+instance CastKol O.PGInt2 O.PGCitext
+instance CastKol O.PGInt2 O.PGInt4
+instance CastKol O.PGInt2 O.PGInt8
+instance CastKol O.PGInt4 O.PGText
+instance CastKol O.PGInt4 O.PGCitext
+instance CastKol O.PGInt4 O.PGInt8
+instance CastKol O.PGInt8 O.PGText
+instance CastKol O.PGInt8 O.PGCitext
 
 -- Shooting yourself in the foot? I will help you.
 
@@ -576,9 +585,9 @@ type family TypeErrorRange a b :: Constraint where
      'GHC.Text " then use 'unsafeCastKol'." 'GHC.:$$:
      'GHC.Text "You will get a runtime error if the " 'GHC.:<>: 'GHC.ShowType a
      'GHC.:<>: 'GHC.Text " value is out of the range of " 'GHC.:<>: 'GHC.ShowType b)
-instance TypeErrorRange O.PGInt4 O.PGInt2 => KolCast O.PGInt4 O.PGInt2
-instance TypeErrorRange O.PGInt8 O.PGInt2 => KolCast O.PGInt8 O.PGInt2
-instance TypeErrorRange O.PGInt8 O.PGInt4 => KolCast O.PGInt8 O.PGInt4
+instance TypeErrorRange O.PGInt4 O.PGInt2 => CastKol O.PGInt4 O.PGInt2
+instance TypeErrorRange O.PGInt8 O.PGInt2 => CastKol O.PGInt8 O.PGInt2
+instance TypeErrorRange O.PGInt8 O.PGInt4 => CastKol O.PGInt8 O.PGInt4
 
 type family TypeErrorTimeCasting a b :: Constraint where
   TypeErrorTimeCasting a b = GHC.TypeError
@@ -586,25 +595,18 @@ type family TypeErrorTimeCasting a b :: Constraint where
      'GHC.Text " to " 'GHC.:<>: 'GHC.ShowType b 'GHC.:$$:
      'GHC.Text "It probably doesn't do what you think it does." 'GHC.:$$:
      'GHC.Text "Read section 8.5 of the PostgreSQL documentation instead.")
-instance TypeErrorTimeCasting O.PGDate O.PGTimestamp => KolCast O.PGDate O.PGTimestamp
-instance TypeErrorTimeCasting O.PGDate O.PGTimestamptz => KolCast O.PGDate O.PGTimestamptz
-instance TypeErrorTimeCasting O.PGTimestamp O.PGDate => KolCast O.PGTimestamp O.PGDate
-instance TypeErrorTimeCasting O.PGTimestamp O.PGTime => KolCast O.PGTimestamp O.PGTime
-instance TypeErrorTimeCasting O.PGTimestamp O.PGTimestamptz => KolCast O.PGTimestamp O.PGTimestamptz
-instance TypeErrorTimeCasting O.PGTimestamptz O.PGDate => KolCast O.PGTimestamptz O.PGDate
-instance TypeErrorTimeCasting O.PGTimestamptz O.PGTime => KolCast O.PGTimestamptz O.PGTime
-instance TypeErrorTimeCasting O.PGTimestamptz O.PGTimestamp => KolCast O.PGTimestamptz O.PGTimestamp
+instance TypeErrorTimeCasting O.PGDate O.PGTimestamp => CastKol O.PGDate O.PGTimestamp
+instance TypeErrorTimeCasting O.PGDate O.PGTimestamptz => CastKol O.PGDate O.PGTimestamptz
+instance TypeErrorTimeCasting O.PGTimestamp O.PGDate => CastKol O.PGTimestamp O.PGDate
+instance TypeErrorTimeCasting O.PGTimestamp O.PGTime => CastKol O.PGTimestamp O.PGTime
+instance TypeErrorTimeCasting O.PGTimestamp O.PGTimestamptz => CastKol O.PGTimestamp O.PGTimestamptz
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGDate => CastKol O.PGTimestamptz O.PGDate
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGTime => CastKol O.PGTimestamptz O.PGTime
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGTimestamp => CastKol O.PGTimestamptz O.PGTimestamp
 
--- | Safely and explicitely cast one column type to another one. See 'KolCast'.
-kolCast :: KolCast a b => Kol a -> Kol b
-kolCast = unsafeCastKol
-
--- | Unsafely but explicitely cast one column type to another one by
--- appending a target type name like @::int4@ to the PostgreSQL value, even if
--- it is not guaranteed that the @int4@ type can properly hold the value. Use
--- 'unsafeCoerceKol' if you don't want the explicit casting behavior.
-unsafeCastKol :: forall a b. (PgTyped a, PgTyped b) => Kol a -> Kol b
-unsafeCastKol = liftKol1 (O.unsafeCast (pgPrimTypeName (Proxy @(PgType b))))
+-- | Safely and explicitely cast one column type to another one. See 'CastKol'.
+castKol :: CastKol a b => Kol a -> Kol b
+castKol = unsaferCoerceExplicitKol
 
 -- | Safe upcasting.
 upcastKol :: PgTyped a => Kol a -> Kol (PgType a)

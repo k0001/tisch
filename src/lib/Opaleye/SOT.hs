@@ -119,13 +119,13 @@ module Opaleye.SOT
  , O.PGUuid
 
    -- ** Coercing / type casting
- , KolCast
- , kolCast
+ , CastKol
+ , castKol
  , upcastKol
  , unsafeDowncastKol
- , unsafeCastKol
  , unsafeCoerceKol
  , unsaferCoerceKol
+ , unsaferCoerceExplicitKol
  ) where
 
 import           Opaleye.SOT.Internal
