@@ -213,9 +213,9 @@ instance (PgNum a, Num (O.Column (PgType a))) => Num (Kol a) where
 
 instance (PgTyped a, Num (Kol a)) => Num (Koln a) where
   fromInteger = fromKol . fromInteger
-  (*) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka * kb)))
-  (+) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka + kb)))
-  (-) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka - kb)))
+  (*) = liftKoln2 (*)
+  (+) = liftKoln2 (+)
+  (-) = liftKoln2 (-)
   abs = mapKoln abs
   negate = mapKoln negate
   signum = mapKoln signum
@@ -226,7 +226,7 @@ modulo = liftKol2 (OI.binOp HDB.OpMod)
 
 -------------------------------------------------------------------------------
 
--- | A @'PgFractional a'@ is guaranteed to be an integral type.
+-- | A 'PgIntegral' is guaranteed to be an integral type.
 class PgTyped a => PgIntegral (a :: k)
 
 instance PgIntegral O.PGInt2
@@ -252,7 +252,68 @@ instance
 
 instance (PgTyped a, Num (Koln a), Fractional (Kol a)) => Fractional (Koln a) where
   fromRational = fromKol . fromRational
-  (/) kna knb = bindKoln kna (\ka -> bindKoln knb (\kb -> fromKol (ka / kb)))
+  (/) = liftKoln2 (/)
+
+-------------------------------------------------------------------------------
+-- | A 'PgFloating' instance gives you 'Floating'-support.
+class (PgTyped a, PgFractional a) => PgFloating (a :: k)
+
+instance PgFloating O.PGFloat4
+instance PgFloating O.PGFloat8
+
+euler's :: PgFloating a => Kol a
+euler's = unsaferCoerceExplicitKol
+  (kol (2.718281828459045 :: Double) :: Kol O.PGFloat8)
+{-# INLINE euler's #-}
+
+instance
+    ( PgTyped a
+    , PgFloating a
+    , Fractional (Kol a)
+    , PgFloating (Kol a)
+    ) => Floating (Kol a) where
+  pi = Kol (unsafeFunExpr "pi" [])
+  exp = liftKol1 (unsafeFunExpr "exp" . pure)
+  log = liftKol1 (unsafeFunExpr "log" . pure)
+  sqrt = liftKol1 (unsafeFunExpr "sqrt" . pure)
+  (**) = liftKol2 (\base ex -> unsafeFunExpr "pow" [base, ex])
+  logBase = liftKol2 (\base n -> unsafeFunExpr "log" [base, n])
+  sin = liftKol1 (unsafeFunExpr "sin" . pure)
+  cos = liftKol1 (unsafeFunExpr "cos" . pure)
+  tan = liftKol1 (unsafeFunExpr "tan" . pure)
+  asin = liftKol1 (unsafeFunExpr "asin" . pure)
+  acos = liftKol1 (unsafeFunExpr "acos" . pure)
+  atan = liftKol1 (unsafeFunExpr "atan" . pure)
+  -- Not the most efficient implementations, but PostgreSQL doesn't provide
+  -- builtin support for hyperbolic functions. We add these for completeness,
+  -- so that we can implement the 'Floating' typeclass in full.
+  sinh x = ((euler's ** x) - (euler's ** (negate x))) / fromInteger 2
+  cosh x = ((euler's ** x) + (euler's ** (negate x))) / fromInteger 2
+  tanh x = ((euler's ** x) - (euler's ** (negate x)))
+         / ((euler's ** x) + (euler's ** (negate x)))
+  asinh x = log (x + sqrt ((x ** fromInteger 2) + fromInteger 1))
+  acosh x = log (x + sqrt ((x ** fromInteger 2) - fromInteger 1))
+  atanh x = log ((fromInteger 1 + x) / (fromInteger 1 - x)) / fromInteger 2
+
+instance (PgTyped a, PgFloating a, Floating (Kol a)) => Floating (Koln a) where
+  pi = fromKol pi
+  exp = mapKoln exp
+  log = mapKoln log
+  sqrt = mapKoln sqrt
+  (**) = liftKoln2 (**)
+  logBase = liftKoln2 (**)
+  sin = mapKoln sin
+  cos = mapKoln cos
+  tan = mapKoln tan
+  asin = mapKoln asin
+  acos = mapKoln acos
+  atan = mapKoln atan
+  sinh = mapKoln sinh
+  cosh = mapKoln cosh
+  tanh = mapKoln tanh
+  asinh = mapKoln asinh
+  acosh = mapKoln acosh
+  atanh = mapKoln atanh
 
 -------------------------------------------------------------------------------
 
@@ -460,7 +521,8 @@ instance Monoid (Kol O.PGBytea) where
 
 -- instance PgBitwise O.PGBitstring ?
 
----
+--------------------------------------------------------------------------------
+
 -- | Like @opaleye@'s @'O.Column' ('O.Nullable' x)@, but with @x@ guaranteed
 -- to be not-'O.Nullable'.
 --
@@ -526,6 +588,13 @@ mapKoln f kna = bindKoln kna (fromKol . f)
 forKoln :: (PgTyped a, PgTyped b) => Koln a -> (Kol a -> Kol b) -> Koln b
 forKoln kna f = mapKoln f kna
 
+liftKoln2
+  :: (PgTyped a, PgTyped b, PgTyped c)
+  => (Kol a -> Kol b -> Kol c)
+  -> (Koln a -> Koln b -> Koln c)
+liftKoln2 f = \na nb ->
+  bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (f ka kb)))
+
 -- | Monadic bind like the one for 'Maybe'.
 --
 -- Apply the given function to the underlying @('Kol' a)@ only as long as the
@@ -576,8 +645,7 @@ instance {-# OVERLAPPABLE #-}
 ---
 instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
   mempty = fromKol mempty
-  mappend = \na nb ->
-    bindKoln na (\ka -> bindKoln nb (\kb -> fromKol (mappend ka kb)))
+  mappend = liftKoln2 mappend
 
 -------------------------------------------------------------------------------
 
@@ -1527,6 +1595,11 @@ descnl f = O.descNullsLast (unsafeUnNullableColumn . unKoln . f)
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 -- This belongs in Opaleye
+
+-- | 'unsafeFunExpr "f" xs' calls a function called @"f"@ with arguments @xs@.
+-- The return type must correctly be set by the caller.
+unsafeFunExpr :: HDB.Name -> [O.Column a] -> O.Column b
+unsafeFunExpr fname = OI.Column . HDB.FunExpr fname . map OI.unColumn
 
 unsafeUnNullableColumn :: O.Column (O.Nullable a) -> O.Column a
 unsafeUnNullableColumn = O.unsafeCoerceColumn
