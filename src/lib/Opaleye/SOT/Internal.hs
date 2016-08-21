@@ -592,9 +592,9 @@ instance CastKol O.PGInt8 O.PGCitext
 
 type family TypeErrorRange a b :: Constraint where
   TypeErrorRange a b = GHC.TypeError
-    ('GHC.Text "If really want to cast " 'GHC.:<>: 'GHC.ShowType a 'GHC.:<>:
+    ('GHC.Text "If really want to explicitly cast " 'GHC.:<>: 'GHC.ShowType a 'GHC.:<>:
      'GHC.Text " to " 'GHC.:<>: 'GHC.ShowType b 'GHC.:<>:
-     'GHC.Text " then use 'unsafeCastKol'." 'GHC.:$$:
+     'GHC.Text " then use 'unsaferCoerceExplicitKol'." 'GHC.:$$:
      'GHC.Text "You will get a runtime error if the " 'GHC.:<>: 'GHC.ShowType a
      'GHC.:<>: 'GHC.Text " value is out of the range of " 'GHC.:<>: 'GHC.ShowType b)
 instance TypeErrorRange O.PGInt4 O.PGInt2 => CastKol O.PGInt4 O.PGInt2
