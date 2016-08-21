@@ -226,6 +226,15 @@ modulo = liftKol2 (OI.binOp HDB.OpMod)
 
 -------------------------------------------------------------------------------
 
+-- | A @'PgFractional a'@ is guaranteed to be an integral type.
+class PgTyped a => PgIntegral (a :: k)
+
+instance PgIntegral O.PGInt2
+instance PgIntegral O.PGInt4
+instance PgIntegral O.PGInt8
+
+-------------------------------------------------------------------------------
+
 -- | A @'PgFractional' a@ instance gives you a @'Fractional' ('Kol' a)@ instance
 -- for free.
 class (PgTyped a, PgNum a, OI.PGFractional (PgType a)) => PgFractional (a :: k)
@@ -434,6 +443,7 @@ kolArray xs = Kol $ O.unsafeCast
    (OI.Column (HDB.ArrayExpr (map (OI.unColumn . unKol) (toList xs))))
 
 ---
+
 instance Monoid (Kol O.PGText) where
   mempty = kol ""
   mappend = liftKol2 (OI.binOp HDB.OpCat)
@@ -447,6 +457,8 @@ instance Monoid (Kol O.PGCitext) where
 instance Monoid (Kol O.PGBytea) where
   mempty = kol Data.ByteString.empty
   mappend = liftKol2 (OI.binOp HDB.OpCat)
+
+-- instance PgBitwise O.PGBitstring ?
 
 ---
 -- | Like @opaleye@'s @'O.Column' ('O.Nullable' x)@, but with @x@ guaranteed
@@ -1399,7 +1411,46 @@ gte :: PgOrd a => Kol a -> Kol a -> Kol O.PGBool
 gte = liftKol2 (O..>=)
 
 --------------------------------------------------------------------------------
---------------------------------------------------------------------------------
+-- Bitwise
+
+-- | Only 'PgBitwise' instance can be used with bitwise operators 'btwand',
+-- 'bword', 'bwxor', 'bwnot', 'bwsl' and 'bwsr'.
+class PgTyped a => PgBitwise (a :: k)
+
+instance PgBitwise O.PGInt2
+instance PgBitwise O.PGInt4
+instance PgBitwise O.PGInt8
+-- instance PgBitwise O.PGBitstring ?
+
+-- | Bitwise AND. Sql operator: @&@
+bwand :: PgBitwise a => Kol a -> Kol a -> Kol a
+bwand = liftKol2 (OI.binOp HDB.OpBitAnd)
+
+-- | Bitwise OR. Sql operator: @|@
+bwor :: PgBitwise a => Kol a -> Kol a -> Kol a
+bwor = liftKol2 (OI.binOp HDB.OpBitOr)
+
+-- | Bitwise XOR. Sql operator: @#@
+bwxor :: PgBitwise a => Kol a -> Kol a -> Kol a
+bwxor = liftKol2 (OI.binOp HDB.OpBitXor)
+
+-- | Bitwise NOT. Sql operator: @~@
+bwnot :: PgBitwise a => Kol a -> Kol a
+bwnot = liftKol1 (OI.unOp (HDB.UnOpOther "~"))
+
+-- | Bitwise shift left. Sql operator: @<<@
+--
+-- @'bwsl' a n@ shifts @a@ to the right @n@ positions. Translates to @a << n@ in
+-- the generated SQL.
+bwsl :: (PgBitwise a, PgIntegral b) => Kol a -> Kol b -> Kol a
+bwsl = liftKol2 (OI.binOp (HDB.OpOther ("<<")))
+
+-- | Bitwise shift right. Sql operator: @>>@
+--
+-- @'bwsr' a n@ shifts @a@ to the right @n@ positions. Translates to @a >> n@ in
+-- the generated SQL.
+bwsr :: (PgBitwise a, PgIntegral b) => Kol a -> Kol b -> Kol a
+bwsr = liftKol2 (OI.binOp (HDB.OpOther (">>")))
 
 --------------------------------------------------------------------------------
 
