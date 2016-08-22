@@ -688,20 +688,20 @@ instance TypeErrorRange O.PGInt4 O.PGInt2 => CastKol O.PGInt4 O.PGInt2
 instance TypeErrorRange O.PGInt8 O.PGInt2 => CastKol O.PGInt8 O.PGInt2
 instance TypeErrorRange O.PGInt8 O.PGInt4 => CastKol O.PGInt8 O.PGInt4
 
-type family TypeErrorTimeCasting a b :: Constraint where
-  TypeErrorTimeCasting a b = GHC.TypeError
+type family TypeErrorTimeCasting a b c :: Constraint where
+  TypeErrorTimeCasting a b c = GHC.TypeError
     ('GHC.Text "Do not cast " 'GHC.:<>: 'GHC.ShowType a 'GHC.:<>:
      'GHC.Text " to " 'GHC.:<>: 'GHC.ShowType b 'GHC.:$$:
      'GHC.Text "It probably doesn't do what you think it does." 'GHC.:$$:
-     'GHC.Text "Read section 8.5 of the PostgreSQL documentation instead.")
-instance TypeErrorTimeCasting O.PGDate O.PGTimestamp => CastKol O.PGDate O.PGTimestamp
-instance TypeErrorTimeCasting O.PGDate O.PGTimestamptz => CastKol O.PGDate O.PGTimestamptz
-instance TypeErrorTimeCasting O.PGTimestamp O.PGDate => CastKol O.PGTimestamp O.PGDate
-instance TypeErrorTimeCasting O.PGTimestamp O.PGTime => CastKol O.PGTimestamp O.PGTime
-instance TypeErrorTimeCasting O.PGTimestamp O.PGTimestamptz => CastKol O.PGTimestamp O.PGTimestamptz
-instance TypeErrorTimeCasting O.PGTimestamptz O.PGDate => CastKol O.PGTimestamptz O.PGDate
-instance TypeErrorTimeCasting O.PGTimestamptz O.PGTime => CastKol O.PGTimestamptz O.PGTime
-instance TypeErrorTimeCasting O.PGTimestamptz O.PGTimestamp => CastKol O.PGTimestamptz O.PGTimestamp
+     'GHC.Text c)
+instance TypeErrorTimeCasting O.PGDate O.PGTimestamp "" => CastKol O.PGDate O.PGTimestamp
+instance TypeErrorTimeCasting O.PGDate O.PGTimestamptz "" => CastKol O.PGDate O.PGTimestamptz
+instance TypeErrorTimeCasting O.PGTimestamp O.PGDate "" => CastKol O.PGTimestamp O.PGDate
+instance TypeErrorTimeCasting O.PGTimestamp O.PGTime "" => CastKol O.PGTimestamp O.PGTime
+instance TypeErrorTimeCasting O.PGTimestamp O.PGTimestamptz "Use fromNaiveTimestamp instead." => CastKol O.PGTimestamp O.PGTimestamptz
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGDate "" => CastKol O.PGTimestamptz O.PGDate
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGTime "" => CastKol O.PGTimestamptz O.PGTime
+instance TypeErrorTimeCasting O.PGTimestamptz O.PGTimestamp "Use toNaiveTimestamp instead." => CastKol O.PGTimestamptz O.PGTimestamp
 
 -- | Safely and explicitely cast one column type to another one. See 'CastKol'.
 castKol :: CastKol a b => Kol a -> Kol b
@@ -1526,28 +1526,43 @@ bwsr = liftKol2 (OI.binOp (HDB.OpOther (">>")))
 
 -- Convert a PostgreSQL @timestamptz@ to a @timestamp@ at a given timezone.
 --
--- Notice that a @timestamp@ value is meaningless unless you also know the
--- timezone where that timestamp happens. For this reason, this function also
--- gives you back the timezone information that must always accompany the
--- @timestamp@ value, so that you don't forget that you must keep it somehow.
+-- Notice that a @timestamp@ value is usually meaningless unless you also know
+-- the timezone where that @timestamp@ happens. In other words, you should
+-- store the passed in @'Kol' zone@ somewhere.
 --
--- This function is marked unsafe because dealing with @timestamp@ values in
--- PostgreSQL is very error prone unless you really know what you are doing.
--- Quite likely you shouldn't be using @timestamp@ values in PostgreSQL unless
--- you are storing distant dates in the future for which the precise UTC time
--- can't be known (e.g., can you tell the UTC time for January 1 4045, 00:00:00
--- in Peru? Me neither, as I have no idea in what timezone Peru will be in
--- 4045, so I can't convert that to UTC).
-unsafeToNaiveTimestamp
+-- Warning: Dealing with @timestamp@ values in PostgreSQL is very error prone
+-- unless you really know what you are doing.  Quite likely you shouldn't be
+-- using @timestamp@ values in PostgreSQL unless you are storing distant dates
+-- in the future for which the precise UTC time can't be known (e.g., can you
+-- tell the UTC time for January 1 4045, 00:00:00 in Peru? Me neither, as I
+-- have no idea in what timezone Peru will be in year 4045, so I can't convert
+-- that to UTC).
+--
+-- Law 1: Provided the timezone database information stays the same, the
+-- following equality holds:
+--
+-- @
+-- 'fromNaiveTimestamp' zone . 'toNaiveTimestamp' zone === 'id'
+-- 'toNaiveTimestamp' zone . 'fromNaiveTimestamp' zone === 'id'
+-- @
+toNaiveTimestamp
   :: ( PgTyped zone, PgType zone ~ O.PGText
      , PgTyped a, PgType a ~ O.PGTimestamptz
      , PgTyped b, PgType b ~ O.PGTimestamp )
-  => Kol zone -> Kol a -> (Kol zone, Kol b)
-unsafeToNaiveTimestamp kz ka = (,) kz $ liftKol2
-  (\zone a -> unsafeFunExpr "timezone" [AnyColumn zone, AnyColumn a]) kz ka
+  => Kol zone -> Kol a -> Kol b
+toNaiveTimestamp = liftKol2
+  (\zone a -> unsafeFunExpr "timezone" [AnyColumn zone, AnyColumn a])
 
 -- Convert a PostgreSQL @timestamp@ to a @timestamptz@, making the assumption
 -- that the given @timestamp@ happens at the given timezone.
+--
+-- Law 1: Provided the timezone database information stays the same, the
+-- following equality holds:
+--
+-- @
+-- 'fromNaiveTimestamp' zone . 'toNaiveTimestamp' zone === 'id'
+-- 'toNaiveTimestamp' zone . 'fromNaiveTimestamp' zone === 'id'
+-- @
 fromNaiveTimestamp
   :: ( PgTyped zone, PgType zone ~ O.PGText
      , PgTyped a, PgType a ~ O.PGTimestamp
