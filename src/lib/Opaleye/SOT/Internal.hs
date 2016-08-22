@@ -85,11 +85,12 @@ import           Opaleye.SOT.Internal.Singletons ((:&&&$$$))
 class PgPrimType (a :: k) where
   pgPrimTypeName :: proxy a -> String
 
-instance GHC.TypeError
-  ( 'GHC.Text "Invalid PgPrimType (can't be Nullable): "
-       'GHC.:<>: 'GHC.ShowType (O.Nullable a)
-  ) => PgPrimType (O.Nullable a) where
-  pgPrimTypeName = error "impossible"
+instance {-# OVERLAPPING #-}
+  ( GHC.TypeError
+     ('GHC.Text "Invalid PgPrimType (can't be Nullable): "
+      'GHC.:<>: 'GHC.ShowType (O.Nullable a) )
+  ) => PgPrimType (O.Nullable a)
+  where pgPrimTypeName = undefined
 
 instance forall a. PgPrimType a => PgPrimType (O.PGArray a) where
   pgPrimTypeName _ = pgPrimTypeName (Proxy :: Proxy a) ++ "[]"
