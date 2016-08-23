@@ -101,8 +101,26 @@ module Opaleye.SOT
  , bwsl
  , bwsr
    -- ** Time
- , fromNaiveTimestamp
- , toNaiveTimestamp
+ , toTimestamptz
+ , toTimestamp
+ , timestamptzEpoch
+ , timestampCentury
+ , timestampDay
+ , timestampDayOfTheWeek
+ , timestampDayOfTheWeekISO8601
+ , timestampDayOfTheYear
+ , timestampDecade
+ , timestampHour
+ , timestampMicroseconds
+ , timestampMillenium
+ , timestampMilliseconds
+ , timestampMinute
+ , timestampMonth
+ , timestampQuarter
+ , timestampSecond
+ , timestampWeekISO8601
+ , timestampYear
+ , timestampYearISO8601
 
    -- * WDef
  , WDef(WDef, WVal)
