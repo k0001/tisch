@@ -310,6 +310,7 @@ runInsertTabla'
   => Conn ps -> T t -> f (HsI t) -> m Int64 -- ^
 runInsertTabla' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
 
+
 -- | Insert many rows.
 --
 -- Throws 'ErrNumRows' if the number of actually affected rows is different than
@@ -317,14 +318,14 @@ runInsertTabla' conn t = runInsert' conn (table t) . map pgWfromHsI . toList
 -- behavior (hint: you probably want this behavior).
 runInsert
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, Foldable f)
-  => Conn ps -> O.Table w v -> f w -> m () -- ^
+  => Conn ps -> Table d w v -> f w -> m () -- ^
 runInsert conn t fs = case toList fs of
   [] -> return ()
   ws -> do
     nAffected <- runInsert' conn t ws
     let nExpected = fromIntegral (length ws) :: Int64
     when (nExpected == nAffected) $ do
-       let sql = O.arrangeInsertManySql t (NEL.fromList ws)
+       let sql = O.arrangeInsertManySql (unTable t) (NEL.fromList ws)
        Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
 
@@ -336,8 +337,8 @@ runInsert conn t fs = case toList fs of
 -- 'runInsert' (hint: you probably want to use 'runInsert').
 runInsert'
   :: (MonadIO m, Allow 'Insert ps, Foldable f)
-  => Conn ps -> O.Table w v -> f w -> m Int64 -- ^
-runInsert' (Conn conn) t fs = case toList fs of
+  => Conn ps -> Table d w v -> f w -> m Int64 -- ^
+runInsert' (Conn conn) (Table t) fs = case toList fs of
   [] -> return 0
   ws -> liftIO (O.runInsertMany conn t ws)
 
@@ -348,7 +349,7 @@ runInsert' (Conn conn) t fs = case toList fs of
 -- want this behavior).
 runInsert1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
-  => Conn ps -> O.Table w v -> w -> m () -- ^
+  => Conn ps -> Table d w v -> w -> m () -- ^
 runInsert1 pc t w = runInsert pc t [w]
 
 --------------------------------------------------------------------------------
@@ -359,10 +360,10 @@ runInsert1 pc t w = runInsert pc t [w]
 -- the number of passed in rows. Use 'runInsertReturning'' if you don't want
 -- this behavior (hint: you probably want this behavior).
 runInsertReturning
-  :: forall m ps w v r f
+  :: forall m ps w v r f d
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r,
       Allow ['Insert, 'Fetch] ps, Foldable f)
-  => Conn ps -> O.Table w v -> f w -> m [r] -- ^
+  => Conn ps -> Table d w v -> f w -> m [r] -- ^
 runInsertReturning conn t fs = case toList fs of
   [] -> return []
   ws -> do
@@ -373,7 +374,8 @@ runInsertReturning conn t fs = case toList fs of
        then return rs
        else do
          let OI.QueryRunner u _ _ = PP.def :: OI.QueryRunner v r
-             sql = O.arrangeInsertManyReturningSql u t (NEL.fromList ws) id
+             sql = O.arrangeInsertManyReturningSql
+                      u (unTable t) (NEL.fromList ws) id
          Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
 
@@ -386,8 +388,8 @@ runInsertReturning conn t fs = case toList fs of
 runInsertReturning'
   :: (MonadIO m, PP.Default O.QueryRunner v r, Allow ['Insert, 'Fetch] ps,
       Foldable f)
-  => Conn ps -> O.Table w v -> f w -> m [r] -- ^
-runInsertReturning' (Conn conn) t fs = case toList fs of
+  => Conn ps -> Table d w v -> f w -> m [r] -- ^
+runInsertReturning' (Conn conn) (Table t) fs = case toList fs of
    [] -> return []
    ws -> liftIO $ O.runInsertManyReturning conn t ws id
 
@@ -397,10 +399,10 @@ runInsertReturning' (Conn conn) t fs = case toList fs of
 -- one. Use 'runInsertReturning'' if you don't want this behavior (hint: you
 -- probably want this behavior).
 runInsertReturning1
-  :: forall m v w r ps
+  :: forall m v w r ps d
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r,
       Allow ['Insert, 'Fetch] ps)
-  => Conn ps -> O.Table w v -> w -> m r -- ^
+  => Conn ps -> Table d w v -> w -> m r -- ^
 runInsertReturning1 pc t w = do
    -- Pattern matching on [r] is safe here, see 'runInsertReturning'.
    [r] <- runInsertReturning pc t [w]
@@ -416,8 +418,9 @@ runInsertReturning1 pc t w = do
 -- this function might be less convenient to use.
 runUpdate
   :: (MonadIO m, Allow 'Update ps)
-  => Conn ps -> O.Table w r -> (r -> w) -> (r -> Kol O.PGBool) -> m Int64 -- ^
-runUpdate (Conn conn) t upd fil = liftIO (O.runUpdate conn t upd (unKol . fil))
+  => Conn ps -> Table d w r -> (r -> w) -> (r -> Kol O.PGBool) -> m Int64 -- ^
+runUpdate (Conn conn) (Table t) upd fil =
+  liftIO (O.runUpdate conn t upd (unKol . fil))
 
 -- | Like 'runUpdate', but specifically designed to work well with 'Tabla'.
 runUpdateTabla
@@ -439,8 +442,8 @@ runUpdateTabla pc t upd = runUpdate pc (table t) (upd . pgWfromPgR)
 -- this function might be less convenient to use.
 runDelete
   :: (MonadIO m, Allow 'Delete ps)
-  => Conn ps -> O.Table w r -> (r -> Kol O.PGBool) -> m Int64 -- ^
-runDelete (Conn conn) t fil = liftIO (O.runDelete conn t (unKol . fil))
+  => Conn ps -> Table d w r -> (r -> Kol O.PGBool) -> m Int64 -- ^
+runDelete (Conn conn) (Table t) fil = liftIO (O.runDelete conn t (unKol . fil))
 
 -- | Like 'runDelete', but specifically designed to work well with 'Tabla'.
 runDeleteTabla

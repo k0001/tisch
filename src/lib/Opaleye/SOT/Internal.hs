@@ -10,6 +10,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
@@ -32,6 +33,7 @@ import           Control.Arrow
 import           Control.Lens
 import           Control.Monad (MonadPlus(..))
 import           Control.Monad.Fix (MonadFix(..))
+import           Control.Category (Category)
 import           Data.Data (Data)
 import           Data.Kind
 import           Data.Foldable
@@ -47,6 +49,7 @@ import qualified Data.UUID
 import           Data.Int
 import           Data.Proxy (Proxy(..))
 import qualified Data.Profunctor as P
+import           Data.Profunctor.Product (ProductProfunctor)
 import qualified Data.Profunctor.Product.Default as PP
 import qualified Data.Promotion.Prelude.List as List (Map)
 import           Data.Promotion.Prelude.Bool (If)
@@ -1223,8 +1226,8 @@ instance (RDistributeColProps cols, ICol_Props ('Col n w r p h))
 --
 -- If you will be querying the resulting 'O.Table' right away, it is simpler to
 -- use 'queryTabla' directly.
-table :: Tabla t => T t -> O.Table (PgW t) (PgR t)
-table (_ :: T t) = O.TableWithSchema
+table :: Tabla t => T t -> Table (Database t) (PgW t) (PgR t)
+table (_ :: T t) = Table $ O.TableWithSchema
   (symbolVal (Proxy :: Proxy (SchemaName t)))
   (symbolVal (Proxy :: Proxy (TableName t)))
   (P.dimap unPgW PgR (PP.ppa (rDistributeColProps (Proxy :: Proxy (Cols t)))))
@@ -1233,9 +1236,26 @@ table (_ :: T t) = O.TableWithSchema
 --
 -- This is like @opaleye@'s own 'O.queryTable', but for specialized for a
 -- 'Tabla'.
-queryTabla :: Tabla t => T t -> O.Query (PgR t)
-queryTabla = O.queryTable . table
+queryTabla :: Tabla t => T t -> Query (Database t) () (PgR t)
+queryTabla = Query . O.queryTable . unTable . table
 {-# INLINE queryTabla #-}
+
+--------------------------------------------------------------------------------
+
+-- | A wrapper around @opaleye@'s 'O.QuerryArr' adding a placeholder @t@, which
+-- shall mention the 'Database' associated with the query.
+--
+-- Note that, contrary to @opaleye@, we don't make a distinction between
+-- 'O.QueryArr' and 'O.Query', as we think that hurts comprehension. We always
+-- use our 'Query' type instead, which behaves as @opaleye@'s 'O.QueryArr', not
+-- as @opaleye@'s 'O.Query'.
+newtype Query (d :: k) a b = Query { unQuery :: O.QueryArr a b }
+ deriving (Functor, Applicative, Category, Arrow, Profunctor, ProductProfunctor)
+
+-- | A wrapper around @opaleye@'s 'O.Table' adding a placeholder @t@, which
+-- shall mention the 'Database' associated with the query.
+newtype Table (d :: k) w r = Table { unTable :: O.Table w r }
+  deriving (Functor)
 
 --------------------------------------------------------------------------------
 
@@ -1655,8 +1675,8 @@ isNull = Kol . O.isNull . unKoln
 -- @
 -- 'fromKoln' ('kol' 'False') :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
 -- @
-restrict :: O.QueryArr (Kol O.PGBool) ()
-restrict = O.restrict <<^ unKol
+restrict :: Query t (Kol O.PGBool) ()
+restrict = Query O.restrict <<^ unKol
 
 -- | Perform an SQL @LEFT JOIN@.
 --
@@ -1667,12 +1687,12 @@ leftJoin
   :: ( PP.Default O.Unpackspec a a
      , PP.Default O.Unpackspec b b
      , PP.Default OI.NullMaker b nb )
-  => O.Query a -- ^ Left table.
-  -> O.Query b -- ^ Right table.
+  => Query t () a -- ^ Left table.
+  -> Query t () b -- ^ Right table.
   -> ((a, b) -> Kol O.PGBool)
-  -> O.Query (a, nb) -- ^
-leftJoin qa qb fil =
-  O.leftJoinExplicit PP.def PP.def PP.def qa qb (unKol . fil)
+  -> Query t () (a, nb) -- ^
+leftJoin (Query qa) (Query qb) fil =
+  Query $ O.leftJoinExplicit PP.def PP.def PP.def qa qb (unKol . fil)
 
 --------------------------------------------------------------------------------
 -- Ordering
