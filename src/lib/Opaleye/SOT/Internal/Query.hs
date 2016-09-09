@@ -14,6 +14,8 @@ module Opaleye.SOT.Internal.Query
  , restrict
  , innerJoin
  , leftJoin
+ , limit
+ , offset
  , orderBy
  , asc
  , ascNullsFirst
@@ -111,6 +113,17 @@ leftJoin
   -> Query t () (a, nb) -- ^
 leftJoin (Query qa) (Query qb) f =
    Query (O.leftJoinExplicit PP.def PP.def PP.def qa qb (unKol . uncurry f))
+
+--------------------------------------------------------------------------------
+
+-- | Limit the maximum number of resulting rows in a 'Query'.
+limit :: Int -> Query d () a -> Query d () a
+limit n = Query. O.limit n . unQuery
+
+-- | Offset the results of a query by the given amount, skipping that many
+-- resuling rows.
+offset :: Int -> Query d () a -> Query d () a
+offset n = Query. O.offset n . unQuery
 
 --------------------------------------------------------------------------------
 -- Ordering

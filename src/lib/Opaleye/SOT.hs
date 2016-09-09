@@ -73,6 +73,8 @@ module Opaleye.SOT
  , innerJoin
  , leftJoin
  , restrict
+ , limit
+ , offset
    -- * Selecting
  , col
    -- * Ordering
