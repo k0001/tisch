@@ -22,6 +22,7 @@ library
       Opaleye.SOT
       Opaleye.SOT.Run
       Opaleye.SOT.Extra
+      Opaleye.SOT.Internal.Aggregation
       Opaleye.SOT.Internal.Compat
       Opaleye.SOT.Internal.Debug
       Opaleye.SOT.Internal.Kol

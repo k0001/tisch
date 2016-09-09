@@ -141,6 +141,11 @@ module Opaleye.SOT
  , timestampWeekISO8601
  , timestampYear
  , timestampYearISO8601
+   -- * Aggregation
+ , Aggregator
+ , aggregatorOrder
+ , aggregate
+ , groupBy
    -- * Column types
  , PgTyped(..)
  , O.PGOrd
@@ -182,6 +187,7 @@ module Opaleye.SOT
 
 import qualified Opaleye as O
 
+import Opaleye.SOT.Internal.Aggregation
 import Opaleye.SOT.Internal.Kol
 import Opaleye.SOT.Internal.Koln
 import Opaleye.SOT.Internal.Table
