@@ -1,49 +1,62 @@
--- | For a better experience, it is recommended that you import this module
--- unqualified as follows:
+-- This is the entry point for the @opaleye-sot@ library.
 --
--- @
--- import Opaleye.SOT
--- @
+-- This module re-exports much, but not all of the @Opaleye.SOT.Run@ and
+-- @Opaleye.SOT.Internal.*@ modules. If you are looking for some tool that you
+-- can't find here, please refer to those modules instead.
 --
--- Note that "Opaleye.SOT" re-exports all of "Opaleye.SOT.Run", you might want
--- to refer to that module for documentation.
---
--- Both "Opaleye.SOT" and "Opaleye.SOT.Run" override some of the names exported
--- by the "Opaleye", so it is recommended that you import Opaleye, if needed,
--- qualified as:
---
--- @
--- import qualified Opaleye as O
--- @
---
--- This module doesn't export any infix operator.
+-- This module doesn't export any infix operator, and likely never will.
 module Opaleye.SOT
- ( -- * Executing queries
-   module Opaleye.SOT.Run
-
-   -- * Defining a 'Tabla'
- , Tabla(..)
-
-   -- * Working with 'Tabla'
- , table
- , HsR(..)
- , HsI(..)
+ ( -- * Running queries
+   --
+   -- $runningQueries
+   runQuery
+ , runQuery1
+ , runInsert
+ , runInsert1
+ , runUpdate
+ , runDelete
+ , runInsertReturning
+ , runInsertReturning1
+   -- * Connection management
+ , Perm(..)
+ , Allow
+ , Forbid
+ , Conn
+ , Conn'
+ , connect
+ , connect'
+ , close
+ , withReadOnlyTransaction
+ , withReadWriteTransaction
+ , withSavepoint
+   -- * Defining a 'Table'
+ , Table
+ , TableR
+ , TableRW
+ , Database
+ , SchemaName
+ , TableName
+ , Columns
+ , Column(..)
+ , RCap(..)
+ , WCap(..)
+   -- * Working with 'Table'
+ , HsR
+ , HsI
  , mkHsI
  , hsi
- , PgR(..)
- , PgRN(..)
- , PgW(..)
- , pgWfromHsI
- , pgWfromPgR
-
+ , WDef(..)
+ , wdef
+ , PgR
+ , PgRN
+ , PgW
    -- * Kol
- , Kol(..)
+ , Kol
  , ToKol(..)
  , liftKol1
  , liftKol2
-
    -- * Koln
- , Koln(..)
+ , Koln
  , koln
  , nul
  , fromKol
@@ -54,39 +67,43 @@ module Opaleye.SOT
  , forKoln
  , bindKoln
  , altKoln
-
    -- * Querying
- , O.Query
- , O.QueryArr
- , queryTabla
+ , Query
+ , query
+ , innerJoin
  , leftJoin
  , restrict
    -- * Selecting
  , col
    -- * Ordering
- , O.orderBy
+ , O.Order
+ , orderBy
  , asc
- , ascnf
- , ascnl
+ , ascNullsFirst
+ , ascNullsLast
  , desc
- , descnf
- , descnl
-
+ , descNullsFirst
+ , descNullsLast
    -- * Operators
-   -- ** Booleans
  , lnot
  , lor
  , land
  , matchBool
    -- ** Equality
+ , PgEq
  , eq
  , member
    -- ** Comparisons
+ , PgOrd
  , lt
  , lte
  , gt
  , gte
    -- ** Various numeric
+ , PgNum
+ , PgIntegral
+ , PgFractional
+ , PgFloating
  , modulo
  , euler's
  , itruncate
@@ -94,6 +111,7 @@ module Opaleye.SOT
  , iceil
  , ifloor
    -- ** Bit-wise
+ , PgBitwise
  , bwand
  , bwor
  , bwxor
@@ -121,24 +139,8 @@ module Opaleye.SOT
  , timestampWeekISO8601
  , timestampYear
  , timestampYearISO8601
-
-   -- * WDef
- , WDef(WDef, WVal)
- , wdef
-
-   -- * Types
- , Col(..)
- , RN(..)
- , WD(..)
-
-   -- ** Column types
+   -- * Column types
  , PgTyped(..)
- , PgNum
- , PgIntegral
- , PgFractional
- , PgFloating
- , PgEq
- , PgOrd
  , O.PGOrd
  , O.PGBool
  , O.PGBytea
@@ -157,7 +159,15 @@ module Opaleye.SOT
  , O.PGTimestamp
  , O.PGTime
  , O.PGUuid
-
+   -- ** Parsing
+ , QueryRunnerColumnDefault(..)
+ , qrcFromField
+ , qrcFieldParser
+ , qrcFieldParserMap
+ , qrcMap
+ , qrcMapMay
+ , qrcPrism
+ , qrcWrapped
    -- ** Coercing / type casting
  , CastKol
  , castKol
@@ -165,9 +175,19 @@ module Opaleye.SOT
  , unsafeDowncastKol
  , unsafeCoerceKol
  , unsaferCoerceKol
- , unsaferCoerceExplicitKol
+ , unsaferCastKol
  ) where
 
-import           Opaleye.SOT.Internal
-import           Opaleye.SOT.Run
 import qualified Opaleye as O
+
+import Opaleye.SOT.Internal.Kol
+import Opaleye.SOT.Internal.Koln
+import Opaleye.SOT.Internal.Table
+import Opaleye.SOT.Internal.Query
+import Opaleye.SOT.Run
+
+
+-- $runningQueries
+--
+-- The "Opaleye.SOT.Run" module exports lower-level variants of these @runXxx@
+-- functions, in case you need those.

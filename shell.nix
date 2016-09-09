@@ -1,4 +1,4 @@
-{ nixpkgs ? <nixpkgs>
+{ nixpkgs ? ./nixpkgs.git
 , compiler ? "ghc801"
 }:
 
@@ -8,6 +8,17 @@ let
   inherit (import nixpkgs {}) pkgs;
   hs = pkgs.haskell.packages.${compiler}.override {
     overrides = self: super: {
+      mkDerivation = args:
+        super.mkDerivation (args // {
+          enableLibraryProfiling = true;
+          configureFlags = (args.configureFlags or []) ++ [
+            "--enable-optimization=2"
+            "--ghc-options=-fprof-auto-calls"
+            "--ghc-options=-fprof-auto-exported"
+            "--ghc-options=-fprof-auto-top"
+            "--ghc-options=-fprof-cafs"
+          ];
+        });
       opaleye-sot = self.callPackage ./default.nix {};
       opaleye = pkgs.haskell.lib.overrideCabal super.opaleye (drv: {
         src = pkgs.fetchFromGitHub {

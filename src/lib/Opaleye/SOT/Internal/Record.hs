@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
@@ -13,6 +12,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | A @'Record' (xs :: [(k,'Type')])@ is analogous to a
 -- @'Data.HList.HList' (ys :: ['Type'])@ where each of the elements in @ys@ is a
@@ -37,6 +38,7 @@ module Opaleye.SOT.Internal.Record where
 
 import           Control.Lens (Lens)
 import           Data.Kind
+import           Data.Void
 import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product as PP
 import qualified Data.Profunctor.Product.Default as PP
@@ -49,6 +51,11 @@ import           Opaleye.SOT.Internal.Profunctors as PP
 data Record :: [(k, Type)] -> Type where
   RNil :: Record '[]
   RCons :: Tagged a b -> Record abs -> Record ('(a, b) ': abs)
+
+instance Show (Record '[]) where
+  show RNil = "RNil"
+instance (Show b, Show (Record abs)) => Show (Record ('(a, b) ': abs)) where
+  show (RCons tab rabs) = "RCons (" ++ show tab ++ ") (" ++ show rabs ++ ")"
 
 --------------------------------------------------------------------------------
 type family RecordKeys (abs :: [(k, Type)]) :: [k] where
@@ -124,6 +131,7 @@ instance
 --------------------------------------------------------------------------------
 -- 'PP.ProductProfunctorAdaptor' instances
 
+-- | Instance required by 'Opaleye.SOT.rawTableRW', for read-write purposes.
 instance
     ( PP.ProductProfunctor p
     ) => PP.ProductProfunctorAdaptor p (Record '[]) (Record '[]) (Record '[])
@@ -131,6 +139,7 @@ instance
     ppa = const (P.dimap (const ()) (const RNil) PP.empty)
     {-# INLINE ppa #-}
 
+-- | Instance required by 'Opaleye.SOT.rawTableRW', for read-write purposes.
 instance
     forall p apbcs abs acs (a :: k) b c.
     ( PP.ProductProfunctor p
@@ -143,9 +152,34 @@ instance
     ppa = \(RCons tpbc rapbcs) ->
       P.dimap
         (\(RCons tb rabs) -> (tb, rabs))
-        (\(tc, racs) -> RCons tc racs)
+        (uncurry RCons)
         ((PP.***!) (PP.ppa tpbc   :: p (Tagged a b) (Tagged a c))
                    (PP.ppa rapbcs :: p (Record abs) (Record acs)))
+
+-- | Instance required by 'Opaleye.SOT.rawTableRO', for read-only purposes.
+instance
+    ( PP.ProductProfunctor p
+    ) => PP.ProductProfunctorAdaptor p (Record '[]) Void (Record '[])
+  where
+    ppa = const (P.dimap absurd (const RNil) PP.empty)
+    {-# INLINE ppa #-}
+
+-- | Instance required by 'Opaleye.SOT.rawTableRO', for read-only purposes.
+instance
+    forall p apbcs acs (a :: k) b c.
+    ( PP.ProductProfunctor p
+    , PP.ProductProfunctorAdaptor p (Record apbcs) Void (Record acs)
+    ) => PP.ProductProfunctorAdaptor p
+            (Record ('(a, p b c) ': apbcs))
+            Void
+            (Record ('(a,c) ': acs))
+  where
+    ppa = \(RCons tpbc rapbcs) ->
+      P.dimap
+        (absurd :: Void -> (Tagged a b, Void))
+        (uncurry RCons)
+        ((PP.***!) (PP.ppa tpbc   :: p (Tagged a b) (Tagged a c))
+                   (PP.ppa rapbcs :: p Void (Record acs)))
 
 --------------------------------------------------------------------------------
 
