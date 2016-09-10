@@ -45,21 +45,19 @@ import Opaleye.SOT.Internal.Query (Query(..))
 
 --------------------------------------------------------------------------------
 
--- | TODO: update these docs.
+-- | Order the values within each aggregation in `Aggregator` using the given
+-- ordering. This is only relevant for aggregations that depend on the order
+-- they get their elements, like 'arraygg' or 'textgg'.
 --
--- Order the values within each aggregation in `Aggregator` using
--- the given ordering. This is only relevant for aggregations that
--- depend on the order they get their elements, like
--- 'arraygg' or 'textgg'.
+-- You can either apply it to an aggregation of multiple columns, in which case
+-- it will apply to all aggregation functions in there, or you can apply it to a
+-- single column, and then compose the aggregations afterwards. Examples:
 --
--- You can either apply it to an aggregation of multiple columns, in
--- which case it will apply to all aggregation functions in there, or you
--- can apply it to a single column, and then compose the aggregations
--- afterwards. Examples:
---
--- > x :: 'O.Aggregator' ('Kol' a, 'Kol' b) ('Kol' ('O.PGArray' a), 'Kol' ('O.PGArray' a))
--- > x = (,) <$> 'orderAggregator' ('Opaleye.SOT.asc' 'snd')  ('P.lmap' 'fst' 'arraygg')
--- >         <*> 'orderAggregator' ('Opaleye.SOT.descl 'snd') ('P.lmap' 'fst' 'arraygg')
+-- @
+-- x :: 'O.Aggregator' ('Kol' a, 'Kol' b) ('Kol' ('O.PGArray' a), 'Kol' ('O.PGArray' a))
+-- x = (,) <$> 'orderAggregator' ('Opaleye.SOT.asc' 'snd')  ('P.lmap' 'fst' 'arraygg')
+--         <*> 'orderAggregator' ('Opaleye.SOT.descl 'snd') ('P.lmap' 'fst' 'arraygg')
+-- @
 --
 -- This will generate:
 --
@@ -71,8 +69,10 @@ import Opaleye.SOT.Internal.Query (Query(..))
 --
 -- Or:
 --
--- > x :: 'O.Aggregator' ('Kol' a, 'Kol' b) ('Kol' ('O.PGArray' a), 'Kol' ('O.PGArray' a))
--- > x = 'orderAggregator' ('Opaleye.SOT.asc' 'snd') $ 'Opaleye.SOT.Internal.ProductProfunctorAdaptor.ppa' ('arraygg', 'arraygg')
+-- @
+-- x :: 'O.Aggregator' ('Kol' a, 'Kol' b) ('Kol' ('O.PGArray' a), 'Kol' ('O.PGArray' a))
+-- x = 'orderAggregator' ('Opaleye.SOT.asc' 'snd') $ 'Opaleye.SOT.Internal.Profunctors.ppa' ('arraygg', 'arraygg')
+-- @
 --
 -- This will generate:
 --
