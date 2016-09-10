@@ -191,6 +191,8 @@ module Opaleye.SOT
  , O.PGTimestamp
  , O.PGTime
  , O.PGUuid
+ , O.PGArray
+ , PGArrayn
    -- ** Parsing
  , QueryRunnerColumnDefault(..)
  , qrcFromField

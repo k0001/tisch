@@ -605,9 +605,9 @@ instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField a (Kol b) where
 instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (WDef a) (WDef (Kol b)) where
   applyAB _ = fmap kol
 instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (Maybe a) (Koln b) where
-  applyAB _ = maybe nul koln
+  applyAB _ = koln
 instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef (Koln b)) where
-  applyAB _ = fmap (maybe nul koln)
+  applyAB _ = fmap koln
 
 -- | Convert a custom Haskell type to a representation appropiate for /inserting/
 -- it as a new row using 'Opaleye.SOT.Run.runInsert'.

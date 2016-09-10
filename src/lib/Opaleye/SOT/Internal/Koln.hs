@@ -6,20 +6,40 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
-module Opaleye.SOT.Internal.Koln where
+module Opaleye.SOT.Internal.Koln
+  ( Koln(..)
+  , koln
+  , nul
+  , fromKol
+  , fromKoln
+  , matchKoln
+  , mapKoln
+  , forKoln
+  , liftKoln2
+  , bindKoln
+  , altKoln
+  , isNull
+  , kolArrayn
+  ) where
 
 import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product.Default as PP
+import           Data.Proxy (Proxy(..))
+import           Data.Foldable
 import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
+import qualified Opaleye.Internal.Column as OI
+import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 import qualified Opaleye.Internal.RunQuery as OI
 
-import           Opaleye.SOT.Internal.Kol (Kol(..), PgTyped(..), ToKol(..))
+import Opaleye.SOT.Internal.Kol
+  (Kol(..), PgTyped(..), ToKol(..), PGArrayn, pgPrimTypeName)
 
 --------------------------------------------------------------------------------
 
@@ -43,10 +63,9 @@ data Koln (a :: k) = PgTyped a => Koln { unKoln :: O.Column (O.Nullable (PgType 
 
 deriving instance Show (O.Column (O.Nullable a)) => Show (Koln a)
 
--- | Build a 'Koln' from a Haskell term. This is like the 'Just' constructor for
--- 'Maybe'
-koln :: (ToKol a b) => a -> Koln b
-koln = fromKol . kol
+-- | Build a 'Koln' from a Haskell term, where 'Nothing' means @NULL@.
+koln :: ToKol a b => Maybe a -> Koln b
+koln = maybe nul (fromKol . kol)
 
 -- | PostgreSQL's @NULL@ value. This is like the 'Nothing' constructor for
 -- 'Maybe'
@@ -167,4 +186,22 @@ instance {-# OVERLAPPING #-}
   abs = undefined
   negate = undefined
   signum = undefined
+
+---
+
+instance forall a b. ToKol a b => ToKol [Maybe a] (PGArrayn b) where
+  kol = kolArrayn . map (koln :: Maybe a -> Koln b)
+
+-- | Build a @'Kol' ('PGArrayn' x)@ from any 'Foldable'.
+--
+-- The return type is not fixed to @'Kol' ('PGArrayn' x)@ so that you can
+-- easily use 'kolArrayn' as part of the implementation for 'kol' (see instance
+-- @'ToKol' ['Maybe' a] ('PGArrayn' p)@ as an example of this).
+kolArrayn
+ :: forall f a as
+ .  (Foldable f, PgTyped as, PgType as ~ PGArrayn (PgType a))
+ => f (Koln a) -> Kol as
+kolArrayn xs = Kol $ O.unsafeCast
+   (pgPrimTypeName (Proxy :: Proxy (PGArrayn (PgType a))))
+   (OI.Column (HDB.ArrayExpr (map (OI.unColumn . unKoln) (toList xs))))
 

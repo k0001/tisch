@@ -17,7 +17,8 @@
 
 -- | This is an internal module. You are very discouraged from using it directly.
 module Opaleye.SOT.Internal.Kol
- ( PgPrimType(..)
+ ( PGArrayn
+ , PgPrimType(..)
  , PgTyped(..)
  , upcastKol
  , unsafeDowncastKol
@@ -114,6 +115,12 @@ import Opaleye.SOT.Internal.Compat
 
 -------------------------------------------------------------------------------
 
+-- | Like 'PGArray', but the values inside the array are expected to be
+-- nullable.
+data PGArrayn a
+
+-------------------------------------------------------------------------------
+
 -- | Only 'PgPrimType' instances are allowed as indexes to @opaleye@'s 'O.Column'.
 --
 -- You probably won't be adding new 'PgPrimType' instances yourself,
@@ -130,6 +137,9 @@ instance {-# OVERLAPPING #-}
   where pgPrimTypeName = undefined
 
 instance forall a. PgPrimType a => PgPrimType (O.PGArray a) where
+  pgPrimTypeName _ = pgPrimTypeName (Proxy :: Proxy a) ++ "[]"
+
+instance forall a. PgPrimType a => PgPrimType (PGArrayn a) where
   pgPrimTypeName _ = pgPrimTypeName (Proxy :: Proxy a) ++ "[]"
 
 instance PgPrimType O.PGBool where pgPrimTypeName _ = "boolean"
@@ -228,6 +238,7 @@ instance PgTyped O.PGTimestamp where type PgType O.PGTimestamp = O.PGTimestamp
 instance PgTyped O.PGTime where type PgType O.PGTime = O.PGTime
 instance PgTyped O.PGUuid where type PgType O.PGUuid = O.PGUuid
 instance PgTyped a => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray (PgType a)
+instance PgTyped a => PgTyped (PGArrayn a) where type PgType (PGArrayn a) = PGArrayn (PgType a)
 
 -------------------------------------------------------------------------------
 
