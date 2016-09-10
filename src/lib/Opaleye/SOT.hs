@@ -142,10 +142,35 @@ module Opaleye.SOT
  , timestampYear
  , timestampYearISO8601
    -- * Aggregation
+   --
+   -- $aggregation
  , Aggregator
- , aggregatorOrder
+ , orderAggregator
  , aggregate
  , groupBy
+ , AggSum
+ , sumgg
+ , countgg
+ , countggn
+ , countRows
+ , AggAvg
+ , avggg
+ , bwandgg
+ , bworgg
+ , landgg
+ , lorgg
+ , maxgg
+ , mingg
+ , arraygg
+ , jsonarraygg
+ , jsonbarraygg
+ , textgg
+ , byteagg
+ , AggStdDev
+ , stddevgg
+ , stddevpopgg
+ , variancegg
+ , variancepopgg
    -- * Column types
  , PgTyped(..)
  , O.PGOrd
@@ -199,3 +224,10 @@ import Opaleye.SOT.Run
 --
 -- The "Opaleye.SOT.Run" module exports lower-level variants of these @runXxx@
 -- functions, in case you need those.
+
+
+-- $aggregation
+--
+-- Except for 'groupBy', all aggregation functions working on 'Kol's are
+-- suffixed with @gg@ (for a/gg/regate). Aggregation functions working on
+-- 'Koln's are suffixed with @ggn@.
