@@ -437,6 +437,7 @@ instance Wrapped AccountId where
   _Wrapped' = iso unAccountId AccountId
 instance PgTyped AccountId where
   type PgType AccountId = PGInt4
+instance PgEq AccountId
 instance ToKol AccountId AccountId
 instance QueryRunnerColumnDefault PGInt4 AccountId where
   queryRunnerColumnDefault = qrcWrapped

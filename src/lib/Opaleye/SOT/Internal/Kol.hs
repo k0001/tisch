@@ -103,11 +103,14 @@ import           Data.Proxy (Proxy(..))
 import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product.Default as PP
 import           Data.Tagged
+import           Data.Typeable (Typeable)
 import           Data.Word
+import qualified Database.PostgreSQL.Simple.Types as Pg
 import           GHC.Exts (Constraint)
 import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
+import qualified Opaleye.Internal.RunQuery as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
 import Opaleye.SOT.Internal.Compat
@@ -117,7 +120,18 @@ import Opaleye.SOT.Internal.Compat
 
 -- | Like 'PGArray', but the values inside the array are expected to be
 -- nullable.
-data PGArrayn a
+data PGArrayn (a :: Type)
+
+instance forall a b.
+  ( O.QueryRunnerColumnDefault a b, Typeable b
+  ) => O.QueryRunnerColumnDefault (PGArrayn a) [Maybe b] where
+    queryRunnerColumnDefault =
+      let OI.QueryRunnerColumn c f = O.queryRunnerColumnDefault
+            :: OI.QueryRunnerColumn (O.Nullable a) (Maybe b)
+          h :: O.Column (PGArrayn a) -> O.Column (O.Nullable a)
+          h = O.unsafeCoerceColumn
+      in OI.QueryRunnerColumn (P.lmap h c)
+           ((fmap . fmap . fmap) Pg.fromPGArray (OI.arrayFieldParser f))
 
 -------------------------------------------------------------------------------
 
