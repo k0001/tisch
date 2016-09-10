@@ -151,7 +151,7 @@ module Opaleye.SOT
  , AggSum
  , sumgg
  , countgg
- , countggn
+ , countngg
  , countRows
  , AggAvg
  , avggg
@@ -162,6 +162,7 @@ module Opaleye.SOT
  , maxgg
  , mingg
  , arraygg
+ , arrayngg
  , jsonarraygg
  , jsonbarraygg
  , textgg
@@ -232,4 +233,4 @@ import Opaleye.SOT.Run
 --
 -- Except for 'groupBy', all aggregation functions working on 'Kol's are
 -- suffixed with @gg@ (for a/gg/regate). Aggregation functions working on
--- 'Koln's are suffixed with @ggn@.
+-- 'Koln's are suffixed with @ngg@.

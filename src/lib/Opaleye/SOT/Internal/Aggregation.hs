@@ -11,7 +11,7 @@ module Opaleye.SOT.Internal.Aggregation
   , AggSum
   , sumgg
   , countgg
-  , countggn
+  , countngg
   , countRows
   , AggAvg
   , avggg
@@ -22,6 +22,7 @@ module Opaleye.SOT.Internal.Aggregation
   , maxgg
   , mingg
   , arraygg
+  , arrayngg
   , jsonarraygg
   , jsonbarraygg
   , textgg
@@ -39,7 +40,8 @@ import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.Aggregate as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
-import Opaleye.SOT.Internal.Kol (Kol(..), PgTyped(..), PgOrd, PgEq, PgNum, PgIntegral)
+import Opaleye.SOT.Internal.Kol
+  (Kol(..), PgTyped(..), PgOrd, PgEq, PgNum, PgIntegral, PGArrayn)
 import Opaleye.SOT.Internal.Koln (Koln(..))
 import Opaleye.SOT.Internal.Query (Query(..))
 
@@ -124,22 +126,22 @@ sumgg = unsafeMakeAggr HDB.AggrSum
 
 -- | Count the number of non-@NULL@ input values.
 --
--- See also: 'countRows', 'countggn'.
+-- See also: 'countRows', 'countngg'.
 countgg :: O.Aggregator (Kol a) (Kol O.PGInt8)
 countgg = P.dimap unKol Kol O.count
 
 -- | Count the number of input values, whether they are @NULL@ or not.
 --
 -- See also: 'countRows', 'countgg'.
-countggn :: O.Aggregator (Koln a) (Kol O.PGInt8)
-countggn = P.rmap Kol O.countStar
+countngg :: O.Aggregator (Koln a) (Kol O.PGInt8)
+countngg = P.rmap Kol O.countStar
 
 -- | Count the number of rows in a 'Query'.
 --
--- This is different from @'aggregate' 'countggn'@ because this always
+-- This is different from @'aggregate' 'countngg'@ because this always
 -- returns exactly one row, even when the input 'Query' is empty.
 --
--- See also: 'countgg', 'countggn'.
+-- See also: 'countgg', 'countngg'.
 countRows :: Query d () a -> Query d () (Kol O.PGInt8)
 countRows = Query . fmap Kol . O.countRows . unQuery
 
@@ -178,12 +180,13 @@ maxgg = unsafeMakeAggr HDB.AggrMax
 mingg :: PgOrd a => O.Aggregator (Kol a) (Kol a)
 mingg = unsafeMakeAggr HDB.AggrMin
 
--- | Collect all non-@NULL@ input values into an array.
---
--- TODO: Add @arrayggn@, aggregating into a @Kol (PGArrayNulls a)@ or
--- similar. Probably call it @PGArrayn@ instead of @PGArrayNulls@.
+-- | Collect all non-@NULL@ input values into a 'O.PGArray'.
 arraygg :: PgTyped a => O.Aggregator (Kol a) (Kol (O.PGArray a))
 arraygg = unsafeMakeAggr HDB.AggrArr
+
+-- | Collect all nullable input values into a 'O.PGArrayn'.
+arrayngg :: PgTyped a => O.Aggregator (Koln a) (Kol (PGArrayn a))
+arrayngg = P.dimap unKoln Kol (OI.makeAggr HDB.AggrArr)
 
 -- | Aggregates values as a 'O.PGJson' array.
 jsonarraygg :: O.Aggregator (Kol a) (Kol O.PGJson)
