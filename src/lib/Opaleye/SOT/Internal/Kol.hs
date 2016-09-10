@@ -561,6 +561,11 @@ instance Monoid (Kol O.PGBytea) where
   mempty = kol Data.ByteString.empty
   mappend = liftKol2 (OI.binOp HDB.OpCat)
 
+instance forall a. PgTyped a => Monoid (Kol (O.PGArray a)) where
+  mempty = kolArray ([] :: [Kol a])
+  mappend = liftKol2
+    (\x y -> unsafeFunExpr "array_cat" [AnyColumn x, AnyColumn y])
+
 -- instance PgBitwise O.PGBitstring ?
 
 -------------------------------------------------------------------------------

@@ -37,7 +37,7 @@ import qualified Data.Profunctor as P
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.Aggregate as OI
-import qualified Opaleye.Internal.HaskellDB.PrimQuery as OI
+import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
 import Opaleye.SOT.Internal.Kol (Kol(..), PgTyped(..), PgOrd, PgEq, PgNum, PgIntegral)
 import Opaleye.SOT.Internal.Koln (Koln(..))
@@ -120,7 +120,7 @@ instance AggSum O.PGFloat4 O.PGFloat8
 
 -- | Add the values in input columns.
 sumgg :: AggSum a b => O.Aggregator (Kol a) (Kol b)
-sumgg = unsafeMakeAggr OI.AggrSum
+sumgg = unsafeMakeAggr HDB.AggrSum
 
 -- | Count the number of non-@NULL@ input values.
 --
@@ -152,56 +152,56 @@ instance AggAvg O.PGFloat4 O.PGFloat8
 
 -- | The average (arithmetic mean) of all input values
 avggg :: AggAvg a b => O.Aggregator (Kol a) (Kol b)
-avggg = unsafeMakeAggr OI.AggrAvg
+avggg = unsafeMakeAggr HDB.AggrAvg
 
 -- | Bitwise AND of all input values.
 bwandgg :: PgIntegral a => O.Aggregator (Kol a) (Kol a)
-bwandgg = unsafeMakeAggr (OI.AggrOther "bit_and")
+bwandgg = unsafeMakeAggr (HDB.AggrOther "bit_and")
 
 -- | Bitwise OR of all input values.
 bworgg :: PgIntegral a => O.Aggregator (Kol a) (Kol a)
-bworgg = unsafeMakeAggr (OI.AggrOther "bit_or")
+bworgg = unsafeMakeAggr (HDB.AggrOther "bit_or")
 
 -- | Logical AND of all input values.
 landgg :: O.Aggregator (Kol O.PGBool) (Kol O.PGBool)
-landgg = unsafeMakeAggr OI.AggrBoolAnd
+landgg = unsafeMakeAggr HDB.AggrBoolAnd
 
 -- | Logical OR of all input values.
 lorgg :: O.Aggregator (Kol O.PGBool) (Kol O.PGBool)
-lorgg = unsafeMakeAggr OI.AggrBoolOr
+lorgg = unsafeMakeAggr HDB.AggrBoolOr
 
 -- | Maximum value of all input values.
 maxgg :: PgOrd a => O.Aggregator (Kol a) (Kol a)
-maxgg = unsafeMakeAggr OI.AggrMax
+maxgg = unsafeMakeAggr HDB.AggrMax
 
 -- | Minimum value of all input values.
 mingg :: PgOrd a => O.Aggregator (Kol a) (Kol a)
-mingg = unsafeMakeAggr OI.AggrMin
+mingg = unsafeMakeAggr HDB.AggrMin
 
 -- | Collect all non-@NULL@ input values into an array.
 --
 -- TODO: Add @arrayggn@, aggregating into a @Kol (PGArrayNulls a)@ or
 -- similar. Probably call it @PGArrayn@ instead of @PGArrayNulls@.
 arraygg :: PgTyped a => O.Aggregator (Kol a) (Kol (O.PGArray a))
-arraygg = unsafeMakeAggr OI.AggrArr
+arraygg = unsafeMakeAggr HDB.AggrArr
 
 -- | Aggregates values as a 'O.PGJson' array.
 jsonarraygg :: O.Aggregator (Kol a) (Kol O.PGJson)
-jsonarraygg = unsafeMakeAggr (OI.AggrOther "json_agg")
+jsonarraygg = unsafeMakeAggr (HDB.AggrOther "json_agg")
 
 -- | Aggregates values as a 'O.PGJsonb' array.
 jsonbarraygg :: O.Aggregator (Kol a) (Kol O.PGJsonb)
-jsonbarraygg = unsafeMakeAggr (OI.AggrOther "jsonb_agg")
+jsonbarraygg = unsafeMakeAggr (HDB.AggrOther "jsonb_agg")
 
 -- | Aggregates 'O.PGText' values by concatenating them using the given
 -- separator.
 textgg :: Kol O.PGText -> O.Aggregator (Kol O.PGText) (Kol O.PGText)
-textgg = unsafeMakeAggr . OI.AggrStringAggr . OI.unColumn . unKol
+textgg = unsafeMakeAggr . HDB.AggrStringAggr . OI.unColumn . unKol
 
 -- | Aggregates 'O.PGBytea' values by concatenating them using the given
 -- separator.
 byteagg :: Kol O.PGBytea -> O.Aggregator (Kol O.PGBytea) (Kol O.PGBytea)
-byteagg = unsafeMakeAggr . OI.AggrStringAggr . OI.unColumn . unKol
+byteagg = unsafeMakeAggr . HDB.AggrStringAggr . OI.unColumn . unKol
 
 -- | Instances of 'AggStdDev' can be used with 'stddevgg',
 -- 'stddevpopgg', 'variance' and 'variancepopgg'.
@@ -211,24 +211,24 @@ instance AggStdDev O.PGFloat8 O.PGFloat8
 
 -- | Sample standard deviation of the input values.
 stddevgg :: AggStdDev a b => O.Aggregator (Kol a) (Kol b)
-stddevgg = unsafeMakeAggr OI.AggrStdDev
+stddevgg = unsafeMakeAggr HDB.AggrStdDev
 
 -- | Population standard deviation of the input values.
 stddevpopgg :: AggStdDev a b => O.Aggregator (Kol a) (Kol b)
-stddevpopgg = unsafeMakeAggr OI.AggrStdDevP
+stddevpopgg = unsafeMakeAggr HDB.AggrStdDevP
 
 -- | Sample variance of the input values (square of the sample standard
 -- deviation 'stdevgg').
 variancegg :: AggStdDev a b => O.Aggregator (Kol a) (Kol b)
-variancegg = unsafeMakeAggr OI.AggrVar
+variancegg = unsafeMakeAggr HDB.AggrVar
 
 -- | Population variance of the input values (square of the population standard
 -- deviation 'stdevoppgg').
 variancepopgg :: AggStdDev a b => O.Aggregator (Kol a) (Kol b)
-variancepopgg = unsafeMakeAggr OI.AggrVarP
+variancepopgg = unsafeMakeAggr HDB.AggrVarP
 
 --------------------------------------------------------------------------------
 
-unsafeMakeAggr :: PgTyped b => OI.AggrOp -> O.Aggregator (Kol a) (Kol b)
+unsafeMakeAggr :: PgTyped b => HDB.AggrOp -> O.Aggregator (Kol a) (Kol b)
 unsafeMakeAggr x = P.dimap unKol Kol (OI.makeAggr x)
 {-# INLINE unsafeMakeAggr #-}
