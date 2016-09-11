@@ -121,6 +121,7 @@ module Opaleye.SOT
  , bwsl
  , bwsr
    -- ** Time
+ , now
  , toTimestamptz
  , toTimestamp
  , timestamptzEpoch

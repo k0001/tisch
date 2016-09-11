@@ -85,6 +85,7 @@ module Opaleye.SOT.Internal.Kol
  , timestampYear
  , timestampYearISO8601
  , unsafeFunExpr__date_part
+ , now
  ) where
 
 import           Control.Lens
@@ -912,3 +913,5 @@ timestampYear = unsafeFunExpr__date_part "year"
 timestampYearISO8601 :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
 timestampYearISO8601 = unsafeFunExpr__date_part "isoyear"
 
+now :: Kol O.PGTimestamptz
+now = Kol (unsafeFunExpr "now" [])
