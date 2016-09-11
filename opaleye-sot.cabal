@@ -61,10 +61,22 @@ test-suite tests
   other-modules: Tutorial
   ghc-options: -Wall -rtsopts -threaded
   build-depends:
-      base
+      aeson
+    , base
+    , bytestring
+    , case-insensitive
+    , exceptions
     , lens
     , mtl
     , opaleye
     , opaleye-sot
     , postgresql-simple
+    , product-profunctors
+    , profunctors
+    , semigroups
+    , singletons
+    , tagged
+    , text
     , time
+    , transformers
+    , uuid
