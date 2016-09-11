@@ -859,58 +859,58 @@ unsafeFunExpr__date_part :: (PgTyped tsy, PgTyped b) => HDB.Name -> Kol tsy -> K
 unsafeFunExpr__date_part n = unsaferCastKol @O.PGFloat8 . liftKol1
    (\x -> unsafeFunExpr "date_part" [AnyColumn (O.pgString n), AnyColumn x])
 
-timestamptzEpoch :: (PgTyped a, PgType a ~ O.PGTimestamptz, PgTyped b, PgType b ~ O.PGFloat8) => Kol a -> Kol b
+timestamptzEpoch :: Kol O.PGTimestamptz -> Kol O.PGFloat8
 timestamptzEpoch = unsafeFunExpr__date_part "epoch"
 
-timestampCentury :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampCentury :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampCentury = unsafeFunExpr__date_part "century"
 
-timestampDay :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampDay :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampDay = unsafeFunExpr__date_part "day"
 
-timestampDayOfTheWeek :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampDayOfTheWeek :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampDayOfTheWeek = unsafeFunExpr__date_part "dow"
 
-timestampDayOfTheWeekISO8601 :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampDayOfTheWeekISO8601 :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampDayOfTheWeekISO8601 = unsafeFunExpr__date_part "isodow"
 
-timestampDayOfTheYear :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampDayOfTheYear :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampDayOfTheYear = unsafeFunExpr__date_part "doy"
 
-timestampDecade :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampDecade :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampDecade = unsafeFunExpr__date_part "decade"
 
-timestampHour :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampHour :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampHour = unsafeFunExpr__date_part "hour"
 
-timestampMicroseconds :: (PgTyped a, PgType a ~ O.PGTimestamp, PgTyped b, PgType b ~ O.PGInt4) => Kol a -> Kol b
+timestampMicroseconds :: (PgIntegral b, CastKol O.PGInt4 b) => Kol O.PGTimestamp -> Kol b
 timestampMicroseconds = unsafeFunExpr__date_part "microseconds"
 
-timestampMillenium :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampMillenium :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampMillenium = unsafeFunExpr__date_part "millenium"
 
-timestampMilliseconds :: (PgTyped a, PgType a ~ O.PGTimestamp, PgTyped b, PgType b ~ O.PGInt4) => Kol a -> Kol b
+timestampMilliseconds :: (PgIntegral b, CastKol O.PGInt4 b) => Kol O.PGTimestamp -> Kol b
 timestampMilliseconds = unsafeFunExpr__date_part "milliseconds"
 
-timestampMinute :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampMinute :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampMinute = unsafeFunExpr__date_part "minute"
 
-timestampMonth :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampMonth :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampMonth = unsafeFunExpr__date_part "month"
 
-timestampQuarter :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampQuarter :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampQuarter = unsafeFunExpr__date_part "quarter"
 
-timestampSecond :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampSecond :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampSecond = unsafeFunExpr__date_part "second"
 
-timestampWeekISO8601 :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampWeekISO8601 :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampWeekISO8601 = unsafeFunExpr__date_part "week"
 
-timestampYear :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampYear :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampYear = unsafeFunExpr__date_part "year"
 
-timestampYearISO8601 :: (PgTyped a, PgType a ~ O.PGTimestamp, PgIntegral b) => Kol a -> Kol b
+timestampYearISO8601 :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 timestampYearISO8601 = unsafeFunExpr__date_part "isoyear"
 
 now :: Kol O.PGTimestamptz
