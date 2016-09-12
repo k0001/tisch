@@ -639,11 +639,12 @@ instance CastKol O.PGInt2 O.PGText
 instance CastKol O.PGInt2 O.PGCitext
 instance CastKol O.PGInt2 O.PGInt4
 instance CastKol O.PGInt2 O.PGInt8
+instance CastKol O.PGInt2 (PGNumeric s)
 instance CastKol O.PGInt4 O.PGText
 instance CastKol O.PGInt4 O.PGCitext
 instance CastKol O.PGInt4 O.PGInt8
-instance CastKol O.PGInt8 O.PGText
-instance CastKol O.PGInt8 O.PGCitext
+instance CastKol O.PGInt4 (PGNumeric s)
+instance CastKol O.PGInt8 (PGNumeric s)
 
 -- Shooting yourself in the foot? I will help you.
 
