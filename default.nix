@@ -1,7 +1,7 @@
 { mkDerivation, aeson, base, bytestring, case-insensitive
 , exceptions, lens, mtl, opaleye, postgresql-simple
-, product-profunctors, profunctors, semigroups, singletons, stdenv
-, tagged, text, time, transformers, uuid
+, product-profunctors, profunctors, scientific, semigroups, singletons, stdenv ,
+tagged, text, time, transformers, uuid
 }:
 mkDerivation {
   pname = "opaleye-sot";
@@ -9,7 +9,7 @@ mkDerivation {
   src = ./.;
   libraryHaskellDepends = [
     aeson base bytestring case-insensitive exceptions lens mtl opaleye
-    postgresql-simple product-profunctors profunctors semigroups
+    postgresql-simple product-profunctors profunctors scientific semigroups
     singletons tagged text time transformers uuid
   ];
   testHaskellDepends = [

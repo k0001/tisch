@@ -89,22 +89,25 @@ module Opaleye.SOT.Internal.Kol
  ) where
 
 import           Control.Lens
+import           Data.Fixed (Fixed(..))
+import qualified Data.Fixed as Fixed
 import           Data.Kind
 import           Data.Foldable
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString
 import qualified Data.ByteString.Lazy
 import qualified Data.CaseInsensitive
-import qualified Data.Text
-import qualified Data.Text.Lazy
-import qualified Data.Time
-import qualified Data.UUID
 import           Data.Int
 import           Data.Proxy (Proxy(..))
 import qualified Data.Profunctor as P
 import qualified Data.Profunctor.Product.Default as PP
+import           Data.Scientific (Scientific)
 import           Data.Tagged
+import qualified Data.Text
+import qualified Data.Text.Lazy
+import qualified Data.Time
 import           Data.Typeable (Typeable)
+import qualified Data.UUID
 import           Data.Word
 import qualified Database.PostgreSQL.Simple.Types as Pg
 import           GHC.Exts (Constraint)
@@ -115,7 +118,8 @@ import qualified Opaleye.Internal.RunQuery as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
 import Opaleye.SOT.Internal.Compat
-  (AnyColumn(..), unsafeFunExpr, pgFloat4, pgFloat8, pgInt2)
+  (AnyColumn(..), PGNumeric, PGNumericScale,
+   unsafeFunExpr, pgFloat4, pgFloat8, pgInt2, pgScientific, pgFixed)
 
 -------------------------------------------------------------------------------
 
@@ -168,12 +172,21 @@ instance PgPrimType O.PGInt4 where pgPrimTypeName _ = "int4"
 instance PgPrimType O.PGInt8 where pgPrimTypeName _ = "int8"
 instance PgPrimType O.PGJsonb where pgPrimTypeName _ = "jsonb"
 instance PgPrimType O.PGJson where pgPrimTypeName _ = "json"
-instance PgPrimType O.PGNumeric where pgPrimTypeName _ = "numeric"
 instance PgPrimType O.PGText where pgPrimTypeName _ = "text"
 instance PgPrimType O.PGTimestamptz where pgPrimTypeName _ = "timestamptz"
 instance PgPrimType O.PGTimestamp where pgPrimTypeName _ = "timestamp"
 instance PgPrimType O.PGTime where pgPrimTypeName _ = "time"
 instance PgPrimType O.PGUuid where pgPrimTypeName _ = "uuid"
+
+-- | Notice: 'pgPrimTypeName' is always @"numeric"@, not @"numeric(p, s)"@.
+-- This is good, don't worry too much. See 'PGNumeric'
+instance PgPrimType (PGNumeric p s) where pgPrimTypeName _ = "numeric"
+
+instance
+  ( GHC.TypeError
+      ('GHC.Text "Opaleye.PGNumeric is not supported," 'GHC.:$$:
+       'GHC.Text "Use Opaleye.SOT.PGNumeric instead.")
+  ) => PgPrimType O.PGNumeric where pgPrimTypeName = undefined
 
 -- | Only 'PgTyped' instances are allowed as indexes to 'Kol' and 'Koln'.
 --
@@ -246,12 +259,13 @@ instance PgTyped O.PGInt4 where type PgType O.PGInt4 = O.PGInt4
 instance PgTyped O.PGInt8 where type PgType O.PGInt8 = O.PGInt8
 instance PgTyped O.PGJsonb where type PgType O.PGJsonb = O.PGJsonb
 instance PgTyped O.PGJson where type PgType O.PGJson = O.PGJson
-instance PgTyped O.PGNumeric where type PgType O.PGNumeric = O.PGNumeric
 instance PgTyped O.PGText where type PgType O.PGText = O.PGText
 instance PgTyped O.PGTimestamptz where type PgType O.PGTimestamptz = O.PGTimestamptz
 instance PgTyped O.PGTimestamp where type PgType O.PGTimestamp = O.PGTimestamp
 instance PgTyped O.PGTime where type PgType O.PGTime = O.PGTime
 instance PgTyped O.PGUuid where type PgType O.PGUuid = O.PGUuid
+instance PgTyped (PGNumeric p s) where type PgType (PGNumeric p s) = PGNumeric p s
+
 instance PgTyped a => PgTyped (O.PGArray a) where type PgType (O.PGArray a) = O.PGArray (PgType a)
 instance PgTyped a => PgTyped (PGArrayn a) where type PgType (PGArrayn a) = PGArrayn (PgType a)
 
@@ -272,6 +286,7 @@ instance PgNum O.PGInt4
 instance PgNum O.PGInt8
 instance PgNum O.PGFloat4
 instance PgNum O.PGFloat8
+instance GHC.KnownNat s => PgNum (PGNumeric p s)
 
 instance (PgNum a, Num (O.Column (PgType a))) => Num (Kol a) where
   fromInteger = Kol . fromInteger
@@ -294,6 +309,7 @@ class PgTyped a => PgIntegral (a :: k)
 instance PgIntegral O.PGInt2
 instance PgIntegral O.PGInt4
 instance PgIntegral O.PGInt8
+instance PgIntegral (PGNumeric p 0)
 
 itruncate :: (PgFloating a, PgIntegral b) => Kol a -> Kol b
 itruncate = liftKol1 (unsafeFunExpr "trunc" . pure . AnyColumn)
@@ -315,6 +331,7 @@ class (PgTyped a, PgNum a, OI.PGFractional (PgType a)) => PgFractional (a :: k)
 
 instance PgFractional O.PGFloat4
 instance PgFractional O.PGFloat8
+instance GHC.KnownNat s => PgFractional (PGNumeric p s)
 
 instance
     ( PgTyped a, PgFractional a
@@ -535,6 +552,13 @@ instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where ko
 instance ToKol Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Aeson.encode
 instance ToKol Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Aeson.encode
 
+instance GHC.KnownNat s => ToKol Scientific (PGNumeric p s) where kol = Kol . pgScientific
+instance GHC.KnownNat s => ToKol Rational (PGNumeric p s) where kol = Kol . fromRational
+instance
+  ( GHC.KnownNat s
+  , Fixed.HasResolution e, GHC.CmpNat s (PGNumericScale e GHC.+ 1) ~ 'LT
+  ) => ToKol (Fixed e) (PGNumeric p s) where kol = Kol . pgFixed
+
 instance forall a b. ToKol a b => ToKol [a] (O.PGArray b) where
   kol = kolArray . map (kol :: a -> Kol b)
 
@@ -720,7 +744,6 @@ instance PgEq O.PGInt4
 instance PgEq O.PGInt8
 instance PgEq O.PGJsonb
 instance PgEq O.PGJson
-instance PgEq O.PGNumeric
 instance PgEq O.PGText
 instance PgEq O.PGTimestamptz
 instance PgEq O.PGTimestamp

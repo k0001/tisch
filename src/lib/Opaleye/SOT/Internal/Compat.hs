@@ -1,10 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | Miscellaneous compatibility stuff.
 module Opaleye.SOT.Internal.Compat
@@ -14,10 +19,24 @@ module Opaleye.SOT.Internal.Compat
   , pgFloat4
   , pgFloat8
   , pgInt2
+  , PGNumeric
+  , PGNumericScale
+  , pgRational
+  , pgScientific
+  , pgFixed
   ) where
 
+import qualified Control.Exception as Ex
+import           Data.Fixed (Fixed(..))
+import qualified Data.Fixed as Fixed
 import           Data.Int
+import           Data.Proxy
+import           Data.Scientific (Scientific, formatScientific)
+import qualified Data.Scientific as Scientific
+import qualified Database.PostgreSQL.Simple.FromField as Pg
 import           GHC.Float (float2Double)
+import           GHC.Real (infinity, notANumber)
+import           GHC.TypeLits (Nat, KnownNat, type (+))
 import qualified GHC.TypeLits as GHC
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
@@ -82,4 +101,84 @@ instance OI.PGNum O.PGFloat4 where
 -- | Orphan. "Opaleye.SOT.Internal".
 instance OI.PGNum O.PGInt2 where
   pgFromInteger = pgInt2 . fromInteger
+
+--------------------------------------------------------------------------------
+
+-- | PostgreSQL @numeric@ type. Note that the @precision@ and @scale@ phantom
+-- types are only ever used in the Haskell side, and never on the PostgreSQL
+-- side. That is, a @'PGNumeric' p s@ type in Haskell maps to a @numeric@ type
+-- in PostgreSQL, and not to @numeric(p, s)@.
+data PGNumeric (precision :: Nat) (scale :: Nat)
+
+-- | Maximum numeric scale for a type.
+type family PGNumericScale (t :: k) :: Nat
+type instance PGNumericScale Fixed.E0  = 0
+type instance PGNumericScale Fixed.E1  = 1
+type instance PGNumericScale Fixed.E2  = 2
+type instance PGNumericScale Fixed.E3  = 3
+type instance PGNumericScale Fixed.E6  = 6
+type instance PGNumericScale Fixed.E9  = 9
+type instance PGNumericScale Fixed.E12 = 12
+
+instance O.PGOrd (PGNumeric p s)
+
+instance KnownNat s => OI.PGNum (PGNumeric p s) where
+  pgFromInteger = pgScientific . fromInteger
+  {-# INLINE pgFromInteger #-}
+
+-- | WARNING: 'pgFromRational' throws 'Ex.RatioZeroDenominator' if given a
+-- positive or negative 'infinity'.
+instance GHC.KnownNat s => OI.PGFractional (PGNumeric p s) where
+  pgFromRational = maybe (Ex.throw Ex.RatioZeroDenominator) id . pgRational
+  {-# INLINE pgFromRational #-}
+
+-- | Convert a 'Rational' to a @numeric@ column in PostgreSQL. 'notANumber' is
+-- supported.
+--
+-- Returns 'Nothing' in case of positive or negative 'infinity'.
+pgRational :: KnownNat s => Rational -> Maybe (O.Column (PGNumeric p s))
+pgRational x
+  | x == infinity    = Nothing
+  | x == (-infinity) = Nothing
+  | x == notANumber  = Just (OI.literalColumn (HDB.StringLit "NaN"))
+  | otherwise        = Just (pgScientific (fromRational x))
+
+pgScientific :: forall p s. KnownNat s => Scientific -> O.Column (PGNumeric p s)
+pgScientific = OI.literalColumn . HDB.OtherLit . formatScientific
+  Scientific.Fixed (Just (fromInteger (GHC.natVal (Proxy :: Proxy s))))
+{-# INLINE pgScientific #-}
+
+pgFixed
+  :: forall e p s
+  .  ( KnownNat s
+     , Fixed.HasResolution e, GHC.CmpNat s (PGNumericScale e + 1) ~ 'LT)
+  => Fixed e -> O.Column (PGNumeric p s)
+pgFixed = case GHC.natVal (Proxy :: Proxy s) of
+  0 -> \(MkFixed x) -> OI.literalColumn (HDB.IntegerLit x)
+  _ -> OI.literalColumn . HDB.OtherLit . Fixed.showFixed False
+{-# INLINE pgFixed #-}
+
+instance OI.QueryRunnerColumnDefault (PGNumeric p s) Rational where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+  {-# INLINE queryRunnerColumnDefault #-}
+
+instance OI.QueryRunnerColumnDefault (PGNumeric p s) Scientific where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+  {-# INLINE queryRunnerColumnDefault #-}
+
+instance OI.QueryRunnerColumnDefault (PGNumeric p 0) Integer where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+  {-# INLINE queryRunnerColumnDefault #-}
+
+newtype WrapFixed e = WrapFixed { unWrapFixed :: Fixed e }
+
+instance Fixed.HasResolution e => Pg.FromField (WrapFixed e) where
+  fromField = fmap (fmap (fmap (WrapFixed . fromRational))) Pg.fromField
+  {-# INLINE fromField #-}
+
+instance
+  ( Fixed.HasResolution e, GHC.CmpNat s (PGNumericScale e + 1) ~ 'LT
+  ) => OI.QueryRunnerColumnDefault (PGNumeric p s) (Fixed e) where
+    queryRunnerColumnDefault = fmap unWrapFixed O.fieldQueryRunnerColumn
+    {-# INLINE queryRunnerColumnDefault #-}
 

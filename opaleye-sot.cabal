@@ -45,6 +45,7 @@ library
     , product-profunctors
     , profunctors
     , semigroups
+    , scientific >=0.3 && <0.4
     , singletons >=2.2 && <2.3
     , tagged
     , text
@@ -74,6 +75,7 @@ test-suite tests
     , product-profunctors
     , profunctors
     , semigroups
+    , scientific
     , singletons
     , tagged
     , text
