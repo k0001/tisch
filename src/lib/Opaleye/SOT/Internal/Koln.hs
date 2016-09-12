@@ -177,15 +177,46 @@ instance (PgTyped a, Monoid (Kol a)) => Monoid (Koln a) where
 ---
 
 instance {-# OVERLAPPING #-}
-  GHC.TypeError ('GHC.Text "The Num instance for " 'GHC.:<>: 'GHC.ShowType (Koln a) 'GHC.:<>: 'GHC.Text " is explicitely disabled.")
-    => Num (Koln a) where
-  fromInteger = undefined
-  (*) = undefined
-  (+) = undefined
-  (-) = undefined
-  abs = undefined
-  negate = undefined
-  signum = undefined
+  ( GHC.TypeError
+     ('GHC.Text "The Num instance for " 'GHC.:<>: 'GHC.ShowType (Koln a)
+      'GHC.:<>: 'GHC.Text " is explicitely disabled.")
+  ) => Num (Koln a) where
+    fromInteger = undefined
+    abs = undefined
+    signum = undefined
+    (*) = undefined
+    (+) = undefined
+    (-) = undefined
+
+instance {-# OVERLAPPING #-}
+  ( GHC.TypeError
+     ('GHC.Text "The Fractional instance for " 'GHC.:<>:
+      'GHC.ShowType (Koln a) 'GHC.:<>: 'GHC.Text " is explicitely disabled.")
+  , Num (Koln a)
+  ) => Fractional (Koln a) where
+    fromRational = undefined
+    recip = undefined
+
+instance {-# OVERLAPPING #-}
+  ( GHC.TypeError
+      ('GHC.Text "The Floating instance for " 'GHC.:<>: 'GHC.ShowType (Koln a)
+       'GHC.:<>: 'GHC.Text " is explicitely disabled.")
+  , Num (Koln a)
+  , Fractional (Koln a)
+  ) => Floating (Koln a) where
+    pi = undefined
+    exp = undefined
+    log = undefined
+    sin = undefined
+    cos = undefined
+    asin = undefined
+    acos = undefined
+    atan = undefined
+    sinh = undefined
+    cosh = undefined
+    asinh = undefined
+    acosh = undefined
+    atanh = undefined
 
 ---
 
