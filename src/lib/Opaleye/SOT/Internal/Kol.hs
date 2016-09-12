@@ -179,7 +179,7 @@ instance PgPrimType O.PGTime where pgPrimTypeName _ = "time"
 instance PgPrimType O.PGUuid where pgPrimTypeName _ = "uuid"
 
 -- | Notice: 'pgPrimTypeName' is always @"numeric"@ and the @scale@ argument is
--- not rendered in SQL. This is good, don't worry too much. See 'PGNumeric'
+-- not rendered in SQL.This is good, don't worry too much. See 'PGNumeric'
 instance PgPrimType (PGNumeric scale) where pgPrimTypeName _ = "numeric"
 
 instance
@@ -552,7 +552,7 @@ instance ToKol (Data.CaseInsensitive.CI Data.Text.Lazy.Text) O.PGCitext where ko
 instance ToKol Aeson.Value O.PGJson where kol = Kol . O.pgLazyJSON . Aeson.encode
 instance ToKol Aeson.Value O.PGJsonb where kol = Kol . O.pgLazyJSONB . Aeson.encode
 
-instance ToKol Integer (PGNumeric 0) where kol = Kol . fromInteger
+instance GHC.KnownNat s => ToKol Integer (PGNumeric s) where kol = Kol . fromInteger
 instance GHC.KnownNat s => ToKol Scientific (PGNumeric s) where kol = Kol . pgScientific
 instance GHC.KnownNat s => ToKol Rational (PGNumeric s) where kol = Kol . fromRational
 instance
