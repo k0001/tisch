@@ -12,7 +12,7 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | Miscellaneous compatibility stuff.
-module Opaleye.SOT.Internal.Compat
+module Tisch.Internal.Compat
   ( AnyColumn(..)
   , unsafeFunExpr
   , unsafeUnNullableColumn
@@ -66,7 +66,7 @@ pgFloat8 = OI.literalColumn . HDB.DoubleLit . float2Double
 pgInt2 :: Int16 -> O.Column O.PGInt2
 pgInt2 = OI.literalColumn . HDB.IntegerLit . fromIntegral
 
--- | Orphan. "Opaleye.SOT.Internal".
+-- | Orphan. "Tisch.Internal".
 instance OI.QueryRunnerColumnDefault O.PGFloat4 Float where
   queryRunnerColumnDefault = O.fieldQueryRunnerColumn
 
@@ -90,15 +90,15 @@ instance {-# OVERLAPPING #-}
   ) => OI.QueryRunnerColumnDefault a Word
   where queryRunnerColumnDefault = undefined
 
--- | Orphan. "Opaleye.SOT.Internal".
+-- | Orphan. "Tisch.Internal".
 instance OI.PGFractional O.PGFloat4 where
   pgFromRational = pgFloat4 . fromRational
 
--- | Orphan. "Opaleye.SOT.Internal".
+-- | Orphan. "Tisch.Internal".
 instance OI.PGNum O.PGFloat4 where
   pgFromInteger = pgFloat4 . fromInteger
 
--- | Orphan. "Opaleye.SOT.Internal".
+-- | Orphan. "Tisch.Internal".
 instance OI.PGNum O.PGInt2 where
   pgFromInteger = pgInt2 . fromInteger
 

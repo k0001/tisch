@@ -21,7 +21,7 @@ import           Data.Int
 import           Data.Proxy
 import qualified Opaleye as O
 
-import           Opaleye.SOT
+import           Tisch
 
 import           Tutorial () -- Just for typechecking
 

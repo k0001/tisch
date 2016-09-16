@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Opaleye.SOT.Internal.Debug
+module Tisch.Internal.Debug
  ( renderSqlQuery
  , renderSqlQuery'
  ) where
@@ -11,7 +11,7 @@ import qualified Data.Profunctor.Product.Default as PP
 import qualified Opaleye.Sql as O
 import qualified Opaleye.Internal.Unpackspec as OI
 
-import Opaleye.SOT.Internal.Query (Query(..))
+import Tisch.Internal.Query (Query(..))
 
 --------------------------------------------------------------------------------
 

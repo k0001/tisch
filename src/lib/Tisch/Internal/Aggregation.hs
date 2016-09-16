@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -5,7 +6,7 @@
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
-module Opaleye.SOT.Internal.Aggregation
+module Tisch.Internal.Aggregation
   ( O.Aggregator
   , orderAggregator
   , aggregate
@@ -43,11 +44,11 @@ import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.Aggregate as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
-import Opaleye.SOT.Internal.Compat (PGNumeric)
-import Opaleye.SOT.Internal.Kol
+import Tisch.Internal.Compat (PGNumeric)
+import Tisch.Internal.Kol
   (Kol(..), PgTyped(..), PgOrd, PgEq, PgNum, PgIntegral, PGArrayn)
-import Opaleye.SOT.Internal.Koln (Koln(..))
-import Opaleye.SOT.Internal.Query (Query(..))
+import Tisch.Internal.Koln (Koln(..))
+import Tisch.Internal.Query (Query(..))
 
 --------------------------------------------------------------------------------
 
@@ -61,8 +62,8 @@ import Opaleye.SOT.Internal.Query (Query(..))
 --
 -- @
 -- x :: 'O.Aggregator' ('Kol' a, 'Kol' b) ('Kol' ('O.PGArray' a), 'Kol' ('O.PGArray' a))
--- x = (,) <$> 'orderAggregator' ('Opaleye.SOT.asc' 'snd')  ('P.lmap' 'fst' 'arraygg')
---         <*> 'orderAggregator' ('Opaleye.SOT.descl 'snd') ('P.lmap' 'fst' 'arraygg')
+-- x = (,) <$> 'orderAggregator' ('Tisch.asc' 'snd')  ('P.lmap' 'fst' 'arraygg')
+--         <*> 'orderAggregator' ('Tisch.descl 'snd') ('P.lmap' 'fst' 'arraygg')
 -- @
 --
 -- This will generate:
@@ -77,7 +78,7 @@ import Opaleye.SOT.Internal.Query (Query(..))
 --
 -- @
 -- x :: 'O.Aggregator' ('Kol' a, 'Kol' b) ('Kol' ('O.PGArray' a), 'Kol' ('O.PGArray' a))
--- x = 'orderAggregator' ('Opaleye.SOT.asc' 'snd') $ 'Opaleye.SOT.Internal.Profunctors.ppa' ('arraygg', 'arraygg')
+-- x = 'orderAggregator' ('Tisch.asc' 'snd') $ 'Tisch.Internal.Profunctors.ppa' ('arraygg', 'arraygg')
 -- @
 --
 -- This will generate:
@@ -94,9 +95,9 @@ orderAggregator = OI.orderAggregate
 -- rows of type @a@, apply the aggregator to the results of the query.
 --
 -- Please note that when aggregating an empty query with no @GROUP BY@ clause,
--- @opaleye-sot@'s behaviour differs from Postgres's behaviour. PostgreSQL
--- returns a single row whereas @opaleye-sot@ returns zero rows.
--- @opaleye-sot@'s behaviour is consistent with the meaning of aggregating over
+-- @tisch@'s behaviour differs from Postgres's behaviour. PostgreSQL
+-- returns a single row whereas @tisch@ returns zero rows.
+-- @tisch@'s behaviour is consistent with the meaning of aggregating over
 -- groups of rows, while PostgreSQL's behaviour is. When a query has zero rows
 -- it has zero groups, and thus zero rows in the result of an aggregation.
 --

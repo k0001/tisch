@@ -16,7 +16,7 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
-module Opaleye.SOT.Internal.Kol
+module Tisch.Internal.Kol
  ( PGArrayn
  , PgPrimType(..)
  , PgTyped(..)
@@ -117,7 +117,7 @@ import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.RunQuery as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
-import Opaleye.SOT.Internal.Compat
+import Tisch.Internal.Compat
   (AnyColumn(..), PGNumeric, PGNumericScale,
    unsafeFunExpr, pgFloat4, pgFloat8, pgInt2, pgScientific, pgFixed)
 
@@ -185,7 +185,7 @@ instance PgPrimType (PGNumeric scale) where pgPrimTypeName _ = "numeric"
 instance
   ( GHC.TypeError
       ('GHC.Text "Opaleye.PGNumeric is not supported," 'GHC.:$$:
-       'GHC.Text "Use Opaleye.SOT.PGNumeric instead.")
+       'GHC.Text "Use Tisch.PGNumeric instead.")
   ) => PgPrimType O.PGNumeric where pgPrimTypeName = undefined
 
 -- | Only 'PgTyped' instances are allowed as indexes to 'Kol' and 'Koln'.
@@ -235,7 +235,7 @@ class (PgPrimType (PgType a), PgTyped (PgType a), PgType a ~ PgType (PgType a))
   --   instance 'O.QueryRunnerColumnDefault' 'O.PGInt4' UserId
   --   @
   --
-  --   You might find 'Opaleye.SOT.Run.qrcWrapped' useful for simple cases like
+  --   You might find 'Tisch.Run.qrcWrapped' useful for simple cases like
   --   @UserId@.
   --
   --   Notice that the instance mentions 'O.PGInt4' directly, not our 'PgTyped'

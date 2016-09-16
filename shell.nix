@@ -19,7 +19,7 @@ let
             "--ghc-options=-fprof-cafs"
           ];
         });
-      opaleye-sot = self.callPackage ./default.nix {};
+      tisch = self.callPackage ./default.nix {};
       opaleye = pkgs.haskell.lib.overrideCabal super.opaleye (drv: {
         src = pkgs.fetchFromGitHub {
           owner = "tomjaguarpaw";
@@ -30,6 +30,6 @@ let
       });
     };
   };
-  drv = hs.opaleye-sot;
+  drv = hs.tisch;
 in
   if pkgs.lib.inNixShell then drv.env else drv

@@ -21,7 +21,7 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 --
 -- | This is an internal module. You are very discouraged from using it directly.
-module Opaleye.SOT.Internal.Table
+module Tisch.Internal.Table
  ( RCap(..)
  , WCap(..)
  , WDef(..)
@@ -112,12 +112,12 @@ import qualified Opaleye.Internal.PackMap as OI
 import qualified Opaleye.Internal.Table as OI
 import qualified Opaleye.Internal.TableMaker as OI
 
-import qualified Opaleye.SOT.Internal.Profunctors as PP
-import           Opaleye.SOT.Internal.Record (Record(RNil, RCons))
-import qualified Opaleye.SOT.Internal.Record as Record
-import           Opaleye.SOT.Internal.Singletons ((:&&&$$$))
-import           Opaleye.SOT.Internal.Kol
-import           Opaleye.SOT.Internal.Koln
+import qualified Tisch.Internal.Profunctors as PP
+import           Tisch.Internal.Record (Record(RNil, RCons))
+import qualified Tisch.Internal.Record as Record
+import           Tisch.Internal.Singletons ((:&&&$$$))
+import           Tisch.Internal.Kol
+import           Tisch.Internal.Koln
 
 --------------------------------------------------------------------------------
 
@@ -302,7 +302,7 @@ instance
 
 ---
 -- | @'HsI' t@ is the Haskell representation of Haskell values to be inserted to
--- the database, as taken by "Opaleye.SOT.Run.runInsert".
+-- the database, as taken by "Tisch.Run.runInsert".
 --
 -- Mnemonic: Haskell Insert.
 newtype HsI t = HsI { unHsI :: Record (Columns_NamedHsI t) }
@@ -323,7 +323,7 @@ instance
     {-# INLINE def #-}
 
 ---
--- | Output type of @'Opaleye.SOT.query' (... :: 'Table' t)@.
+-- | Output type of @'Tisch.query' (... :: 'Table' t)@.
 --
 -- Mnemonic: PostGresql Read.
 newtype PgR t = PgR { unPgR :: Record (Columns_NamedPgR t) }
@@ -374,7 +374,7 @@ instance
 
 ---
 -- | Representation of PostgreSQL values to be written to the database. This
--- type can be used as input for "Opaleye.SOT.Run.runInsertRaw" and friends.
+-- type can be used as input for "Tisch.Run.runInsertRaw" and friends.
 --
 -- An @'HsI' t@ can always be converted to a @'PgW' t@ using 'pgWfromHsI'.
 --
@@ -553,7 +553,7 @@ type family Columns (t :: k) :: [Column Symbol WCap RCap Type Type]
 --
 -- Note: You are not required to use this function to build an @'HsI' t@ if
 -- working with 'HsI', 'Record.RCons' and 'Record.RNil' (not exported, from
--- "Opaleye.SOT.Internal.Record") are sufficient to you, this is
+-- "Tisch.Internal.Record") are sufficient to you, this is
 -- just a convenience.
 mkHsI :: Table t -> MkHsI t
 mkHsI _ = Record.rBuildSymbol
@@ -610,7 +610,7 @@ instance (ToKol a b) => Record.ApplyAB FnPgWfromHsIField (WDef (Maybe a)) (WDef 
   applyAB _ = fmap koln
 
 -- | Convert a custom Haskell type to a representation appropiate for /inserting/
--- it as a new row using 'Opaleye.SOT.Run.runInsert'.
+-- it as a new row using 'Tisch.Run.runInsert'.
 pgWfromHsI :: TableRW t => HsI t -> PgW t
 pgWfromHsI = PgW . Record.rMap FnPgWfromHsIField . unHsI
 {-# INLINE pgWfromHsI #-}
@@ -627,7 +627,7 @@ instance Record.ApplyAB FnPgWfromPgRField (Koln a) (WDef (Koln a)) where
   applyAB _ = WVal
 
 -- | Convert a @('PgR' t)@ resulting from a 'O.queryTable'-like operation
--- to a @('PgW' t)@ that can be used in a 'Opaleye.SOT.runUpdate'-like
+-- to a @('PgW' t)@ that can be used in a 'Tisch.runUpdate'-like
 -- operation.
 pgWfromPgR :: TableRW t => PgR t -> PgW t
 pgWfromPgR = PgW . Record.rMap FnPgWfromPgRField . unPgR
@@ -838,7 +838,7 @@ newtype RawTable (d :: k) w r = RawTable { unRawTable :: O.Table w r }
   deriving (Functor)
 
 -- | Obtain the read-write 'RawTable' for a 'Table', required by
--- 'Opaleye.SOT.Run.runInsertRaw' and friends.
+-- 'Tisch.Run.runInsertRaw' and friends.
 rawTableRW :: TableRW t => Table t -> RawTable (Database t) (PgW t) (PgR t)
 rawTableRW (_ :: Table t) = RawTable $ O.TableWithSchema
   (symbolVal (Proxy :: Proxy (SchemaName t)))

@@ -11,16 +11,16 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{- | @opaleye-sot@ is a different API for the core @opaleye@
+{- | @tisch@ is a different API for the core @opaleye@
 infraestructure with the following goals in mind:
 
 * Close to @opaleye@.
 
-  @opaleye-sot@ is fully compatible with @opalaye@ and doesn't aim
-  to replace it, just to complement it. @opaleye-sot@ is designed in
+  @tisch@ is fully compatible with @opalaye@ and doesn't aim
+  to replace it, just to complement it. @tisch@ is designed in
   such a way that we are expected to work with tools both from
-  "Opaleye" and "Opaleye.SOT" at the same time. If anything, perhaps
-  some of the ideas on @opaleye-sot@ can eventually be ported
+  "Opaleye" and "Tisch" at the same time. If anything, perhaps
+  some of the ideas on @tisch@ can eventually be ported
   to the core @opaleye@ project.
 
 * Type safety everywhere.
@@ -30,24 +30,24 @@ infraestructure with the following goals in mind:
   keep us for accidentaly referring to a wrong column, comparing two
   columns we are not supposed to compare, confusing two tables
   that happen to have the same shape, accidentally mixing nullable
-  and not nullable columns, or similar scenarios. @opaleye-sot@, by
+  and not nullable columns, or similar scenarios. @tisch@, by
   making a heavy use of the GHC type system, provides an additional
   layer of safety that can prevent these undesired scenarios.
 
 * Boilerplate removal.
 
-  Working with @opaleye@ can get a bit boilerplatey. @opaleye-sot@
+  Working with @opaleye@ can get a bit boilerplatey. @tisch@
   never requires us to say the same thing more than once, and it
   provides us with generic machinery so that we can skip altogether
   the provision of the types that @opaleye@ requires. Also,
-  @opaleye-sot@ does not rely on Template Haskell to achieve this,
+  @tisch@ does not rely on Template Haskell to achieve this,
   but on the type system instead.
 
 * Maintenance.
 
   As a consequence of the extended type safety and small amount of
-  boilerplate that @opaleye-sot@ requires, maintaining code that uses
-  the @opaleye-sot@ API is easy. For example, when writing queries,
+  boilerplate that @tisch@ requires, maintaining code that uses
+  the @tisch@ API is easy. For example, when writing queries,
   columns are identified by their PostgreSQL name, so, if we ever
   change the name of a column in the table description, then our
   querying code using the old name will not compile.
@@ -87,13 +87,13 @@ import           Data.Proxy
 import qualified Data.Time as Time
 import           Data.Time (Day, LocalTime)
 import           Data.Int
-import           Opaleye.SOT
+import           Tisch
 import           Prelude hiding (id)
 
 --------------------------------------------------------------------------------
 -- Defining tables, types, etc.
 --------------------------------------------------------------------------------
--- Let's explore how to teach @opaleye-sot@ about a table.
+-- Let's explore how to teach @tisch@ about a table.
 
 -- | Type-level unique identifier for our “department” table.
 data Department
@@ -534,7 +534,7 @@ type instance Columns Transaction =
 --------------------------------------------------------------------------------
 -- Querying.
 
--- We somewhat offer opaleye-sot counterparts for the HRR examples at
+-- We somewhat offer tisch counterparts for the HRR examples at
 -- https://khibino.github.io/haskell-relational-record/examples.html
 --------------------------------------------------------------------------------
 

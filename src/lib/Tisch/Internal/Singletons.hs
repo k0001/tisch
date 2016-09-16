@@ -7,7 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
-module Opaleye.SOT.Internal.Singletons
+module Tisch.Internal.Singletons
  ( First
  , FirstSym0
  , FirstSym1

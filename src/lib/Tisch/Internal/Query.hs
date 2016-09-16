@@ -8,7 +8,7 @@
 --
 -- This module exports stuff that doesn't really fit into the other internal
 -- modules.
-module Opaleye.SOT.Internal.Query
+module Tisch.Internal.Query
  ( Query(..)
  , query
  , restrict
@@ -33,11 +33,11 @@ import qualified Data.Profunctor.Product.Default as PP
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Join as OI
 
-import Opaleye.SOT.Internal.Koln
-import Opaleye.SOT.Internal.Kol
-import Opaleye.SOT.Internal.Table
+import Tisch.Internal.Koln
+import Tisch.Internal.Kol
+import Tisch.Internal.Table
   (Table, TableR, Database, PgR, RawTable(..), rawTableRO)
-import Opaleye.SOT.Internal.Compat (unsafeUnNullableColumn)
+import Tisch.Internal.Compat (unsafeUnNullableColumn)
 
 --------------------------------------------------------------------------------
 

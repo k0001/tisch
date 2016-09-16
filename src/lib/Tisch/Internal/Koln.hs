@@ -12,7 +12,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
-module Opaleye.SOT.Internal.Koln
+module Tisch.Internal.Koln
   ( Koln(..)
   , koln
   , nul
@@ -38,7 +38,7 @@ import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 import qualified Opaleye.Internal.RunQuery as OI
 
-import Opaleye.SOT.Internal.Kol
+import Tisch.Internal.Kol
   (Kol(..), PgTyped(..), ToKol(..), PGArrayn, pgPrimTypeName)
 
 --------------------------------------------------------------------------------
@@ -160,7 +160,7 @@ instance
                                          (O.Column (O.Nullable (PgType b))))
   {-# INLINE def #-}
 
--- | OVERLAPPABLE. Orphan in "Opaleye.SOT.Internal.Koln".
+-- | OVERLAPPABLE. Orphan in "Tisch.Internal.Koln".
 instance {-# OVERLAPPABLE #-}
     ( O.QueryRunnerColumnDefault pg hs
     ) => O.QueryRunnerColumnDefault pg (Maybe hs) where

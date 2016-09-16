@@ -3,8 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module exports some tools that are not directly related to
--- @opaleye-sot@, yet they complement it.
-module Opaleye.SOT.Extra
+-- @tisch@, yet they complement it.
+module Tisch.Extra
   ( -- * Field parsers.
     pgFromFieldMap
   , pgFromFieldWrapped

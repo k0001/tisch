@@ -3,7 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 
-module Opaleye.SOT.Internal.Profunctors
+module Tisch.Internal.Profunctors
   ( ProductProfunctorAdaptor(ppa)
   , def_Tagged_MaybeTagged
   ) where

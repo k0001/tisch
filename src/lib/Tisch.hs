@@ -1,11 +1,11 @@
--- This is the entry point for the @opaleye-sot@ library.
+-- This is the entry point for the @tisch@ library.
 --
--- This module re-exports much, but not all of the @Opaleye.SOT.Run@ and
--- @Opaleye.SOT.Internal.*@ modules. If you are looking for some tool that you
+-- This module re-exports much, but not all of the @Tisch.Run@ and
+-- @Tisch.Internal.*@ modules. If you are looking for some tool that you
 -- can't find here, please refer to those modules instead.
 --
 -- This module doesn't export any infix operator, and likely never will.
-module Opaleye.SOT
+module Tisch
  ( -- * Running queries
    --
    -- $runningQueries
@@ -215,18 +215,18 @@ module Opaleye.SOT
 
 import qualified Opaleye as O
 
-import Opaleye.SOT.Internal.Aggregation
-import Opaleye.SOT.Internal.Compat
-import Opaleye.SOT.Internal.Kol
-import Opaleye.SOT.Internal.Koln
-import Opaleye.SOT.Internal.Table
-import Opaleye.SOT.Internal.Query
-import Opaleye.SOT.Run
+import Tisch.Internal.Aggregation
+import Tisch.Internal.Compat
+import Tisch.Internal.Kol
+import Tisch.Internal.Koln
+import Tisch.Internal.Table
+import Tisch.Internal.Query
+import Tisch.Run
 
 
 -- $runningQueries
 --
--- The "Opaleye.SOT.Run" module exports lower-level variants of these @runXxx@
+-- The "Tisch.Run" module exports lower-level variants of these @runXxx@
 -- functions, in case you need those.
 
 

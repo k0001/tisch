@@ -28,13 +28,13 @@
 -- Notice that none of the operations in this module ensure that the keys in a
 -- 'Record' are unique, nor that operations such as mapping over the 'Record'
 -- preserves its length. This is for performance reasons, and it is not a
--- problem insofar as "Opaleye.SOT.Internal" is concerned.
+-- problem insofar as "Tisch.Internal" is concerned.
 --
 -- Much of this code comes from the HList package (MIT licensed, by Oleg
 -- Kiselyov, Ralf Laemmel, Keean Schupke). Thanks to them for their work on
 -- HList.
 
-module Opaleye.SOT.Internal.Record where
+module Tisch.Internal.Record where
 
 import           Control.Lens (Lens)
 import           Data.Kind
@@ -45,7 +45,7 @@ import qualified Data.Profunctor.Product.Default as PP
 import           Data.Proxy
 import           Data.Tagged
 import           GHC.TypeLits (Symbol)
-import           Opaleye.SOT.Internal.Profunctors as PP
+import           Tisch.Internal.Profunctors as PP
 
 --------------------------------------------------------------------------------
 data Record :: [(k, Type)] -> Type where
@@ -131,7 +131,7 @@ instance
 --------------------------------------------------------------------------------
 -- 'PP.ProductProfunctorAdaptor' instances
 
--- | Instance required by 'Opaleye.SOT.rawTableRW', for read-write purposes.
+-- | Instance required by 'Tisch.rawTableRW', for read-write purposes.
 instance
     ( PP.ProductProfunctor p
     ) => PP.ProductProfunctorAdaptor p (Record '[]) (Record '[]) (Record '[])
@@ -139,7 +139,7 @@ instance
     ppa = const (P.dimap (const ()) (const RNil) PP.empty)
     {-# INLINE ppa #-}
 
--- | Instance required by 'Opaleye.SOT.rawTableRW', for read-write purposes.
+-- | Instance required by 'Tisch.rawTableRW', for read-write purposes.
 instance
     forall p apbcs abs acs (a :: k) b c.
     ( PP.ProductProfunctor p
@@ -156,7 +156,7 @@ instance
         ((PP.***!) (PP.ppa tpbc   :: p (Tagged a b) (Tagged a c))
                    (PP.ppa rapbcs :: p (Record abs) (Record acs)))
 
--- | Instance required by 'Opaleye.SOT.rawTableRO', for read-only purposes.
+-- | Instance required by 'Tisch.rawTableRO', for read-only purposes.
 instance
     ( PP.ProductProfunctor p
     ) => PP.ProductProfunctorAdaptor p (Record '[]) Void (Record '[])
@@ -164,7 +164,7 @@ instance
     ppa = const (P.dimap absurd (const RNil) PP.empty)
     {-# INLINE ppa #-}
 
--- | Instance required by 'Opaleye.SOT.rawTableRO', for read-only purposes.
+-- | Instance required by 'Tisch.rawTableRO', for read-only purposes.
 instance
     forall p apbcs acs (a :: k) b c.
     ( PP.ProductProfunctor p

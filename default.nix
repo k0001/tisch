@@ -4,7 +4,7 @@
 tagged, text, time, transformers, uuid
 }:
 mkDerivation {
-  pname = "opaleye-sot";
+  pname = "tisch";
   version = "0.1";
   src = ./.;
   libraryHaskellDepends = [
@@ -15,7 +15,7 @@ mkDerivation {
   testHaskellDepends = [
     base lens mtl opaleye postgresql-simple time
   ];
-  homepage = "https://github.com/k0001/opaleye-sot";
+  homepage = "https://github.com/k0001/tisch";
   description = "Opaleye's sugar on top";
   license = stdenv.lib.licenses.bsd3;
 }

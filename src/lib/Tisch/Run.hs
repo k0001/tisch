@@ -15,7 +15,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Opaleye.SOT.Run
+module Tisch.Run
   ( -- * Connection
     Conn
   , Conn'
@@ -88,11 +88,11 @@ import qualified Opaleye as O
 import qualified Opaleye.Internal.Unpackspec as OI
 import qualified Opaleye.Internal.RunQuery as OI
 
-import Opaleye.SOT.Internal.Table
+import Tisch.Internal.Table
   (Table, TableRW, PgR, PgW, HsI, RawTable(..), rawTableRW, pgWfromHsI, pgWfromPgR)
-import Opaleye.SOT.Internal.Kol (Kol(..))
-import Opaleye.SOT.Internal.Query (Query(..))
-import Opaleye.SOT.Internal.Debug (renderSqlQuery')
+import Tisch.Internal.Kol (Kol(..))
+import Tisch.Internal.Query (Query(..))
+import Tisch.Internal.Debug (renderSqlQuery')
 
 --------------------------------------------------------------------------------
 
@@ -152,7 +152,7 @@ type family Forbid (p :: k) (ps :: [Perm]) :: Constraint where
   Forbid ('[] :: [Perm]) ps = ()
   Forbid ((p ': ps) :: [Perm]) qs = (Forbid p qs, Forbid ps qs)
   Forbid (p :: Perm) (p ': ps) =
-     "Opaleye.SOT.Run.Forbid" ~
+     "Tisch.Run.Forbid" ~
      "Forbid: The forbidden permission is allowed"
   Forbid (p :: Perm) (q ': ps) = Forbid p ps
   Forbid (p :: Perm) '[] = ()
