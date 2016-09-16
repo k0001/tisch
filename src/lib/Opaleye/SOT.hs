@@ -175,7 +175,8 @@ module Opaleye.SOT
  , variancepopgg
    -- * Column types
  , PgTyped(..)
- , O.PGOrd
+ , O.PGArray
+ , PGArrayn
  , O.PGBool
  , O.PGBytea
  , O.PGCitext
@@ -187,14 +188,12 @@ module Opaleye.SOT
  , O.PGInt8
  , O.PGJsonb
  , O.PGJson
- , O.PGNumeric
+ , PGNumeric
  , O.PGText
  , O.PGTimestamptz
  , O.PGTimestamp
  , O.PGTime
  , O.PGUuid
- , O.PGArray
- , PGArrayn
    -- ** Parsing
  , QueryRunnerColumnDefault(..)
  , qrcFromField
@@ -217,6 +216,7 @@ module Opaleye.SOT
 import qualified Opaleye as O
 
 import Opaleye.SOT.Internal.Aggregation
+import Opaleye.SOT.Internal.Compat
 import Opaleye.SOT.Internal.Kol
 import Opaleye.SOT.Internal.Koln
 import Opaleye.SOT.Internal.Table

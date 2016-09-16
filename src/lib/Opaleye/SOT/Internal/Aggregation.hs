@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
@@ -35,11 +37,13 @@ module Opaleye.SOT.Internal.Aggregation
   ) where
 
 import qualified Data.Profunctor as P
+import           GHC.TypeLits (KnownNat, CmpNat, type (+))
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.Aggregate as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
+import Opaleye.SOT.Internal.Compat (PGNumeric)
 import Opaleye.SOT.Internal.Kol
   (Kol(..), PgTyped(..), PgOrd, PgEq, PgNum, PgIntegral, PGArrayn)
 import Opaleye.SOT.Internal.Koln (Koln(..))
@@ -118,6 +122,7 @@ class (PgNum a, PgNum b) => AggSum a b
 instance {-# OVERLAPPABLE #-} PgNum a => AggSum a a
 instance AggSum O.PGInt2 O.PGInt8
 instance AggSum O.PGInt4 O.PGInt8
+instance KnownNat s => AggSum O.PGInt8 (PGNumeric s)
 instance AggSum O.PGFloat4 O.PGFloat8
 
 -- | Add the values in input columns.
@@ -151,6 +156,18 @@ countRows = Query . fmap Kol . O.countRows . unQuery
 class (PgNum a, PgNum b) => AggAvg a b
 instance {-# OVERLAPPABLE #-} PgNum a => AggAvg a a
 instance AggAvg O.PGFloat4 O.PGFloat8
+-- | Warning: Depending on your choice of @s@, you might be getting less
+-- resolution than expected.
+instance KnownNat s => AggAvg O.PGInt2 (PGNumeric s)
+-- | Warning: Depending on your choice of @s@, you might be getting less
+-- resolution than expected.
+instance KnownNat s => AggAvg O.PGInt4 (PGNumeric s)
+-- | Warning: Depending on your choice of @s@, you might be getting less
+-- resolution than expected.
+instance KnownNat s => AggAvg O.PGInt8 (PGNumeric s)
+-- | Warning: Depending on your choice of @s'@, you might be getting less
+-- resolution than expected.
+instance (KnownNat s, KnownNat s', CmpNat s (s' + 1) ~ 'GT) => AggAvg (PGNumeric s) (PGNumeric s')
 
 -- | The average (arithmetic mean) of all input values
 avggg :: AggAvg a b => O.Aggregator (Kol a) (Kol b)

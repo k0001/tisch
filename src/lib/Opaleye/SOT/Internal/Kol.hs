@@ -646,6 +646,8 @@ instance CastKol O.PGInt4 O.PGInt8
 instance CastKol O.PGInt4 (PGNumeric s)
 instance CastKol O.PGInt8 (PGNumeric s)
 
+instance (GHC.CmpNat s (s' GHC.+ 1) ~ 'LT) => CastKol (PGNumeric s) (PGNumeric s')
+
 -- Shooting yourself in the foot? I will help you.
 
 type family TypeErrorRange a b :: Constraint where
@@ -751,6 +753,7 @@ instance PgEq O.PGTimestamptz
 instance PgEq O.PGTimestamp
 instance PgEq O.PGTime
 instance PgEq O.PGUuid
+instance PgEq (PGNumeric s)
 
 -- | Whether two column values are equal.
 --
