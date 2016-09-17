@@ -316,19 +316,10 @@ instance
 -- instance 'ToKol' @UserId@ @UserId@
 -- @
 --
--- And that instance would give you @'kol' :: UserId -> 'Kol' UserId@.
--- However, for that to work, a 'ToKol' instance relating the @UserId@ on the
--- left (the Haskell value) to the primitive type of the @UserId@ on the right
--- (i.e., 'PgType' @UserId@ ~ 'O.PGInt4') must also exist:
---
--- @
--- instance 'ToKol' @UserId@ 'O.PGInt4'
--- @
---
--- If @UserId@ is an instance of 'Wrapped', then that's all you need to say:
--- Both instances will get default implementations of 'kol'.  Otherwise, you'll
--- need to implement 'kol' yourself.
-class (PgTyped b, ToKol a (PgType b)) => ToKol (a :: Type) (b :: kb) where
+-- And that instance would give you @'kol' :: UserId -> 'Kol' UserId@. If
+-- @UserId@ is an instance of 'Wrapped', then you get a default implementation
+-- for 'kol', otherwise you must implement it yourself.
+class PgTyped b => ToKol (a :: Type) (b :: kb) where
   -- | Convert a constant Haskell value (say, a 'Bool') to its equivalent
   -- PostgreSQL representation (for example, to a @'Kol' 'O.PGBool'@, or any
   -- other compatible 'PgTyped').
@@ -344,11 +335,7 @@ class (PgTyped b, ToKol a (PgType b)) => ToKol (a :: Type) (b :: kb) where
   kol = -- Downcasting here is safe due to the Law 1 of 'PgTyped'.
         unsafeDowncastKol . kol . view _Wrapped'
 
--- | Law 1 of 'PgTyped' grants this instance.
-instance {-# OVERLAPPABLE #-} forall a b. (ToKol a b, PgTyped b) => ToKol a b where
-  kol = unsafeDowncastKol . kol
-
-instance (ToKol a b) => ToKol (Tagged t a) b
+instance ToKol a b => ToKol (Tagged t a) b where kol = kol . view _Wrapped'
 instance ToKol String O.PGText where kol = Kol . O.pgString
 instance ToKol Data.Text.Text O.PGText where kol = Kol . O.pgStrictText
 instance ToKol Data.Text.Lazy.Text O.PGText where kol = Kol . O.pgLazyText
@@ -393,7 +380,7 @@ instance
   , Fixed.HasResolution e, GHC.CmpNat s (PGNumericScale e GHC.+ 1) ~ 'LT
   ) => ToKol (Fixed e) (PGNumeric s) where kol = Kol . pgFixed
 
-instance forall a b. ToKol a b => ToKol [a] (O.PGArray b) where
+instance {-# OVERLAPPABLE #-} forall a b. ToKol a b => ToKol [a] (O.PGArray b) where
   kol = kolArray . map (kol :: a -> Kol b)
 
 -- | Build a @'Kol' ('O.PGArray' x)@ from any 'Foldable'.

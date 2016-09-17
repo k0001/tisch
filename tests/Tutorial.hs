@@ -61,17 +61,31 @@ infraestructure with the following goals in mind:
 -}
 module Tutorial
   ( Department
+  , DepartmentId(..)
   , Branch
+  , BranchId(..)
   , Employee
+  , EmployeeId(..)
   , ProductType
+  , ProductTypeId(..)
   , Product
+  , ProductId(..)
+  , ProductCode(..)
   , Customer
+  , CustomerId(..)
+  , CustomerType(..)
   , Individual
   , Business
   , Officer
+  , OfficerId(..)
   , Account
+  , AccountId(..)
+  , AccountStatus(..)
   , Transaction
+  , TransactionId(..)
+  , TransactionType(..)
   , Table(..)
+  , q_Account_1
   , q_Account_desc
   , q_Account_asc_multi
   , q_Employee_1
@@ -300,6 +314,7 @@ instance Wrapped ProductCode where
   _Wrapped' = iso unProductCode ProductCode
 instance PgTyped ProductCode where
   type PgType ProductCode = PGText
+instance PgEq ProductCode
 instance ToKol ProductCode ProductCode
 instance QueryRunnerColumnDefault PGText ProductCode where
   queryRunnerColumnDefault = qrcWrapped
@@ -344,7 +359,7 @@ _CustomerType_Char = prism'
 instance PgTyped CustomerType where
   type PgType CustomerType = PGText
 instance ToKol CustomerType CustomerType where
-  kol = kol . review _CustomerType_Char
+  kol = unsafeDowncastKol . kol . review _CustomerType_Char
 
 data Customer
 data instance Table Customer = Customer
@@ -461,7 +476,7 @@ _AccountStatus_String = prism'
 instance PgTyped AccountStatus where
   type PgType AccountStatus = PGText
 instance ToKol AccountStatus AccountStatus where
-  kol = kol . review _AccountStatus_String
+  kol = unsafeDowncastKol . kol . review _AccountStatus_String
 instance QueryRunnerColumnDefault PGText AccountStatus where
   queryRunnerColumnDefault = qrcPrism _AccountStatus_String
 
@@ -493,6 +508,7 @@ instance Wrapped TransactionId where
   _Wrapped' = iso unTransactionId TransactionId
 instance PgTyped TransactionId where
   type PgType TransactionId = PGInt4
+-- instance ToKol TransactionId PGInt4
 instance ToKol TransactionId TransactionId
 instance QueryRunnerColumnDefault PGInt4 TransactionId where
   queryRunnerColumnDefault = qrcWrapped
@@ -513,7 +529,7 @@ _TransactionType_String = prism'
 instance PgTyped TransactionType where
   type PgType TransactionType = PGText
 instance ToKol TransactionType TransactionType where
-  kol = kol . review _TransactionType_String
+  kol = unsafeDowncastKol . kol . review _TransactionType_String
 
 data Transaction
 data instance Table Transaction = Transaction
@@ -549,6 +565,7 @@ q_Account_asc_multi = orderBy
              (asc (view #product_cd))) -- labels behave as lenses too.
     (query Account)
 
+-- | Literals, using possibly nullable columns.
 q_Employee_1 :: Query Db1 () (PgR Employee)
 q_Employee_1 = proc () -> do
   e <- query Employee -< ()
@@ -585,6 +602,14 @@ q_Account_Individual_leftJoin =
                                               -- if the column name is not a
                                               -- valid Haskell name
 
+-- | Checking for membership.
+q_Account_1 :: Query Db1 () (PgR Account)
+q_Account_1 = proc () -> do
+  a <- query Account -< ()
+  restrict -< member (#product_cd a)
+                     (map (kol . ProductCode) ["CHK", "SAV", "CD", "MM"])
+  id -< a
+
 --------------------------------------------------------------------------------
 
 exampleRun
@@ -592,13 +617,15 @@ exampleRun
   => Conn ps
   -> IO ( [HsR Account]
         , [HsR Account]
+        , [HsR Account]
         , [HsR Employee]
         , [(HsR Employee, HsR Department)]
         , [(HsR Employee, HsR Department)]
         , [(HsR Account, Maybe (HsR Individual))] )
-exampleRun = \conn -> (,,,,,)
+exampleRun = \conn -> (,,,,,,)
   <$> runQuery conn q_Account_desc
   <*> runQuery conn q_Account_asc_multi
+  <*> runQuery conn q_Account_1
   <*> runQuery conn q_Employee_1
   <*> runQuery conn q_Employee_Department_join1
   <*> runQuery conn q_Employee_Department_join2
