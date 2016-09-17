@@ -125,6 +125,7 @@ instance AggSum O.PGInt2 O.PGInt8
 instance AggSum O.PGInt4 O.PGInt8
 instance KnownNat s => AggSum O.PGInt8 (PGNumeric s)
 instance AggSum O.PGFloat4 O.PGFloat8
+instance AggSum O.PGInt8 (PGNumeric 0)
 
 -- | Add the values in input columns.
 sumgg :: AggSum a b => O.Aggregator (Kol a) (Kol b)
@@ -229,6 +230,18 @@ byteagg = unsafeMakeAggr . HDB.AggrStringAggr . OI.unColumn . unKol
 class (PgNum a, PgNum b) => AggStdDev a b
 instance AggStdDev O.PGFloat4 O.PGFloat8
 instance AggStdDev O.PGFloat8 O.PGFloat8
+-- | Warning: Depending on your choice of @s@, you might be getting less
+-- resolution than expected.
+instance KnownNat s => AggStdDev O.PGInt2 (PGNumeric s)
+-- | Warning: Depending on your choice of @s@, you might be getting less
+-- resolution than expected.
+instance KnownNat s => AggStdDev O.PGInt4 (PGNumeric s)
+-- | Warning: Depending on your choice of @s@, you might be getting less
+-- resolution than expected.
+instance KnownNat s => AggStdDev O.PGInt8 (PGNumeric s)
+-- | Warning: Depending on your choice of @s'@, you might be getting less
+-- resolution than expected.
+instance (KnownNat s, KnownNat s', CmpNat s (s' + 1) ~ 'GT) => AggStdDev (PGNumeric s) (PGNumeric s')
 
 -- | Sample standard deviation of the input values.
 stddevgg :: AggStdDev a b => O.Aggregator (Kol a) (Kol b)
