@@ -33,11 +33,12 @@ import qualified Data.Profunctor.Product.Default as PP
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Join as OI
 
-import Tisch.Internal.Koln
-import Tisch.Internal.Kol
+import Tisch.Internal.Koln (Koln(unKoln))
+import Tisch.Internal.Kol (Kol(unKol))
 import Tisch.Internal.Table
   (Table, TableR, Database, PgR, RawTable(..), rawTableRO)
 import Tisch.Internal.Compat (unsafeUnNullableColumn)
+import Tisch.Internal.Fun (PgOrd)
 
 --------------------------------------------------------------------------------
 

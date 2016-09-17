@@ -124,24 +124,24 @@ module Tisch
  , now
  , toTimestamptz
  , toTimestamp
- , timestamptzEpoch
- , timestampCentury
- , timestampDay
- , timestampDayOfTheWeek
- , timestampDayOfTheWeekISO8601
- , timestampDayOfTheYear
- , timestampDecade
- , timestampHour
- , timestampMicroseconds
- , timestampMillenium
- , timestampMilliseconds
- , timestampMinute
- , timestampMonth
- , timestampQuarter
- , timestampSecond
- , timestampWeekISO8601
- , timestampYear
- , timestampYearISO8601
+ , tstzEpoch
+ , tsCentury
+ , tsDay
+ , tsDayOfTheWeek
+ , tsDayOfTheWeekISO8601
+ , tsDayOfTheYear
+ , tsDecade
+ , tsHour
+ , tsMicroseconds
+ , tsMillenium
+ , tsMilliseconds
+ , tsMinute
+ , tsMonth
+ , tsQuarter
+ , tsSecond
+ , tsWeekISO8601
+ , tsYear
+ , tsYearISO8601
    -- * Aggregation
    --
    -- $aggregation
@@ -217,10 +217,11 @@ import qualified Opaleye as O
 
 import Tisch.Internal.Aggregation
 import Tisch.Internal.Compat
+import Tisch.Internal.Fun
 import Tisch.Internal.Kol
 import Tisch.Internal.Koln
-import Tisch.Internal.Table
 import Tisch.Internal.Query
+import Tisch.Internal.Table
 import Tisch.Run
 
 

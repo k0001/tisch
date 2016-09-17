@@ -24,6 +24,7 @@ library
       Tisch.Internal.Aggregation
       Tisch.Internal.Compat
       Tisch.Internal.Debug
+      Tisch.Internal.Fun
       Tisch.Internal.Kol
       Tisch.Internal.Koln
       Tisch.Internal.Profunctors

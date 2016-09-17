@@ -38,15 +38,15 @@ module Tisch.Internal.Aggregation
   ) where
 
 import qualified Data.Profunctor as P
-import           GHC.TypeLits (KnownNat, CmpNat, type (+))
+import GHC.TypeLits (KnownNat, CmpNat, type (+))
 import qualified Opaleye as O
 import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.Aggregate as OI
 import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
 import Tisch.Internal.Compat (PGNumeric)
-import Tisch.Internal.Kol
-  (Kol(..), PgTyped(..), PgOrd, PgEq, PgNum, PgIntegral, PGArrayn)
+import Tisch.Internal.Fun (PgOrd, PgEq, PgNum, PgIntegral)
+import Tisch.Internal.Kol (Kol(..), PgTyped(..), PGArrayn)
 import Tisch.Internal.Koln (Koln(..))
 import Tisch.Internal.Query (Query(..))
 
