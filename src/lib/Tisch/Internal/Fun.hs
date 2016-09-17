@@ -86,7 +86,7 @@ import Tisch.Internal.Compat (PGNumeric, AnyColumn(..), unsafeFunExpr)
 -- Semigroups, Monoids
 
 instance Semigroup (Kol O.PGText) where
-  (<>) = liftKol2 (OI.binOp HDB.OpCat)
+  (<>) = liftKol2 (OI.binOp (HDB.:||))
 
 instance Monoid (Kol O.PGText) where
   mempty = kol ""
@@ -104,7 +104,7 @@ instance Monoid (Kol O.PGCitext) where
 
 ---
 instance Semigroup (Kol O.PGBytea) where
-  (<>) = liftKol2 (OI.binOp HDB.OpCat)
+  (<>) = liftKol2 (OI.binOp (HDB.:||))
 
 instance Monoid (Kol O.PGBytea) where
   mempty = kol Data.ByteString.empty
@@ -303,7 +303,11 @@ eq = liftKol2 (O..==)
 
 -- | Whether the given value is a member of the given collection.
 member :: (PgEq a, Foldable f) => Kol a -> f (Kol a) -> Kol O.PGBool
-member a = lors . map (eq a) . toList
+member ka fkas = Kol $ OI.Column $ case toList fkas of
+   [] -> HDB.ConstExpr (HDB.BoolLit False)
+   xs -> HDB.BinExpr HDB.OpIn (un ka) (HDB.ListExpr (map un xs))
+ where
+   un = OI.unColumn . unKol
 
 --------------------------------------------------------------------------------
 -- Ordering
@@ -350,15 +354,15 @@ instance PgBitwise O.PGInt8
 
 -- | Bitwise AND. Sql operator: @&@
 bwand :: PgBitwise a => Kol a -> Kol a -> Kol a
-bwand = liftKol2 (OI.binOp HDB.OpBitAnd)
+bwand = liftKol2 (OI.binOp (HDB.:&))
 
 -- | Bitwise OR. Sql operator: @|@
 bwor :: PgBitwise a => Kol a -> Kol a -> Kol a
-bwor = liftKol2 (OI.binOp HDB.OpBitOr)
+bwor = liftKol2 (OI.binOp (HDB.:|))
 
 -- | Bitwise XOR. Sql operator: @#@
 bwxor :: PgBitwise a => Kol a -> Kol a -> Kol a
-bwxor = liftKol2 (OI.binOp HDB.OpBitXor)
+bwxor = liftKol2 (OI.binOp (HDB.:^))
 
 -- | Bitwise NOT. Sql operator: @~@
 bwnot :: PgBitwise a => Kol a -> Kol a
