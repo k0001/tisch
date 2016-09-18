@@ -68,7 +68,6 @@ module Tisch.Internal.Fun
  , nowStatement
  , nowClock
  , reMatch
- , reMatchi
  , reSub
  , reReplace
  , reReplaceg
@@ -524,17 +523,6 @@ reMatch
   -> Kol source
   -> Kol O.PGBool  -- ^ Is there a match?
 reMatch = liftKol2 (flip (OI.binOp (HDB.OpOther "~")))
-
--- | Whether the given regular expression matches the given text in a case
--- insensitive manner.
---
--- Sql operator: @~*@
-reMatchi
-  :: (O.PGText ~ regex, O.PGText ~ source)
-  => Kol regex
-  -> Kol source
-  -> Kol O.PGBool  -- ^ Is there a match?
-reMatchi = liftKol2 (flip (OI.binOp (HDB.OpOther "~*")))
 
 -- | Extract a substring matching the given regular expression. If there is no
 -- match, then @nul@ is returned.
