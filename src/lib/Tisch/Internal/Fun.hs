@@ -67,6 +67,11 @@ module Tisch.Internal.Fun
  , nowTransaction
  , nowStatement
  , nowClock
+ , reMatch
+ , reMatchi
+ , reSub
+ , reReplace
+ , reReplaceg
  ) where
 
 import Control.Lens ()
@@ -82,6 +87,7 @@ import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 import Tisch.Internal.Kol
   (CastKol, Kol(..), PgTyped(..), ToKol(..), liftKol1, liftKol2, liftKol3,
    unsaferCastKol, unsaferCoerceKol, kolArray)
+import Tisch.Internal.Koln (Koln(..))
 import Tisch.Internal.Compat (PGNumeric, AnyColumn(..), unsafeFunExpr)
 
 -------------------------------------------------------------------------------
@@ -505,3 +511,78 @@ nowStatement = Kol (unsafeFunExpr "statement_timestamp" [])
 -- SqlFunction: @clock_timestamp()@.
 nowClock :: Kol O.PGTimestamptz
 nowClock = Kol (unsafeFunExpr "clock_timestamp" [])
+
+--------------------------------------------------------------------------------
+-- Regular expressions
+
+-- | Whether the given regular expression matches the given text.
+--
+-- Sql operator: @~@
+reMatch
+  :: (O.PGText ~ regex, O.PGText ~ source)
+  => Kol regex
+  -> Kol source
+  -> Kol O.PGBool  -- ^ Is there a match?
+reMatch = liftKol2 (flip (OI.binOp (HDB.OpOther "~")))
+
+-- | Whether the given regular expression matches the given text in a case
+-- insensitive manner.
+--
+-- Sql operator: @~*@
+reMatchi
+  :: (O.PGText ~ regex, O.PGText ~ source)
+  => Kol regex
+  -> Kol source
+  -> Kol O.PGBool  -- ^ Is there a match?
+reMatchi = liftKol2 (flip (OI.binOp (HDB.OpOther "~*")))
+
+-- | Extract a substring matching the given regular expression. If there is no
+-- match, then @nul@ is returned.
+--
+-- Sql function: @substring()@.
+reSub
+  :: (O.PGText ~ regex, O.PGText ~ source)
+  => Kol regex
+  -- ^ Regular expression. If the pattern contains any parentheses, the portion
+  -- of the text that matched the first parenthesized subexpression (the one
+  -- whose left parenthesis comes first) is returned. See Section 9.1 of the
+  -- PostgreSQL manual to understand the syntax.
+  -> Kol source
+  -> Koln O.PGText -- ^ Possibly matched substring.
+reSub (Kol re) (Kol a) =
+  Koln (unsafeFunExpr "substring" [AnyColumn a, AnyColumn re])
+
+-- | Replaces with @replacement@ in the given @source@ string the /first/
+-- substring matching the regular expression @regex@.
+--
+-- Sql function: @regexp_replace(_, _, _)@.
+reReplace
+  :: (O.PGText ~ regex, O.PGText ~ source, O.PGText ~ replacement)
+  => Kol regex
+  -- ^ Regular expression. See Section 9.1 of the PostgreSQL manual to
+  -- understand the syntax.
+  -> Kol replacement
+  -- ^ Replacement expression. See Section 9.1 of the PostgreSQL manual to
+  -- understand the syntax.
+  -> Kol source
+  -> Kol O.PGText
+reReplace (Kol re) (Kol rep) (Kol s) = Kol $ unsafeFunExpr "regexp_replace"
+   [AnyColumn s, AnyColumn re, AnyColumn rep]
+
+-- | Like 'reReplace', but replaces /all/ of the substrings matching the
+-- pattern, not just the first one.
+--
+-- Sql function: @regexp_replace(_, _, _, 'g')@.
+reReplaceg
+  :: (O.PGText ~ regex, O.PGText ~ source, O.PGText ~ replacement)
+  => Kol regex
+  -- ^ Regular expression. See Section 9.1 of the PostgreSQL manual to
+  -- understand the syntax.
+  -> Kol replacement
+  -- ^ Replacement expression. See Section 9.1 of the PostgreSQL manual to
+  -- understand the syntax.
+  -> Kol source
+  -> Kol O.PGText
+reReplaceg (Kol re) (Kol rep) (Kol s) = Kol $ unsafeFunExpr "regexp_replace"
+   [AnyColumn s, AnyColumn re, AnyColumn rep, AnyColumn (O.pgString "g")]
+
