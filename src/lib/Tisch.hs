@@ -124,7 +124,9 @@ module Tisch
  , bwsl
  , bwsr
    -- ** Time
- , now
+ , nowTransaction
+ , nowStatement
+ , nowClock
  , toTimestamptz
  , toTimestamp
  , tstzEpoch

@@ -64,7 +64,9 @@ module Tisch.Internal.Fun
  , tsYear
  , tsYearISO8601
  , unsafeFunExpr__date_part
- , now
+ , nowTransaction
+ , nowStatement
+ , nowClock
  ) where
 
 import Control.Lens ()
@@ -486,5 +488,20 @@ tsYear = unsafeFunExpr__date_part "year"
 tsYearISO8601 :: (PgIntegral b) => Kol O.PGTimestamp -> Kol b
 tsYearISO8601 = unsafeFunExpr__date_part "isoyear"
 
-now :: Kol O.PGTimestamptz
-now = Kol (unsafeFunExpr "now" [])
+-- | Time when the current transaction started.
+--
+-- Sql function: @transaction_timestamp()@, @now()@.
+nowTransaction :: Kol O.PGTimestamptz
+nowTransaction = Kol (unsafeFunExpr "transaction_timestamp" [])
+
+-- | Time when the current statement started.
+--
+-- SqlFunction: @statement_timestamp()@.
+nowStatement :: Kol O.PGTimestamptz
+nowStatement = Kol (unsafeFunExpr "statement_timestamp" [])
+
+-- | Current clock time.
+--
+-- SqlFunction: @clock_timestamp()@.
+nowClock :: Kol O.PGTimestamptz
+nowClock = Kol (unsafeFunExpr "clock_timestamp" [])
