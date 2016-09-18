@@ -85,10 +85,11 @@ module Tutorial
   , TransactionId(..)
   , TransactionType(..)
   , Table(..)
-  , q_Account_1
   , q_Account_desc
   , q_Account_asc_multi
-  , q_Employee_1
+  , q_Account_in_static
+  , q_Account_agg_subq
+  , q_Employee_literals
   , q_Employee_Department_join1
   , q_Employee_Department_join2
   , q_Account_Individual_leftJoin
@@ -566,8 +567,8 @@ q_Account_asc_multi = orderBy
     (query Account)
 
 -- | Literals, using possibly nullable columns.
-q_Employee_1 :: Query Db1 () (PgR Employee)
-q_Employee_1 = proc () -> do
+q_Employee_literals :: Query Db1 () (PgR Employee)
+q_Employee_literals = proc () -> do
   e <- query Employee -< ()
   restrict -< isNull (#end_date e) -- labels behave as projections.
   restrict -< fromKoln (kol False) $
@@ -602,12 +603,20 @@ q_Account_Individual_leftJoin =
                                               -- if the column name is not a
                                               -- valid Haskell name
 
--- | Checking for membership.
-q_Account_1 :: Query Db1 () (PgR Account)
-q_Account_1 = proc () -> do
+-- | Checking for membership using 'IN' and a static list.
+q_Account_in_static :: Query Db1 () (PgR Account)
+q_Account_in_static = proc () -> do
   a <- query Account -< ()
   restrict -< member (#product_cd a)
-                     (map (kol . ProductCode) ["CHK", "SAV", "CD", "MM"])
+     (map (kol . ProductCode) ["CHK", "SAV", "CD", "MM"])
+  id -< a
+
+-- | Aggregation subquery.
+q_Account_agg_subq :: Query Db1 () (PgR Account)
+q_Account_agg_subq = proc () -> do
+  a <- query Account -< ()
+  max_accId <- aggregate maxgg (fmap #account_id (query Account)) -< ()
+  restrict -< eq (#account_id a) max_accId
   id -< a
 
 --------------------------------------------------------------------------------
@@ -618,15 +627,17 @@ exampleRun
   -> IO ( [HsR Account]
         , [HsR Account]
         , [HsR Account]
+        , [HsR Account]
         , [HsR Employee]
         , [(HsR Employee, HsR Department)]
         , [(HsR Employee, HsR Department)]
         , [(HsR Account, Maybe (HsR Individual))] )
-exampleRun = \conn -> (,,,,,,)
+exampleRun = \conn -> (,,,,,,,)
   <$> runQuery conn q_Account_desc
   <*> runQuery conn q_Account_asc_multi
-  <*> runQuery conn q_Account_1
-  <*> runQuery conn q_Employee_1
+  <*> runQuery conn q_Account_in_static
+  <*> runQuery conn q_Account_agg_subq
+  <*> runQuery conn q_Employee_literals
   <*> runQuery conn q_Employee_Department_join1
   <*> runQuery conn q_Employee_Department_join2
   <*> runQuery conn q_Account_Individual_leftJoin
