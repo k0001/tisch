@@ -303,11 +303,7 @@ eq = liftKol2 (O..==)
 
 -- | Whether the given value is a member of the given collection.
 member :: (PgEq a, Foldable f) => Kol a -> f (Kol a) -> Kol O.PGBool
-member ka fkas = Kol $ OI.Column $ case toList fkas of
-   [] -> HDB.ConstExpr (HDB.BoolLit False)
-   xs -> HDB.BinExpr HDB.OpIn (un ka) (HDB.ListExpr (map un xs))
- where
-   un = OI.unColumn . unKol
+member ka fkas = Kol (O.in_ (map unKol (toList fkas)) (unKol ka))
 
 --------------------------------------------------------------------------------
 -- Ordering

@@ -22,10 +22,11 @@ let
       tisch = self.callPackage ./default.nix {};
       opaleye = pkgs.haskell.lib.overrideCabal super.opaleye (drv: {
         src = pkgs.fetchFromGitHub {
-          owner = "k0001";
+          owner = "tomjaguarpaw";
           repo = "haskell-opaleye";
-          rev = "56487a849c9b22410c14c47df76d41613067245a";
-          sha256 = "030d1ws25i5ry4403v8f14lkjzcr7b734jk62i4fss7gimvix56k";
+          rev = "2844e4a221d14cfb1047630b52ba1e9bf5992f5a";
+          sha256 = "188c6g2l5dqn037vh1k8r96zwlljr2f6ikakipcxr08kcwb7awbm";
+
         };
       });
     };
