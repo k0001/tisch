@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
 --
@@ -12,6 +13,8 @@ module Tisch.Internal.Query
  ( Query(..)
  , query
  , restrict
+ , restrictf
+ , memberq
  , innerJoin
  , leftJoin
  , limit
@@ -31,14 +34,15 @@ import           Data.Profunctor (Profunctor)
 import           Data.Profunctor.Product (ProductProfunctor)
 import qualified Data.Profunctor.Product.Default as PP
 import qualified Opaleye as O
+import qualified Opaleye.Internal.Distinct as OI
 import qualified Opaleye.Internal.Join as OI
 
-import Tisch.Internal.Koln (Koln(unKoln))
+import Tisch.Internal.Koln (Koln(unKoln), isNull)
 import Tisch.Internal.Kol (Kol(unKol))
 import Tisch.Internal.Table
   (Table, TableR, Database, PgR, RawTable(..), rawTableRO)
 import Tisch.Internal.Compat (unsafeUnNullableColumn)
-import Tisch.Internal.Fun (PgOrd)
+import Tisch.Internal.Fun (PgEq, PgOrd, eq, lnot)
 
 --------------------------------------------------------------------------------
 
@@ -81,18 +85,25 @@ query = Query . O.queryTable . unRawTable . rawTableRO
 -- @
 -- 'fromKoln' ('kol' 'False') :: 'Koln' 'O.PGBool' -> 'Kol' 'O.PGBool'
 -- @
-restrict :: Query t (Kol O.PGBool) ()
+restrict :: Query d (Kol O.PGBool) ()
 restrict = Query O.restrict <<^ unKol
+
+-- | This is a 'filter'-like version of 'restrict': Only values that satisfy the
+-- predicate are kept.
+restrictf :: (a -> Kol O.PGBool) -> Query d a a
+restrictf p = proc a -> do
+  restrict -< p a
+  returnA -< a
 
 -- | Perform an SQL @INNER JOIN@.
 --
 -- @'innerJoin' t1 t2 f@ returns all of the rows from @t1@ paired with the rows
 -- from @f2@ when @f@ is true.
 innerJoin
-  :: Query t () a
-  -> Query t () b
+  :: Query d () a
+  -> Query d () b
   -> (a -> b -> Kol O.PGBool)
-  -> Query t () (a, b) -- ^
+  -> Query d () (a, b) -- ^
 innerJoin qa qb f = proc () -> do
   a <- qa -< ()
   b <- qb -< ()
@@ -105,15 +116,34 @@ innerJoin qa qb f = proc () -> do
 -- possibly paired with the rows from @f2@ (the right table) in case @f@ is
 -- true.
 leftJoin
-  :: ( PP.Default O.Unpackspec a a
+  :: forall a b nb d
+  .  ( PP.Default O.Unpackspec a a
      , PP.Default O.Unpackspec b b
      , PP.Default OI.NullMaker b nb )
-  => Query t () a -- ^ Left table.
-  -> Query t () b -- ^ Right table.
+  => Query d () a -- ^ Left table.
+  -> Query d () b -- ^ Right table.
   -> (a -> b -> Kol O.PGBool)
-  -> Query t () (a, nb) -- ^
+  -> Query d () (a, nb) -- ^
 leftJoin (Query qa) (Query qb) f =
    Query (O.leftJoinExplicit PP.def PP.def PP.def qa qb (unKol . uncurry f))
+
+-- | Whether the given 'Kol' is present in the given 'Query'.
+--
+-- Sql operator: @IN@.
+memberq
+  :: forall a d
+  .  PgEq a
+  => Kol a -- ^ Needle.
+  -> Query d () (Kol a)  -- ^ Haystack.
+  -> Query d () (Kol O.PGBool)
+memberq ks q0 = arr (lnot . isNull . snd) <<< q2
+ where
+   q1 = arr (const 1) <<< restrictf (eq ks) <<< q0
+   q2 :: Query d () (Kol O.PGInt4, Koln O.PGInt4)
+   q2 = leftJoin (arr (const 1)) (distinct q1) eq
+
+distinct :: PP.Default OI.Distinctspec a a => Query t () a -> Query t () a
+distinct = Query . O.distinctExplicit PP.def . unQuery
 
 --------------------------------------------------------------------------------
 

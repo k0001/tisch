@@ -73,6 +73,7 @@ module Tisch
  , innerJoin
  , leftJoin
  , restrict
+ , restrictf
  , limit
  , offset
    -- * Selecting
@@ -95,6 +96,7 @@ module Tisch
  , PgEq
  , eq
  , member
+ , memberq
    -- ** Comparisons
  , PgOrd
  , lt
