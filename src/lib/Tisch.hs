@@ -74,6 +74,7 @@ module Tisch
  , leftJoin
  , restrict
  , restrictf
+ , distinct
  , limit
  , offset
    -- * Selecting

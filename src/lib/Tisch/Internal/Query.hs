@@ -14,6 +14,7 @@ module Tisch.Internal.Query
  , query
  , restrict
  , restrictf
+ , distinct
  , memberq
  , innerJoin
  , leftJoin
@@ -142,6 +143,9 @@ memberq ks q0 = arr (lnot . isNull . snd) <<< q2
    q2 :: Query d () (Kol O.PGInt4, Koln O.PGInt4)
    q2 = leftJoin (arr (const 1)) (distinct q1) eq
 
+-- | Remove duplicate rows from the 'Query'.
+
+-- TODO: Can we somehow have a 'PgEq' constraint here?
 distinct :: PP.Default OI.Distinctspec a a => Query t () a -> Query t () a
 distinct = Query . O.distinctExplicit PP.def . unQuery
 
