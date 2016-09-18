@@ -32,6 +32,7 @@ library
       Tisch.Internal.Record
       Tisch.Internal.Singletons
       Tisch.Internal.Table
+      Tisch.Internal.Window
   build-depends:
       aeson >=0.11 && <0.12
     , base >=4.7 && <5.0
