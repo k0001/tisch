@@ -71,6 +71,7 @@ module Tisch.Internal.Fun
  , reSub
  , reReplace
  , reReplaceg
+ , reSplit
  ) where
 
 import Control.Lens ()
@@ -574,3 +575,23 @@ reReplaceg
 reReplaceg (Kol re) (Kol rep) (Kol s) = Kol $ unsafeFunExpr "regexp_replace"
    [AnyColumn s, AnyColumn re, AnyColumn rep, AnyColumn (O.pgString "g")]
 
+-- | Split the @source@ string using the given Regular Expression as a
+-- delimiter.
+--
+-- If there is no match to the pattern, the function an array with just one
+-- element: the original string. If there is at least one match,
+-- for each match it returns the text from the end of the last match (or the
+-- beginning of the string) to the beginning of the match. When there are no
+-- more matches, it returns the text from the end of the last match to the end
+-- of the string.
+--
+-- Sql function: @regexp_split_to_array(source, regexp)@.
+reSplit
+  :: (O.PGText ~ regex, O.PGText ~ source)
+  => Kol regex
+  -- ^ Regular expression. See Section 9.1 of the PostgreSQL manual to
+  -- understand the syntax.
+  -> Kol source
+  -> Kol (O.PGArray O.PGText)
+reSplit (Kol re) (Kol s) = Kol $ unsafeFunExpr "regexp_split_to_array"
+   [AnyColumn s, AnyColumn re]

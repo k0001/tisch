@@ -147,6 +147,13 @@ module Tisch
  , tsWeekISO8601
  , tsYear
  , tsYearISO8601
+   -- ** Regular expressions
+ , reSub
+ , reReplace
+ , reReplaceg
+ , reMatch
+ , reMatches
+ , reSplit
    -- * Aggregation
    --
    -- $aggregation
