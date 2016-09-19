@@ -4,6 +4,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | This is an internal module. You are very discouraged from using it directly.
 --
@@ -27,19 +29,23 @@ module Tisch.Internal.Query
  , desc
  , descNullsFirst
  , descNullsLast
+ , reMatches
  ) where
 
 import           Control.Arrow
 import           Control.Category (Category)
-import           Data.Profunctor (Profunctor)
+import           Data.Profunctor (Profunctor, rmap)
 import           Data.Profunctor.Product (ProductProfunctor)
 import qualified Data.Profunctor.Product.Default as PP
 import qualified Opaleye as O
+import qualified Opaleye.Internal.Column as OI
 import qualified Opaleye.Internal.Distinct as OI
 import qualified Opaleye.Internal.Join as OI
+import qualified Opaleye.Internal.Operators as OI
+import qualified Opaleye.Internal.HaskellDB.PrimQuery as HDB
 
-import Tisch.Internal.Koln (Koln(unKoln), isNull)
-import Tisch.Internal.Kol (Kol(unKol))
+import Tisch.Internal.Koln (Koln(..), isNull)
+import Tisch.Internal.Kol (Kol(..))
 import Tisch.Internal.Table
   (Table, TableR, Database, PgR, RawTable(..), rawTableRO)
 import Tisch.Internal.Compat (unsafeUnNullableColumn)
@@ -131,6 +137,8 @@ leftJoin (Query qa) (Query qb) f =
 -- | Whether the given 'Kol' is present in the given 'Query'.
 --
 -- Sql operator: @IN@.
+--
+-- Note: This is implemented as a LEFT JOIN.
 memberq
   :: forall a d
   .  PgEq a
@@ -193,4 +201,24 @@ descNullsFirst f = O.desc (unsafeUnNullableColumn . unKoln . f)
 descNullsLast :: PgOrd b => (a -> Koln b) -> O.Order a
 descNullsLast f = O.descNullsLast (unsafeUnNullableColumn . unKoln . f)
 
+--------------------------------------------------------------------------------
+-- Regular expressions
 
+-- | Returns a 'Query' where each resulting 'O.PGArray' contains all the matches
+-- of the given Regular Expression on the given source text.
+--
+-- Sql function: @regexp_matches(source, regex, 'g')@.
+
+-- TODO: Should `Kol source` be a `Query` input instead?
+reMatches
+  :: (O.PGText ~ regex, O.PGText ~ source, O.PGText ~ match)
+  => Kol regex
+  -- ^ Regular expression. See Section 9.1 of the PostgreSQL manual to
+  -- understand the syntax.
+  -> Kol source
+  -> Query d () (Kol (O.PGArray match))
+reMatches (Kol (OI.Column re)) (Kol (OI.Column s)) = Query $
+  OI.relationValuedExprExplicit
+    (rmap Kol OI.relExprColumn)
+    "T1"  -- T1? See https://github.com/tomjaguarpaw/haskell-opaleye/issues/211
+    (\() -> HDB.FunExpr "regexp_matches" [s, re, OI.unColumn (O.pgString "g")])
