@@ -12,4 +12,4 @@ bit more straightforward, safe and manteinable.
 `tisch` was previously known as `opaleye-sot`. TODO: tell funny story about why
 the library is called `tisch`.
 
-
+Build this project using [Nix](http://nixos.org/nix) with `nix-build ./default.nix`.
