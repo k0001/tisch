@@ -56,6 +56,7 @@ import qualified Data.Time
 import Data.Typeable (Typeable)
 import qualified Data.UUID
 import Data.Word
+import qualified Database.PostgreSQL.Simple.FromField as Pg
 import qualified Database.PostgreSQL.Simple.Types as Pg
 import GHC.Exts (Constraint)
 import qualified GHC.TypeLits as GHC
@@ -83,7 +84,7 @@ instance forall a b.
           h :: O.Column (PGArrayn a) -> O.Column (O.Nullable a)
           h = O.unsafeCoerceColumn
       in OI.QueryRunnerColumn (P.lmap h c)
-           ((fmap . fmap . fmap) Pg.fromPGArray (OI.arrayFieldParser f))
+           ((fmap . fmap . fmap) Pg.fromPGArray (Pg.pgArrayFieldParser f))
 
 -------------------------------------------------------------------------------
 
