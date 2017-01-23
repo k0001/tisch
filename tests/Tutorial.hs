@@ -12,7 +12,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {- | @tisch@ is a different API for the core @opaleye@
-infraestructure with the following goals in mind:
+infrastructure with the following goals in mind:
 
 * Close to @opaleye@.
 
