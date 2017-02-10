@@ -199,8 +199,13 @@ instance PgTyped DepartmentId where
 -- 'DepartmentId', and @'PgType' 'Department' ~ 'PGInt4'@, and there exists
 -- already a @'ToKol' 'Int32' 'O.PGInt4'@, the implementation of the 'kol' method
 -- within the 'ToKol' instance comes for free. Otherwise, we would have needed
--- to implement it ourselves.
-instance ToKol DepartmentId DepartmentId
+-- to implement it ourselves. In fact, manually definining this instance for
+-- 'Wrapped' types is completely unnecessary, since there exists a “catch all”
+-- instance already, so let's leave 'ToKol' out.
+--
+--    instance ToKol DepartmentId DepartmentId
+
+
 
 -- | We will want to be able to compare this field for equality, so let's
 -- provide a 'PgEq' instance for 'DepartmentId'.

@@ -136,6 +136,7 @@ instance
        'GHC.Text "Use Tisch.PGNumeric instead.")
   ) => PgPrimType O.PGNumeric where pgPrimTypeName = undefined
 
+
 -- | Only 'PgTyped' instances are allowed as indexes to 'Kol' and 'Koln'.
 --
 -- The @'PgType' a ~ 'PgType' ('PgType' a)@ guarantees that @'PgType' a@ is a
@@ -150,7 +151,7 @@ instance
 -- 'unsafeDowncastKol' . 'upcastKol' = 'id'
 -- @
 class (PgPrimType (PgType a), PgTyped (PgType a), PgType a ~ PgType (PgType a))
-  => PgTyped (a :: k) where
+  => PgTyped (a :: ka) where
   -- | @'PgType' a@ indicates the primitive PostgreSQL column type that will
   -- ultimately be used as the index to @opaleye@'s 'O.Column'. This could be
   -- @a@ itself, in the case of primitive types such as 'O.PGInt4', or it could
@@ -194,6 +195,8 @@ class (PgPrimType (PgType a), PgTyped (PgType a), PgType a ~ PgType (PgType a))
   -- * If you want to reuse the exising 'Num', 'Fractional' or similar instances
   --   for @'Kol' 'O.PGInt4', you will need to explicitely ask for it by
   --   instantiating @'PgNum' UserId@, @'PgFractional' UserId@, etc.
+  --
+  -- XXX This should be kind polymorphic.
   type PgType a :: Type
 
 instance PgTyped O.PGBool where type PgType O.PGBool = O.PGBool
@@ -332,9 +335,12 @@ class PgTyped b => ToKol (a :: Type) (b :: kb) where
   -- 'kol' :: 'Int32' -> 'Kol' 'O.PGInt4'
   -- @
   kol :: a -> Kol (b :: kb)
-  default kol :: (Wrapped a, PgTyped b, ToKol (Unwrapped a) (PgType b)) => a -> Kol b
+  default kol :: (Wrapped a, PgTyped b, ToKol (Unwrapped a) (PgType b)) => a -> Kol (b :: kb)
   kol = -- Downcasting here is safe due to the Law 1 of 'PgTyped'.
         unsafeDowncastKol . kol . view _Wrapped'
+
+instance {-# OVERLAPPABLE #-}
+  (Wrapped a, PgTyped b, ToKol (Unwrapped a) (PgType b)) => ToKol a b
 
 instance ToKol a b => ToKol (Tagged t a) b where kol = kol . view _Wrapped'
 instance ToKol String O.PGText where kol = Kol . O.pgString
