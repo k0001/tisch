@@ -327,7 +327,7 @@ runInsertRaw conn t = \case
   ws -> do
     nAffected <- runInsertRawNoCountCheck conn t ws
     let nExpected = fromIntegral (length ws) :: Int64
-    when (nExpected == nAffected) $ do
+    when (nExpected /= nAffected) $ do
        let sql = O.arrangeInsertManySql (unRawTable t) (NEL.fromList ws)
        Cx.throwM (ErrNumRows nExpected nAffected (Just sql))
 
