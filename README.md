@@ -1,5 +1,7 @@
 # tisch
 
+[![Build Status](https://travis-ci.org/k0001/tisch.svg?branch=master)](https://travis-ci.org/k0001/tisch)
+
 > See the
 > [NOTICE.txt](https://github.com/k0001/tisch/blob/master/NOTICE.txt)
 > and Apache-2.0
