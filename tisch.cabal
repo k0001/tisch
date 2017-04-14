@@ -34,23 +34,23 @@ library
       Tisch.Internal.Table
       Tisch.Internal.Window
   build-depends:
-      aeson >=0.11 && <0.12
-    , base >=4.7 && <5.0
+      aeson
+    , base >=4.9 && <5.0
     , bytestring
     , case-insensitive
-    , exceptions >=0.8 && <0.9
-    , lens >=4.14 && <4.15
-    , mtl >=2.2 && <2.3
-    , opaleye >=0.5 && <0.6
+    , exceptions
+    , lens
+    , mtl
+    , opaleye
     , postgresql-simple
     , product-profunctors
     , profunctors
     , semigroups
-    , scientific >=0.3 && <0.4
-    , singletons >=2.2 && <2.3
+    , scientific
+    , singletons
     , tagged
     , text
-    , transformers >=0.5 && <0.6
+    , transformers
     , time
     , uuid
   ghc-options: -Wall -Werror
