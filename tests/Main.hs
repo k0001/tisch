@@ -81,7 +81,7 @@ query2 = proc () -> do
   (t,_,_,_) <- query1 -< ()
   returnA -< t
 
-outQuery2 :: Allow 'Fetch ps => Conn ps -> IO [HsR Table1]
+outQuery2 :: Allow 'Fetch ps => Conn Db1 ps -> IO [HsR Table1]
 outQuery2 conn = runQuery conn query2
 
 query3 :: Query Db1 () (PgRN Table1)
@@ -89,10 +89,10 @@ query3 = proc () -> do
   (_,_,_,t) <- query1 -< ()
   returnA -< t
 
-outQuery3 :: Allow 'Fetch ps => Conn ps -> IO [Maybe (HsR Table1)]
+outQuery3 :: Allow 'Fetch ps => Conn Db1 ps -> IO [Maybe (HsR Table1)]
 outQuery3 conn = runQuery conn query3
 
-update1 :: Allow 'Update ps => Conn ps -> IO Int64
+update1 :: Allow 'Update ps => Conn Db1 ps -> IO Int64
 update1 conn = runUpdate conn Table1 upd fil
   where
     fil :: PgR Table1 -> Kol PGBool
@@ -102,6 +102,6 @@ update1 conn = runUpdate conn Table1 upd fil
 
 outQuery1
   :: Allow 'Fetch ps
-  => Conn ps
+  => Conn Db1 ps
   -> IO [(HsR Table1, HsR Table1, HsR Table1, Maybe (HsR Table1))]
 outQuery1 conn = runQuery conn query1
