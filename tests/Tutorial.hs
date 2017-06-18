@@ -16,8 +16,8 @@ infrastructure with the following goals in mind:
 
 * Close to @opaleye@.
 
-  @tisch@ is fully compatible with @opalaye@ and doesn't aim
-  to replace it, just to complement it. @tisch@ is designed in
+  @tisch@ is fully compatible with @opalaye@ and aims to
+  complement it, not replace it. @tisch@ is designed in
   such a way that we are expected to work with tools both from
   "Opaleye" and "Tisch" at the same time. If anything, perhaps
   some of the ideas on @tisch@ can eventually be ported
@@ -27,7 +27,7 @@ infrastructure with the following goals in mind:
 
   While it is true that @opaleye@, by relying in the type system,
   makes it mostly impossible to write malformed queries, it doesn't
-  keep us for accidentaly referring to a wrong column, comparing two
+  keep us for accidentaly referring to the wrong column, comparing two
   columns we are not supposed to compare, confusing two tables
   that happen to have the same shape, accidentally mixing nullable
   and not nullable columns, or similar scenarios. @tisch@, by
@@ -56,7 +56,7 @@ infrastructure with the following goals in mind:
   THIS. Meanwhile, read the source code here as an example. These
   examples come from the LearningSQLExample.sql file in this project,
   which is maybe not such great example SQL. We'll see if we can come up
-  with a better example SQL. Also, this example code doesn't belong in
+  with a better one. Also, this example code doesn't belong in
   this module, probably.
 -}
 module Tutorial
@@ -179,7 +179,7 @@ instance Wrapped DepartmentId where
 -- ~ 'PGInt4'@ says that the underlying representation for 'DepartmentId' is
 -- 'PGInt4', and that it is safe to upcast @'Kol' 'DepartmentId'@ to
 -- @'Kol' 'PGInt4'@, and downcast @'Kol' 'PGInt4'@ to @'Kol' 'DepartmentId'
--- internally if needed (see the Law 1 of 'PgTyped').
+-- internally if needed (see Law 1 of 'PgTyped').
 instance PgTyped DepartmentId where
   type PgType DepartmentId = PGInt4
 
