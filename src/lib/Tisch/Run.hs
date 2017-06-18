@@ -54,6 +54,11 @@ module Tisch.Run
     -- * Update
   , runUpdate
   , runUpdateRaw
+    -- ** Returning
+  , runUpdateReturning1
+  , runUpdateReturning
+  , runUpdateRawReturning1
+  , runUpdateRawReturning
     -- * Delete
   , runDelete
   , runDeleteRaw
@@ -437,13 +442,65 @@ runUpdateRaw (Conn conn) (RawTable t) upd fil =
 -- | Updates all of the rows in the given 'Table' that satisfy the given
 -- predicate. Returns the number of actually updated rows.
 runUpdate
-  :: (TableRW t, MonadIO m, Allow 'Update ps, TableRW t, Database t ~ d)
+  :: (TableRW t, MonadIO m, Allow 'Update ps, Database t ~ d)
   => Conn d ps
   -> Table t
   -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
   -> m Int64                 -- ^ Number of updated rows.
 runUpdate pc t upd = runUpdateRaw pc (rawTableRW t) (upd . pgWfromPgR)
+
+--------------------------------------------------------------------------------
+
+-- | Update many rows, returning data from the rows actually updated.
+runUpdateReturning
+  :: (TableRW t, MonadIO m, PP.Default O.QueryRunner (PgR t') h,
+      Allow 'Update ps)
+  => Conn ps
+  -> Table t
+  -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
+  -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
+  -> (PgR t -> PgR t')       -- ^ Function @g@ to apply to the updated rows.
+  -> m [h]                   -- ^ Returned rows after @g@ has been applied.
+runUpdateReturning pc t upd =
+  runUpdateRawReturning pc (rawTableRW t) (upd . pgWfromPgR)
+
+-- | Update one row, returning data from the one row actually updated.
+--
+-- Throws 'ErrNumRows' if the number of actually affected rows is different than
+-- one.
+runUpdateReturning1
+  :: (TableRW t, MonadIO m, PP.Default O.QueryRunner (PgR t') h,
+      Allow 'Update ps, Cx.MonadThrow m)
+  => Conn ps
+  -> Table t
+  -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
+  -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
+  -> (PgR t -> PgR t')       -- ^ Function @g@ to apply to the updated rows.
+  -> m h                     -- ^ Returned row after @g@ has been applied.
+runUpdateReturning1 pc t upd =
+  runUpdateRawReturning1 pc (rawTableRW t) (upd . pgWfromPgR)
+
+-- | Like 'runUpdateReturning' but takes a 'RawTable' instead of a 'Table'.
+runUpdateRawReturning
+  :: (MonadIO m, PP.Default O.QueryRunner r' h, Allow 'Update ps)
+  => Conn ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool)
+  -> (r -> r') -> m [h] -- ^
+runUpdateRawReturning (Conn conn) (RawTable t) upd fil g =
+  liftIO (O.runUpdateReturning conn t upd (unKol . fil) g)
+
+-- | Like 'runUpdateReturning1' but takes a 'RawTable' instead of a 'Table'.
+runUpdateRawReturning1
+  :: (MonadIO m, PP.Default O.QueryRunner r' h, Allow 'Update ps,
+      Cx.MonadThrow m)
+  => Conn ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool)
+  -> (r -> r') -> m h -- ^
+runUpdateRawReturning1 pc t upd fil g = do
+  rs <- runUpdateRawReturning pc t upd fil g
+  let nAffected = fromIntegral (length rs) :: Int64
+  if nAffected == 1
+     then return $ head rs
+     else Cx.throwM (ErrNumRows 1 nAffected Nothing)
 
 --------------------------------------------------------------------------------
 

@@ -17,6 +17,8 @@ module Tisch
  , runDelete
  , runInsertReturning
  , runInsertReturning1
+ , runUpdateReturning
+ , runUpdateReturning1
    -- * Connection management
  , Perm(..)
  , Allow
