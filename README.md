@@ -9,7 +9,7 @@
 > files to learn more about legal terms and conditions for this library.
 
 `tisch` provides a bit of sugar on top of the great Opaleye to make its usage a
-bit more straightforward, safe and manteinable.
+bit more straightforward, safe and maintainable.
 
 `tisch` was previously known as `opaleye-sot`. TODO: tell funny story about why
 the library is called `tisch`.
