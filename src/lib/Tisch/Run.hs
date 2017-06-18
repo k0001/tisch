@@ -455,8 +455,8 @@ runUpdate pc t upd = runUpdateRaw pc (rawTableRW t) (upd . pgWfromPgR)
 -- | Update many rows, returning data from the rows actually updated.
 runUpdateReturning
   :: (TableRW t, MonadIO m, PP.Default O.QueryRunner (PgR t') h,
-      Allow 'Update ps)
-  => Conn ps
+      Allow 'Update ps, Database t ~ d)
+  => Conn d ps
   -> Table t
   -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
@@ -471,8 +471,8 @@ runUpdateReturning pc t upd =
 -- one.
 runUpdateReturning1
   :: (TableRW t, MonadIO m, PP.Default O.QueryRunner (PgR t') h,
-      Allow 'Update ps, Cx.MonadThrow m)
-  => Conn ps
+      Allow 'Update ps, Cx.MonadThrow m, Database t ~ d)
+  => Conn d ps
   -> Table t
   -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
@@ -484,16 +484,15 @@ runUpdateReturning1 pc t upd =
 -- | Like 'runUpdateReturning' but takes a 'RawTable' instead of a 'Table'.
 runUpdateRawReturning
   :: (MonadIO m, PP.Default O.QueryRunner r' h, Allow 'Update ps)
-  => Conn ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool)
+  => Conn d ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool)
   -> (r -> r') -> m [h] -- ^
 runUpdateRawReturning (Conn conn) (RawTable t) upd fil g =
   liftIO (O.runUpdateReturning conn t upd (unKol . fil) g)
 
 -- | Like 'runUpdateReturning1' but takes a 'RawTable' instead of a 'Table'.
 runUpdateRawReturning1
-  :: (MonadIO m, PP.Default O.QueryRunner r' h, Allow 'Update ps,
-      Cx.MonadThrow m)
-  => Conn ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool)
+  :: (MonadIO m, PP.Default O.QueryRunner r' h, Allow 'Update ps, Cx.MonadThrow m)
+  => Conn d ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool)
   -> (r -> r') -> m h -- ^
 runUpdateRawReturning1 pc t upd fil g = do
   rs <- runUpdateRawReturning pc t upd fil g
